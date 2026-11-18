@@ -1,0 +1,8 @@
+rules:
+  # Dependabot waits 3 days before it proposes a release; the audit defaults to 7.
+  dependabot-cooldown:
+    config:
+      days: 3
+  # actionlint does not read the `$/` form of a local action yet.
+  self-repository:
+    disable: true

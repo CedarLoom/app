@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "license": "ISC",
+  "dependencies": {
+    "pnpm": "12.21.0"
+  },
+  "allowScripts": {
+    "pnpm": true
+  }
+}

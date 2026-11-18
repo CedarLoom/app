@@ -1,0 +1,11 @@
+version = 1
+
+# A license text goes into LICENSES/ with the first file that uses it; `reuse lint` names it when it is missing.
+# Own data files take CC0-1.0 and names and logos LicenseRef-Brand, each as an override annotation.
+
+# Code and everything not matched below: ISC.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Eike Landin"
+SPDX-License-Identifier = "ISC"

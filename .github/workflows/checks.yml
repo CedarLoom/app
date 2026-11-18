@@ -1,0 +1,99 @@
+name: Checks
+
+# `checks` is the required check, a gate over the parallel jobs it needs; `dependency-review` is required too.
+# Jobs run only in the CedarLoom organization, so a fork or a copy spends no minutes.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "37 5 * * 1" # Monday 05:37: the audit and zizmor on unchanged code
+      timezone: Europe/Berlin
+
+permissions: {}
+
+concurrency:
+  # One group per pull request; every push to main and every scheduled run gets its own.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Every gate of `pnpm run check`, plus the ones that need GitHub.
+  repository:
+    if: github.repository_owner == 'CedarLoom'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: zizmor version
+        id: zizmor
+        run: |
+          version=$(sed -n 's/^zizmor==//p' tools/requirements.txt)
+          if [ -z "$version" ]; then echo "::error::no zizmor version in tools/requirements.txt"; exit 1; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # zizmor with its online audits, at the version of tools/requirements.txt.
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          version: ${{ steps.zizmor.outputs.version }}
+          advanced-security: false
+          inputs: .github
+      - uses: ./.github/actions/setup
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+      - name: Install uv
+        run: python -m pip install --require-hashes --no-deps -r tools/uv-requirements.txt
+      - run: pnpm run check
+
+  platforms:
+    if: github.repository_owner == 'CedarLoom'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm run typecheck
+      - run: pnpm run test
+
+  # Required check: passes when all parallel jobs pass.
+  checks:
+    if: always() && github.repository_owner == 'CedarLoom'
+    needs: [repository, platforms]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every needed job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for r in $RESULTS; do
+            if [ "$r" != success ]; then echo "::error::a needed job ended as $r"; exit 1; fi
+          done
+
+  # Required check. The same license allow-list as `pnpm run licenses`.
+  dependency-review:
+    if: github.repository_owner == 'CedarLoom' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          config-file: ./.github/dependency-review-config.json
