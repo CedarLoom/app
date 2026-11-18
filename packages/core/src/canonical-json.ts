@@ -32,7 +32,8 @@ const isPlainObject = (value: object): boolean => {
 
 /** JSON text with sorted keys and no whitespace, so equal values give equal text: RFC 8785 (JCS). */
 export const canonicalJson = (value: JsonValue): string => {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  // Array.from visits holes as undefined, which is refused, where map would skip them and write "[,]".
+  if (Array.isArray(value)) return `[${Array.from(value, canonicalJson).join(',')}]`;
   if (typeof value === 'string') return quoted(value);
   // JSON.stringify writes null for these, which would hash a value other than the one given.
   if (typeof value === 'number' && !Number.isFinite(value)) throw new RangeError(`${value} has no JSON form`);

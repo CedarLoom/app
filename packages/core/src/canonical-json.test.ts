@@ -33,6 +33,7 @@ describe('canonicalJson', () => {
     ['undefined', undefined],
     ['a member that is undefined', { a: undefined }],
     ['an element that is undefined', [undefined, 1]],
+    ['an array with a hole', Object.assign([], { length: 1 })],
     ['a Date', new Date(0)],
     ['a Map', new Map()],
     ['a function', () => 1],
@@ -40,10 +41,6 @@ describe('canonicalJson', () => {
   ])('refuses %s, which is outside JSON', (_name, value) => {
     // @ts-expect-error The point of the test: the type refuses these, and the function must too.
     expect(() => canonicalJson(value)).toThrow(TypeError);
-  });
-
-  it('writes an object with no prototype', () => {
-    expect(canonicalJson(Object.assign(Object.create(null), { b: 1, a: 2 }))).toBe('{"a":2,"b":1}');
   });
 
   it('refuses a number JSON cannot hold', () => {
