@@ -1,6 +1,7 @@
 {
   "fail-on-severity": "high",
   "fail-on-scopes": ["runtime", "development", "unknown"],
+  "allow-ghsas": ["GHSA-fc5q-39xc-vjpf"],
   "allow-licenses": [
     "0BSD",
     "Apache-2.0",

@@ -19,7 +19,8 @@ savePrefix: ""
 # Dependency cooldown of 3 days: pnpm resolves no version younger than this, transitive ones included.
 minimumReleaseAge: 4320
 
-# picomatch ReDoS with no patched version: reached only by dev tools (knip, vitest), never by the app. Remove when a patched picomatch ships.
+# picomatch ReDoS with no patched version: reached only by dev tools (knip, vitest), never by the app. Ignored here and in
+# .github/dependency-review-config.json; remove both when a patched picomatch ships.
 auditConfig:
   ignoreGhsas:
     - GHSA-fc5q-39xc-vjpf
