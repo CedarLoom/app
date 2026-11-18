@@ -22,7 +22,7 @@ Node.js 26, pnpm 12 and uv. Install with `pnpm install --frozen-lockfile --ignor
 - Validate where data enters (user input, files, the network, another process) and where a wrong value loses data or breaks security. Inside, trust the types, the framework and your own code: no guard or fallback for a case that cannot happen. An error you cannot handle propagates; never swallow it or hide it behind a default.
 - One job per function, module and file, named after it; never `utils`, `helpers`, `common`, `misc` or `shared`. A unit that wants such a name has two jobs: split it.
 - Keep the layers below: imports point down, never up. Code that gets a test takes the time, randomness and I/O it uses as parameters.
-- Typed findings, refusals and API errors carry a code and parameters, never text; their messages live in the message catalogs.
+- Typed findings, refusals and API errors carry a code and parameters, never text; their messages live in the message catalogs. A code is the id of its message in [packages/core/src/messages/en.po](packages/core/src/messages/en.po): after editing it, run `pnpm --filter @cedarloom/core run messages` and commit the generated `en.json` and `catalog.ts`; the check fails while they are stale.
 - Remove what your change made unused. Leave other code, comments and formatting as they are; name unrelated dead code in the report.
 - Comments only where the code cannot say it: one line, the why, not the how.
 
@@ -36,7 +36,7 @@ Node.js 26, pnpm 12 and uv. Install with `pnpm install --frozen-lockfile --ignor
 | `packages/ui`        | DOM                    | the web UI; it reaches the app's server over HTTP only                                                                         | `core`                          |
 | `packages/cli`       | Node                   | the `cedarloom` and `cloom` commands                                                                                           | `core`, `use-cases`             |
 
-Each package's `tsconfig.json` sets the `lib` and `types` of its layer, so typecheck refuses Node APIs in `core` and `ui` and DOM APIs in `core`. [packages/core/src/url.d.ts](packages/core/src/url.d.ts) declares the `URL` type that zod's declarations name, as a type only. Oxlint ([.oxlintrc.json](.oxlintrc.json)) refuses `node:` imports in `core` and `ui` (bare built-in names through `unicorn/prefer-node-protocol`), every workspace import the table does not allow, by package name or by relative path, and every triple-slash reference. `app` takes the UI as built files, never as an import.
+Each package's `tsconfig.json` sets the `lib` and `types` of its layer, so typecheck refuses Node APIs in `core` and `ui` and DOM APIs in `core`. [packages/core/src/url.d.ts](packages/core/src/url.d.ts) declares the `URL` type that zod's declarations name, as a type only, and [packages/core/src/text-encoder.d.ts](packages/core/src/text-encoder.d.ts) the `TextEncoder` that Node.js and browsers both provide. Tests (`*.test.ts`) and scripts of `core` typecheck with its `tsconfig.node.json` and may use Node APIs; its production code may not. Oxlint ([.oxlintrc.json](.oxlintrc.json)) refuses `node:` imports in `ui` and in `core` outside its tests and scripts (bare built-in names through `unicorn/prefer-node-protocol`), every workspace import the table does not allow, by package name or by relative path, and every triple-slash reference. `app` takes the UI as built files, never as an import.
 
 ## Tests
 

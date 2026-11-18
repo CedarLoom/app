@@ -8,9 +8,17 @@
   },
   "exports": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc"
+    "typecheck": "tsc && tsc --project tsconfig.node.json",
+    "messages": "node scripts/compile-messages.ts && biome format --write src/messages"
+  },
+  "dependencies": {
+    "zod": "catalog:"
   },
   "devDependencies": {
+    "@biomejs/biome": "catalog:",
+    "@lingui/format-po": "catalog:",
+    "@lingui/message-utils": "catalog:",
+    "@types/node": "catalog:",
     "typescript": "catalog:"
   }
 }
