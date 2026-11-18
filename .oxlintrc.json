@@ -54,5 +54,117 @@
     "typescript/no-explicit-any": "error",
     "typescript/ban-ts-comment": "error",
     "typescript/no-floating-promises": "error"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["packages/*/src/index.ts"],
+      "rules": {
+        "unicorn/no-empty-file": "off"
+      }
+    },
+    {
+      "files": ["packages/core/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["node:*", "node:*/**"],
+                "message": "core is pure logic and uses no Node APIs."
+              },
+              {
+                "group": [
+                  "@cedarloom/use-cases",
+                  "@cedarloom/app",
+                  "@cedarloom/ui",
+                  "@cedarloom/cli",
+                  "**/use-cases/**",
+                  "**/app/**",
+                  "**/ui/**",
+                  "**/cli/**"
+                ],
+                "message": "core is the bottom layer and imports no other workspace package."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/use-cases/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@cedarloom/app", "@cedarloom/ui", "@cedarloom/cli", "**/app/**", "**/ui/**", "**/cli/**"],
+                "message": "use-cases imports core only."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/app/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@cedarloom/ui", "@cedarloom/cli", "**/ui/**", "**/cli/**"],
+                "message": "app imports core and use-cases only."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/ui/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["node:*", "node:*/**"],
+                "message": "The UI runs in the browser and uses no Node APIs."
+              },
+              {
+                "group": [
+                  "@cedarloom/use-cases",
+                  "@cedarloom/app",
+                  "@cedarloom/cli",
+                  "**/use-cases/**",
+                  "**/app/**",
+                  "**/cli/**"
+                ],
+                "message": "The UI imports core only and reaches the app's server over HTTP."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/cli/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@cedarloom/app", "@cedarloom/ui", "**/app/**", "**/ui/**"],
+                "message": "The CLI imports core and use-cases only."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

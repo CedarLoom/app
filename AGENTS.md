@@ -32,9 +32,11 @@ Node.js 26, pnpm 12 and uv. Install with `pnpm install --frozen-lockfile --ignor
 | -------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
 | `packages/core`      | logic: no Node, no DOM | schemas of the app's data, canonical JSON, the plan builder, edit operations, codes                                            | nothing of the workspace; `zod` |
 | `packages/use-cases` | Node                   | one function per use case, and its adapters: store, file apply, plugin locator                                                 | `core`                          |
-| `packages/app`       | Node                   | the `cedarloom-app` command: the local HTTP server on `127.0.0.1`, its session security, the OpenAPI document and the built UI | `core`, `use-cases`, `ui`       |
+| `packages/app`       | Node                   | the `cedarloom-app` command: the local HTTP server on `127.0.0.1`, its session security, the OpenAPI document and the built UI | `core`, `use-cases`             |
 | `packages/ui`        | DOM                    | the web UI; it reaches the app's server over HTTP only                                                                         | `core`                          |
 | `packages/cli`       | Node                   | the `cedarloom` and `cloom` commands                                                                                           | `core`, `use-cases`             |
+
+Each package's `tsconfig.json` sets the `lib` and `types` of its layer, so `core` names no Node or DOM API and `ui` no Node API. The `no-restricted-imports` overrides in [.oxlintrc.json](.oxlintrc.json) refuse Node imports in `core` and `ui` and every workspace import the table does not allow, by package name or by relative path. `app` takes the UI as built files, never as an import.
 
 ## Tests
 

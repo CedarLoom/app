@@ -1,0 +1,17 @@
+{
+  "name": "@cedarloom/use-cases",
+  "private": true,
+  "type": "module",
+  "license": "ISC",
+  "engines": {
+    "node": ">=26"
+  },
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}
