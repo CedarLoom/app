@@ -10,6 +10,9 @@
   "scripts": {
     "typecheck": "tsc"
   },
+  "dependencies": {
+    "@cedarloom/core": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "catalog:",
     "typescript": "catalog:"

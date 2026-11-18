@@ -8,6 +8,9 @@ export const MESSAGE_IDS = [
   'plan.not-text',
   'plan.path-outside-roots',
   'plan.symlink',
+  'store.locked',
+  'store.unreadable',
+  'store.version-unsupported',
 ] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
@@ -18,4 +21,7 @@ export interface MessagePlaceholders {
   'plan.not-text': 'path';
   'plan.path-outside-roots': 'path';
   'plan.symlink': 'path';
+  'store.locked': 'path';
+  'store.unreadable': 'path';
+  'store.version-unsupported': 'found' | 'supported';
 }
