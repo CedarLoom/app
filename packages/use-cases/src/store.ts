@@ -33,6 +33,7 @@ CREATE TABLE operations (
   entries TEXT,
   PRIMARY KEY (runId, position)
 ) STRICT;
+CREATE INDEX runs_undoes ON runs (undoes);
 PRAGMA user_version = ${VERSION};
 `;
 
@@ -44,8 +45,10 @@ export type Opened<T> = { ok: true; value: T } | { ok: false; refusal: Refusal }
 
 /** A run as its use case starts it; the store adds the id, the status, the times and each operation's status. */
 export type NewRun = Pick<Run, 'kind' | 'action' | 'subject' | 'undoes' | 'planHash' | 'generatedFrom'> & {
-  operations: Omit<Run['operations'][number], 'status'>[];
+  operations: Pending<Run['operations'][number]>[];
 };
+// Omit per member of the union, so each operation kind keeps its own hashes.
+type Pending<T> = T extends unknown ? Omit<T, 'status'> : never;
 
 /** The time and the run ids a store uses. */
 export interface StoreClock {
@@ -92,8 +95,7 @@ const transaction = <T>(db: DatabaseSync, work: () => T): T => {
   }
 };
 
-// Durable before anything is written: WAL with a sync at each commit, both read back, since SQLite keeps another
-// journal mode without an error where the filesystem cannot share memory.
+// Read back, since SQLite keeps another journal mode without an error where the filesystem cannot share memory.
 const durable = (db: DatabaseSync): void => {
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON');
   const journal = pragma(db, 'journal_mode');
@@ -139,7 +141,16 @@ export class RunStore {
 
   /** Records a run as running, with every operation pending, in one transaction; returns the new run's id. */
   begin(run: NewRun): string {
-    const id = this.#clock.newRunId();
+    // Checked before it is written: one row the view cannot parse would make the whole history unreadable.
+    const { id, startedAt } = Run.parse({
+      ...run,
+      id: this.#clock.newRunId(),
+      status: 'running',
+      startedAt: this.#clock.now().toISOString(),
+      endedAt: null,
+      undoneBy: null,
+      operations: run.operations.map((operation) => Object.assign({ status: 'pending' }, operation)),
+    });
     transaction(this.#db, () => {
       this.#db
         .prepare(
@@ -151,7 +162,7 @@ export class RunStore {
           run.kind,
           run.action,
           run.subject,
-          this.#clock.now().toISOString(),
+          startedAt,
           run.undoes,
           run.planHash,
           JSON.stringify(run.generatedFrom),
@@ -182,20 +193,25 @@ export class RunStore {
   }
 }
 
-/**
- * Opens the run store in `dir`, creating the folder private: waits up to a second while another process holds it,
- * then refuses with store.locked; refuses a store of another version or one SQLite cannot read.
- */
-export const openStore = (dir: string, clock: StoreClock): Opened<RunStore> => {
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  // Held until close; it stays an empty database, and a reader probes it to learn whether a run is still running.
-  const lock = new DatabaseSync(lockPath(dir), { timeout: WAIT_MS });
+// Held until close; it stays an empty database, and a reader probes it to learn whether a run is still running.
+const takeLock = (dir: string): Opened<DatabaseSync> => {
+  let lock: DatabaseSync | undefined;
   try {
+    lock = new DatabaseSync(lockPath(dir), { timeout: WAIT_MS });
     lock.exec('BEGIN EXCLUSIVE');
+    return { ok: true, value: lock };
   } catch (error) {
-    lock.close();
+    lock?.close();
     return { ok: false, refusal: refusalFor(error, dir, lockPath(dir)) };
   }
+};
+
+/** Opens the run store in `dir`, a new folder private; refuses with store.locked after a second's wait for another process. */
+export const openStore = (dir: string, clock: StoreClock): Opened<RunStore> => {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const taken = takeLock(dir);
+  if (!taken.ok) return taken;
+  const lock = taken.value;
   try {
     const db = connectWriter(runsPath(dir));
     if (!db.ok) lock.close();
@@ -208,10 +224,20 @@ export const openStore = (dir: string, clock: StoreClock): Opened<RunStore> => {
 
 type Row = Record<string, SQLOutputValue>;
 
+// One read transaction, so a run and its operations come from the same commit.
+const snapshot = <T>(db: DatabaseSync, read: () => T): T => {
+  db.exec('BEGIN');
+  try {
+    return read();
+  } finally {
+    db.exec('COMMIT');
+  }
+};
+
 const parsedJson = (value: SQLOutputValue | undefined): unknown =>
   typeof value === 'string' ? JSON.parse(value) : value;
 
-/** Read access to the run store: takes no store lock and cannot write, so it works while a change runs. */
+/** Read access to the run store that cannot write; it shares the store lock only during a read, so it works while a change runs. */
 export class RunView {
   readonly #db: DatabaseSync | null;
   readonly #lock: string;
@@ -225,7 +251,7 @@ export class RunView {
   runs(): RunSummary[] {
     const db = this.#db;
     if (db === null) return [];
-    return this.#probe((held) =>
+    return this.#probe(db, (held) =>
       db
         .prepare(`SELECT ${SUMMARY_COLUMNS} FROM runs r ORDER BY r.startedAt DESC, r.rowid DESC`)
         .all()
@@ -237,7 +263,7 @@ export class RunView {
   run(id: string): Run | undefined {
     const db = this.#db;
     if (db === null) return undefined;
-    return this.#probe((held) => {
+    return this.#probe(db, (held) => {
       const row = db
         .prepare(`SELECT ${SUMMARY_COLUMNS}, r.planHash, r.generatedFrom FROM runs r WHERE r.id = ?`)
         .get(id);
@@ -261,33 +287,30 @@ export class RunView {
   }
 
   // Runs `read` with whether a process holds the store; the shared lock meanwhile keeps a change from starting in between.
-  #probe<T>(read: (held: boolean) => T): T {
-    if (!existsSync(this.#lock)) return read(false);
-    const lock = new DatabaseSync(this.#lock, { readOnly: true });
+  #probe<T>(db: DatabaseSync, read: (held: boolean) => T): T {
+    const lock = existsSync(this.#lock) ? new DatabaseSync(this.#lock, { readOnly: true }) : null;
     try {
       let held = false;
       try {
-        lock.exec('BEGIN; SELECT count(*) FROM sqlite_master');
+        lock?.exec('BEGIN; SELECT count(*) FROM sqlite_master');
       } catch (error) {
         if (resultCode(error) !== BUSY) throw error;
         held = true;
       }
-      return read(held);
+      return snapshot(db, () => read(held));
     } finally {
-      lock.close();
+      lock?.close();
     }
   }
 }
 
-/**
- * Opens the run store in `dir` for reading. A missing store reads as one with no runs, and nothing is created;
- * a store of another version, or one SQLite cannot read, is refused.
- */
+/** Opens the run store in `dir` for reading; a store missing at open reads as no runs for the view's life, and nothing is created. */
 export const openRunView = (dir: string): Opened<RunView> => {
   const path = runsPath(dir);
   if (!existsSync(path)) return { ok: true, value: new RunView(null, lockPath(dir)) };
-  const db = connectReader(path);
+  let db: DatabaseSync | undefined;
   try {
+    db = connectReader(path);
     const found = pragma(db, 'user_version');
     if (found === VERSION) return { ok: true, value: new RunView(db, lockPath(dir)) };
     db.close();
@@ -296,7 +319,7 @@ export const openRunView = (dir: string): Opened<RunView> => {
       ? { ok: true, value: new RunView(null, lockPath(dir)) }
       : { ok: false, refusal: versionRefusal(found) };
   } catch (error) {
-    db.close();
+    db?.close();
     return { ok: false, refusal: refusalFor(error, dir, path) };
   }
 };

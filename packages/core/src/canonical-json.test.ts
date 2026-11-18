@@ -43,6 +43,10 @@ describe('canonicalJson', () => {
     expect(() => canonicalJson(value)).toThrow(TypeError);
   });
 
+  it('writes an object with no prototype, as node:sqlite returns its rows', () => {
+    expect(canonicalJson(Object.assign(Object.create(null), { b: 1, a: 2 }))).toBe('{"a":2,"b":1}');
+  });
+
   it('refuses a number JSON cannot hold', () => {
     expect(() => canonicalJson([Number.NaN])).toThrow(RangeError);
     expect(() => canonicalJson({ a: Number.POSITIVE_INFINITY })).toThrow(RangeError);

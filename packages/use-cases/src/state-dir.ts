@@ -15,7 +15,8 @@ export const stateDir = ({ env, platform, home, cwd }: StateDirInputs): string =
   // XDG Base Directory: an empty value counts as unset, and a relative one is invalid and ignored.
   const xdg = env['XDG_STATE_HOME'];
   if (xdg && path.isAbsolute(xdg)) return path.join(xdg, 'cedarloom');
-  return platform === 'win32'
-    ? path.join(home, 'AppData', 'Local', 'cedarloom')
-    : path.join(home, '.local', 'state', 'cedarloom');
+  if (platform !== 'win32') return path.join(home, '.local', 'state', 'cedarloom');
+  // LOCALAPPDATA follows a relocated local application data folder; the home path is its default place.
+  const local = env['LOCALAPPDATA'];
+  return path.join(local && path.isAbsolute(local) ? local : path.join(home, 'AppData', 'Local'), 'cedarloom');
 };

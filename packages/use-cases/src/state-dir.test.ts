@@ -26,6 +26,11 @@ describe('stateDir', () => {
     expect(stateDir({ env: {}, platform, home, cwd: home })).toBe(expected);
   });
 
+  it('defaults to LOCALAPPDATA on Windows', () => {
+    const env = { LOCALAPPDATA: 'D:\\Local' };
+    expect(stateDir({ env, platform: 'win32', home: 'C:\\Users\\me', cwd: 'C:\\' })).toBe('D:\\Local\\cedarloom');
+  });
+
   it('reads Windows paths on Windows', () => {
     const env = { XDG_STATE_HOME: 'D:\\xdg' };
     expect(stateDir({ env, platform: 'win32', home: 'C:\\Users\\me', cwd: 'C:\\' })).toBe('D:\\xdg\\cedarloom');

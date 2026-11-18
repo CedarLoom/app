@@ -114,7 +114,7 @@ describe('the store lock', () => {
   it('lets a second process wait for the store and take it once the first releases it', async () => {
     const dir = fresh();
     await holder(dir, 300);
-    expect(openStore(dir, clock)).toMatchObject({ ok: true });
+    expect(store(dir)).toBeDefined();
   }, 20_000);
 
   it('stops a second process with store.locked while another holds the store past the wait', async () => {
@@ -162,6 +162,12 @@ describe('the run store', () => {
         .map((run) => run.id)
         .toSorted(),
     ).toEqual(ids.toSorted());
+  });
+
+  it('refuses a run its view could not read, and records nothing', () => {
+    const dir = fresh();
+    expect(() => store(dir).begin({ ...newRun, action: 'undo' })).toThrow('action is undo exactly when kind is undo');
+    expect(view(dir).runs()).toEqual([]);
   });
 
   it('writes the store in WAL mode', () => {
