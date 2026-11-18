@@ -19,6 +19,8 @@ const argumentsOf = (message: CompiledMessage, found: Set<string>): Set<string> 
 const messages = new Map<string, CompiledMessage>();
 for (const item of parsePoFile(await readFile(new URL('en.po', folder), 'utf8')).items) {
   const [text = ''] = item.msgstr;
+  // lingui compile leaves obsolete entries out, so one here must not become a live code.
+  if (item.obsolete) throw new Error(`${item.msgid} is obsolete`);
   // Lingui reads a msgid as the id only with this flag; without it, it would hash the msgid into another id.
   if (!item.extractedComments.includes('js-lingui-explicit-id'))
     throw new Error(`${item.msgid} has no explicit-id flag`);

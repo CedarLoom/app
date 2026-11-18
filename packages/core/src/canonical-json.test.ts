@@ -23,6 +23,29 @@ describe('canonicalJson', () => {
     expect(canonicalJson([-0, 1e21, 0.1, 1e-7, 100])).toBe('[0,1e+21,0.1,1e-7,100]');
   });
 
+  it('refuses a lone surrogate in a string or a key', () => {
+    expect(() => canonicalJson('\uD800')).toThrow(RangeError);
+    expect(() => canonicalJson({ '\uDC00': 1 })).toThrow(RangeError);
+    expect(canonicalJson('\u{1F600}')).toBe('"\u{1F600}"');
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['a member that is undefined', { a: undefined }],
+    ['an element that is undefined', [undefined, 1]],
+    ['a Date', new Date(0)],
+    ['a Map', new Map()],
+    ['a function', () => 1],
+    ['a symbol', Symbol('x')],
+  ])('refuses %s, which is outside JSON', (_name, value) => {
+    // @ts-expect-error The point of the test: the type refuses these, and the function must too.
+    expect(() => canonicalJson(value)).toThrow(TypeError);
+  });
+
+  it('writes an object with no prototype', () => {
+    expect(canonicalJson(Object.assign(Object.create(null), { b: 1, a: 2 }))).toBe('{"a":2,"b":1}');
+  });
+
   it('refuses a number JSON cannot hold', () => {
     expect(() => canonicalJson([Number.NaN])).toThrow(RangeError);
     expect(() => canonicalJson({ a: Number.POSITIVE_INFINITY })).toThrow(RangeError);
