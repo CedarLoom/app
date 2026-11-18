@@ -1,0 +1,16 @@
+{
+  "name": "@cedarloom/core",
+  "private": true,
+  "type": "module",
+  "license": "ISC",
+  "engines": {
+    "node": ">=26"
+  },
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  }
+}
