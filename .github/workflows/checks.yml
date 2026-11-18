@@ -14,7 +14,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  # One group per pull request; every push to main and every scheduled run gets its own.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -25,24 +26,17 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-    env:
-      LC_ALL: C.UTF-8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Em dash and emoji in tracked text files; the lockfiles excluded.
-      - name: Forbidden characters
-        run: |
-          # git grep: 0 match, 1 no match, anything else an error (for example a pattern PCRE rejects).
-          rc=0
-          git grep -nIP '\x{2014}|[\x{1F000}-\x{1FAFF}\x{2300}-\x{23FF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}]|\x{FE0F}' -- . ':!pnpm-lock.yaml' ':!*package-lock.json' || rc=$?
-          if [ "$rc" -eq 0 ]; then echo "::error::em dash or emoji found"; exit 1; fi
-          if [ "$rc" -ne 1 ]; then echo "::error::git grep failed ($rc)"; exit 1; fi
-      # zizmor with its online audits; the version of tools/requirements.txt.
+      - name: zizmor version
+        id: zizmor
+        run: echo "version=$(sed -n 's/^zizmor==//p' tools/requirements.txt)" >> "$GITHUB_OUTPUT"
+      # zizmor with its online audits, at the version of tools/requirements.txt.
       - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
         with:
-          version: 1.32.0
+          version: ${{ steps.zizmor.outputs.version }}
           advanced-security: false
           inputs: .github
       - uses: ./.github/actions/setup
@@ -73,7 +67,7 @@ jobs:
 
   # Required check: passes when all parallel jobs pass.
   checks:
-    if: always() && github.repository_owner == 'CedarLoom'
+    if: ${{ !cancelled() && github.repository_owner == 'CedarLoom' }}
     needs: [repository, platforms]
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -18,6 +18,16 @@ tool() {
   uvx --constraints tools/requirements.txt "$@"
 }
 
+# Em dash and emoji in tracked text files, lockfiles excluded. git grep: 0 match, 1 no match, anything else an error.
+forbidden_characters() {
+  rc=0
+  LC_ALL=C.UTF-8 git grep -nIP '\x{2014}|[\x{1F000}-\x{1FAFF}\x{2300}-\x{23FF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}]|\x{FE0F}' \
+    -- . ':!pnpm-lock.yaml' ':!*package-lock.json' || rc=$?
+  if [ "$rc" -eq 0 ]; then echo "check: em dash or emoji found" >&2; return 1; fi
+  if [ "$rc" -ne 1 ]; then echo "check: git grep failed ($rc)" >&2; return 1; fi
+}
+
+step characters forbidden_characters
 step typecheck pnpm run typecheck
 step lint pnpm run lint
 step format pnpm run format:check

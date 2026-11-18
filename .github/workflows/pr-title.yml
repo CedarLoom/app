@@ -9,7 +9,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -36,6 +36,6 @@ jobs:
             chore
             revert
             style
-          # The title becomes the squash commit: no em dash or emoji (checks.yml, Forbidden characters).
+          # The title becomes the squash commit: no em dash or emoji, as scripts/check.sh checks for the files.
           subjectPattern: ^[^\u2014\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\uD83C-\uD83E]+$
           subjectPatternError: The title must not contain an em dash or an emoji.
