@@ -36,7 +36,7 @@ Node.js 26, pnpm 12 and uv. Install with `pnpm install --frozen-lockfile --ignor
 | `packages/ui`        | DOM                    | the web UI; it reaches the app's server over HTTP only                                                                         | `core`                          |
 | `packages/cli`       | Node                   | the `cedarloom` and `cloom` commands                                                                                           | `core`, `use-cases`             |
 
-Each package's `tsconfig.json` sets the `lib` and `types` of its layer, so `core` names no Node or DOM API and `ui` no Node API. The `no-restricted-imports` overrides in [.oxlintrc.json](.oxlintrc.json) refuse Node imports in `core` and `ui` and every workspace import the table does not allow, by package name or by relative path. `app` takes the UI as built files, never as an import.
+Each package's `tsconfig.json` sets the `lib` and `types` of its layer, so typecheck refuses Node APIs in `core` and `ui` and DOM APIs in `core`. [packages/core/src/url.d.ts](packages/core/src/url.d.ts) declares the `URL` type that zod's declarations name, as a type only. Oxlint ([.oxlintrc.json](.oxlintrc.json)) refuses `node:` imports in `core` and `ui` (bare built-in names through `unicorn/prefer-node-protocol`), every workspace import the table does not allow, by package name or by relative path, and every triple-slash reference. `app` takes the UI as built files, never as an import.
 
 ## Tests
 
