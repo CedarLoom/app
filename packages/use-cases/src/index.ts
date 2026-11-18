@@ -1,4 +1,4 @@
-export { type StateDirInputs, stateDir } from './state-dir.ts';
+export { type StateDirInputs, type StoreDirInputs, stateDir, storeDir } from './state-dir.ts';
 export {
   type NewRun,
   type Opened,

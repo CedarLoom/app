@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { posix, win32 } from 'node:path';
 
 export interface StateDirInputs {
@@ -19,4 +20,16 @@ export const stateDir = ({ env, platform, home, cwd }: StateDirInputs): string =
   // LOCALAPPDATA follows a relocated local application data folder; the home path is its default place.
   const local = env['LOCALAPPDATA'];
   return path.join(local && path.isAbsolute(local) ? local : path.join(home, 'AppData', 'Local'), 'cedarloom');
+};
+
+export interface StoreDirInputs extends StateDirInputs {
+  projectRoot: string;
+  realpath: (path: string) => string;
+}
+
+/** A project's store folder: in the state folder, named by the first 16 hex digits of the SHA-256 of the project root's real path, so one project's lock never blocks another. */
+export const storeDir = (inputs: StoreDirInputs): string => {
+  const path = inputs.platform === 'win32' ? win32 : posix;
+  const root = inputs.realpath(path.resolve(inputs.cwd, inputs.projectRoot));
+  return path.join(stateDir(inputs), createHash('sha256').update(root).digest('hex').slice(0, 16));
 };

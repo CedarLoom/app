@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { accessSync, closeSync, constants, existsSync, mkdirSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { type Refusal, Run, RunSummary } from '@cedarloom/core';
@@ -38,7 +38,8 @@ PRAGMA user_version = ${VERSION};
 `;
 
 const SUMMARY_COLUMNS = `r.id, r.kind, r.action, r.subject, r.status, r.startedAt, r.endedAt, r.undoes,
-  (SELECT u.id FROM runs u WHERE u.undoes = r.id AND u.status = 'done') AS undoneBy`;
+  (SELECT u.id FROM runs u WHERE u.undoes = r.id AND u.status = 'done' ORDER BY u.startedAt DESC, u.rowid DESC LIMIT 1)
+    AS undoneBy`;
 
 /** What a use case gets from the store: the value, or the refusal that stops it. */
 export type Opened<T> = { ok: true; value: T } | { ok: false; refusal: Refusal };
@@ -61,17 +62,43 @@ const lockPath = (dir: string): string => join(dir, 'lock.sqlite');
 
 // SQLite's primary result codes, without the extended bits.
 const BUSY = 5;
-const UNREADABLE = new Set([11, 14, 26]); // SQLITE_CORRUPT, SQLITE_CANTOPEN, SQLITE_NOTADB
+const UNREADABLE = new Set([8, 11, 14, 26]); // SQLITE_READONLY, SQLITE_CORRUPT, SQLITE_CANTOPEN, SQLITE_NOTADB
+// Node's codes for a store file or folder this user may not create or write, such as one a sudo run left to root.
+const DENIED = new Set(['EACCES', 'EPERM', 'EROFS']);
 
 const resultCode = (error: unknown): number | undefined =>
   error instanceof Error && 'errcode' in error && typeof error.errcode === 'number' ? error.errcode & 0xff : undefined;
 
-// The refusal for a SQLite error about the store's own files; any other error propagates.
-const refusalFor = (error: unknown, dir: string, file: string): Refusal => {
-  const code = resultCode(error);
-  if (code === BUSY) return { code: 'store.locked', params: { path: runsPath(dir) } };
-  if (code !== undefined && UNREADABLE.has(code)) return { code: 'store.unreadable', params: { path: file } };
+const nodeCode = (error: unknown): unknown => (error instanceof Error && 'code' in error ? error.code : undefined);
+
+// store.unreadable for an error about a store file or folder this process cannot use; any other error propagates.
+const unreadable = (error: unknown, file: string): Refusal => {
+  const sqlite = resultCode(error);
+  const node = nodeCode(error);
+  if ((sqlite !== undefined && UNREADABLE.has(sqlite)) || (typeof node === 'string' && DENIED.has(node))) {
+    return { code: 'store.unreadable', params: { path: file } };
+  }
   throw error;
+};
+
+// For a change, a busy store is held by another process.
+const refusalFor = (error: unknown, dir: string, file: string): Refusal =>
+  resultCode(error) === BUSY ? { code: 'store.locked', params: { path: runsPath(dir) } } : unreadable(error, file);
+
+// A read takes no store lock, so it never refuses with store.locked: a file still busy after the wait is unreadable.
+const readRefusal = (error: unknown, file: string): Refusal =>
+  resultCode(error) === BUSY ? { code: 'store.unreadable', params: { path: file } } : unreadable(error, file);
+
+// SQLite creates a file 0644 and gives its -wal, -shm and -journal files the database file's mode, so the file is
+// created 0600 first. SQLite opens an existing read-only file read-only, and a read-only lock.sqlite excludes nobody.
+const writable = (path: string): void => {
+  try {
+    closeSync(openSync(path, 'wx', 0o600));
+  } catch (error) {
+    // An existing file is not opened here: closing it would drop this process's SQLite locks on it.
+    if (nodeCode(error) !== 'EEXIST') throw error;
+    accessSync(path, constants.W_OK);
+  }
 };
 
 const pragma = (db: DatabaseSync, name: string): SQLOutputValue | undefined =>
@@ -96,12 +123,16 @@ const transaction = <T>(db: DatabaseSync, work: () => T): T => {
 };
 
 // Read back, since SQLite keeps another journal mode without an error where the filesystem cannot share memory.
+// fullfsync flushes the drive's cache on macOS, where fsync does not; elsewhere it changes nothing.
 const durable = (db: DatabaseSync): void => {
-  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA foreign_keys = ON');
+  db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA foreign_keys = ON');
   const journal = pragma(db, 'journal_mode');
   const synchronous = pragma(db, 'synchronous');
-  if (journal !== 'wal' || synchronous !== 2) {
-    throw new Error(`the store runs with journal_mode ${String(journal)} and synchronous ${String(synchronous)}`);
+  const fullfsync = pragma(db, 'fullfsync');
+  if (journal !== 'wal' || synchronous !== 2 || fullfsync !== 1) {
+    throw new Error(
+      `the store runs with journal_mode ${String(journal)}, synchronous ${String(synchronous)} and fullfsync ${String(fullfsync)}`,
+    );
   }
 };
 
@@ -132,15 +163,17 @@ export class RunStore {
   readonly #db: DatabaseSync;
   readonly #lock: DatabaseSync;
   readonly #clock: StoreClock;
+  readonly #dir: string;
 
-  constructor(db: DatabaseSync, lock: DatabaseSync, clock: StoreClock) {
+  constructor(db: DatabaseSync, lock: DatabaseSync, clock: StoreClock, dir: string) {
     this.#db = db;
     this.#lock = lock;
     this.#clock = clock;
+    this.#dir = dir;
   }
 
-  /** Records a run as running, with every operation pending, in one transaction; returns the new run's id. */
-  begin(run: NewRun): string {
+  /** Records a run as running, with every operation pending, in one transaction; gives the new run's id. */
+  begin(run: NewRun): Opened<string> {
     // Checked before it is written: one row the view cannot parse would make the whole history unreadable.
     const { id, startedAt } = Run.parse({
       ...run,
@@ -151,6 +184,15 @@ export class RunStore {
       undoneBy: null,
       operations: run.operations.map((operation) => Object.assign({ status: 'pending' }, operation)),
     });
+    try {
+      this.#insert(id, startedAt, run);
+    } catch (error) {
+      return { ok: false, refusal: refusalFor(error, this.#dir, runsPath(this.#dir)) };
+    }
+    return { ok: true, value: id };
+  }
+
+  #insert(id: string, startedAt: string, run: NewRun): void {
     transaction(this.#db, () => {
       this.#db
         .prepare(
@@ -180,7 +222,6 @@ export class RunStore {
         );
       }
     });
-    return id;
   }
 
   /** Releases the store. */
@@ -197,6 +238,7 @@ export class RunStore {
 const takeLock = (dir: string): Opened<DatabaseSync> => {
   let lock: DatabaseSync | undefined;
   try {
+    writable(lockPath(dir));
     lock = new DatabaseSync(lockPath(dir), { timeout: WAIT_MS });
     lock.exec('BEGIN EXCLUSIVE');
     return { ok: true, value: lock };
@@ -206,16 +248,24 @@ const takeLock = (dir: string): Opened<DatabaseSync> => {
   }
 };
 
-/** Opens the run store in `dir`, a new folder private; refuses with store.locked after a second's wait for another process. */
+/**
+ * Opens the run store in `dir`, the project's store folder (storeDir), a new folder private; refuses with store.locked
+ * after a second's wait for another process.
+ */
 export const openStore = (dir: string, clock: StoreClock): Opened<RunStore> => {
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    return { ok: false, refusal: unreadable(error, dir) };
+  }
   const taken = takeLock(dir);
   if (!taken.ok) return taken;
   const lock = taken.value;
   try {
+    writable(runsPath(dir));
     const db = connectWriter(runsPath(dir));
     if (!db.ok) lock.close();
-    return db.ok ? { ok: true, value: new RunStore(db.value, lock, clock) } : db;
+    return db.ok ? { ok: true, value: new RunStore(db.value, lock, clock, dir) } : db;
   } catch (error) {
     lock.close();
     return { ok: false, refusal: refusalFor(error, dir, runsPath(dir)) };
@@ -230,7 +280,19 @@ const snapshot = <T>(db: DatabaseSync, read: () => T): T => {
   try {
     return read();
   } finally {
-    db.exec('COMMIT');
+    // SQLite ends the transaction by itself on some errors; a COMMIT then would hide the cause.
+    if (db.isTransaction) db.exec('COMMIT');
+  }
+};
+
+// Whether another connection holds the store lock; otherwise the read transaction it starts stays open until close.
+const heldElsewhere = (lock: DatabaseSync): boolean => {
+  try {
+    lock.exec('BEGIN; SELECT count(*) FROM sqlite_master');
+    return false;
+  } catch (error) {
+    if (resultCode(error) !== BUSY) throw error;
+    return true;
   }
 };
 
@@ -240,17 +302,17 @@ const parsedJson = (value: SQLOutputValue | undefined): unknown =>
 /** Read access to the run store that cannot write; it shares the store lock only during a read, so it works while a change runs. */
 export class RunView {
   readonly #db: DatabaseSync | null;
-  readonly #lock: string;
+  readonly #dir: string;
 
-  constructor(db: DatabaseSync | null, lock: string) {
+  constructor(db: DatabaseSync | null, dir: string) {
     this.#db = db;
-    this.#lock = lock;
+    this.#dir = dir;
   }
 
   /** The runs, newest first; a run still marked running while no process holds the store was interrupted. */
-  runs(): RunSummary[] {
+  runs(): Opened<RunSummary[]> {
     const db = this.#db;
-    if (db === null) return [];
+    if (db === null) return { ok: true, value: [] };
     return this.#probe(db, (held) =>
       db
         .prepare(`SELECT ${SUMMARY_COLUMNS} FROM runs r ORDER BY r.startedAt DESC, r.rowid DESC`)
@@ -260,9 +322,9 @@ export class RunView {
   }
 
   /** The run with this id and its operations, or undefined when the store has none. */
-  run(id: string): Run | undefined {
+  run(id: string): Opened<Run | undefined> {
     const db = this.#db;
-    if (db === null) return undefined;
+    if (db === null) return { ok: true, value: undefined };
     return this.#probe(db, (held) => {
       const row = db
         .prepare(`SELECT ${SUMMARY_COLUMNS}, r.planHash, r.generatedFrom FROM runs r WHERE r.id = ?`)
@@ -287,39 +349,39 @@ export class RunView {
   }
 
   // Runs `read` with whether a process holds the store; the shared lock meanwhile keeps a change from starting in between.
-  #probe<T>(db: DatabaseSync, read: (held: boolean) => T): T {
-    const lock = existsSync(this.#lock) ? new DatabaseSync(this.#lock, { readOnly: true }) : null;
+  #probe<T>(db: DatabaseSync, read: (held: boolean) => T): Opened<T> {
+    let file = lockPath(this.#dir);
+    let lock: DatabaseSync | undefined;
     try {
-      let held = false;
-      try {
-        lock?.exec('BEGIN; SELECT count(*) FROM sqlite_master');
-      } catch (error) {
-        if (resultCode(error) !== BUSY) throw error;
-        held = true;
-      }
-      return snapshot(db, () => read(held));
+      lock = existsSync(file) ? new DatabaseSync(file, { readOnly: true }) : undefined;
+      const held = lock !== undefined && heldElsewhere(lock);
+      file = runsPath(this.#dir);
+      return { ok: true, value: snapshot(db, () => read(held)) };
+    } catch (error) {
+      return { ok: false, refusal: readRefusal(error, file) };
     } finally {
       lock?.close();
     }
   }
 }
 
-/** Opens the run store in `dir` for reading; a store missing at open reads as no runs for the view's life, and nothing is created. */
+/**
+ * Opens the run store in `dir`, the project's store folder (storeDir), for reading; a store missing at open reads as
+ * no runs for the view's life, and nothing is created.
+ */
 export const openRunView = (dir: string): Opened<RunView> => {
   const path = runsPath(dir);
-  if (!existsSync(path)) return { ok: true, value: new RunView(null, lockPath(dir)) };
+  if (!existsSync(path)) return { ok: true, value: new RunView(null, dir) };
   let db: DatabaseSync | undefined;
   try {
     db = connectReader(path);
     const found = pragma(db, 'user_version');
-    if (found === VERSION) return { ok: true, value: new RunView(db, lockPath(dir)) };
+    if (found === VERSION) return { ok: true, value: new RunView(db, dir) };
     db.close();
     // Version 0: a writer created the file and has not committed the schema yet, so no run was recorded.
-    return found === 0
-      ? { ok: true, value: new RunView(null, lockPath(dir)) }
-      : { ok: false, refusal: versionRefusal(found) };
+    return found === 0 ? { ok: true, value: new RunView(null, dir) } : { ok: false, refusal: versionRefusal(found) };
   } catch (error) {
     db?.close();
-    return { ok: false, refusal: refusalFor(error, dir, path) };
+    return { ok: false, refusal: readRefusal(error, path) };
   }
 };

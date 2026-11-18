@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { stateDir } from './state-dir.ts';
+import { stateDir, storeDir } from './state-dir.ts';
 
 const posixHome = { platform: 'linux', home: '/home/me', cwd: '/work' } as const;
+const realpath = (path: string): string => path.replace('/work/link', '/work/repo');
 
 describe('stateDir', () => {
   it.each([
@@ -29,6 +30,12 @@ describe('stateDir', () => {
   it('defaults to LOCALAPPDATA on Windows', () => {
     const env = { LOCALAPPDATA: 'D:\\Local' };
     expect(stateDir({ env, platform: 'win32', home: 'C:\\Users\\me', cwd: 'C:\\' })).toBe('D:\\Local\\cedarloom');
+  });
+
+  it('gives each project its own store folder, named by the hash of its real path', () => {
+    expect(storeDir({ env: {}, ...posixHome, projectRoot: 'link', realpath })).toBe(
+      '/home/me/.local/state/cedarloom/ddc5e473a09bd156',
+    );
   });
 
   it('reads Windows paths on Windows', () => {
