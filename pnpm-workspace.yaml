@@ -1,0 +1,25 @@
+packages:
+  - packages/*
+
+# One version per dependency across the workspace; packages refer to it as "catalog:".
+catalog:
+  "@biomejs/biome": 2.6.7
+  "@types/node": 26.6.6
+  jscpd: 5.4.3
+  knip: 6.45.1
+  oxlint: 1.93.0
+  oxlint-tsgolint: 7.0.2007
+  typescript: 7.0.2
+  vitest: 5.1.0
+  zod: 4.6.7
+
+catalogMode: strict
+strictPeerDependencies: true
+savePrefix: ""
+# Dependency cooldown of 3 days: pnpm resolves no version younger than this, transitive ones included.
+minimumReleaseAge: 4320
+
+# picomatch ReDoS with no patched version: reached only by dev tools (knip, vitest), never by the app. Remove when a patched picomatch ships.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-fc5q-39xc-vjpf

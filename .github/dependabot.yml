@@ -1,0 +1,31 @@
+# The 3-day cooldown lets a broken or malicious release be pulled before it is proposed.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 3 }
+    commit-message: { prefix: chore, include: scope }
+    groups:
+      actions: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 3 }
+    commit-message: { prefix: chore, include: scope }
+    groups:
+      npm: { update-types: [minor, patch] }
+  # The pnpm that CI installs.
+  - package-ecosystem: npm
+    directory: /.github/pnpm
+    schedule: { interval: weekly }
+    cooldown: { default-days: 3 }
+    commit-message: { prefix: chore, include: scope }
+  # The gate tools that scripts/check.sh runs through uvx, and uv for CI.
+  - package-ecosystem: pip
+    directory: /tools
+    schedule: { interval: weekly }
+    cooldown: { default-days: 3 }
+    commit-message: { prefix: chore, include: scope }
+    groups:
+      tools: { update-types: [minor, patch] }
