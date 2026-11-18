@@ -27,7 +27,19 @@ forbidden_characters() {
   if [ "$rc" -ne 1 ]; then echo "check: git grep failed ($rc)" >&2; return 1; fi
 }
 
+# The compiled catalog and its generated types match en.po; the compile refuses a message id without a text.
+messages_fresh() {
+  generated="packages/core/src/messages/en.json packages/core/src/messages/catalog.ts"
+  before=$(cat $generated | cksum)
+  pnpm --filter @cedarloom/core run messages
+  if [ "$(cat $generated | cksum)" != "$before" ]; then
+    echo "check: core messages were stale; run pnpm --filter @cedarloom/core run messages and commit the result" >&2
+    return 1
+  fi
+}
+
 step characters forbidden_characters
+step messages messages_fresh
 step typecheck pnpm run typecheck
 step lint pnpm run lint
 step format pnpm run format:check

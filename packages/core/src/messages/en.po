@@ -1,0 +1,28 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=utf-8\n"
+"Language: en\n"
+
+#. js-lingui-explicit-id
+msgid "plan.file-changed"
+msgstr "{path} changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
+
+#. js-lingui-explicit-id
+msgid "plan.path-outside-roots"
+msgstr "{path} is outside the folders CedarLoom writes to (.claude/ and .cedarloom/workflows/)."
+
+#. js-lingui-explicit-id
+msgid "plan.symlink"
+msgstr "{path} is a symbolic link. CedarLoom does not write through links."
+
+#. js-lingui-explicit-id
+msgid "plan.not-text"
+msgstr "{path} is not a UTF-8 text file. CedarLoom writes only text files."
+
+#. js-lingui-explicit-id
+msgid "apply.backup-failed"
+msgstr "The backup of {path} failed, so run {run} stopped and the file was not changed."
+
+#. js-lingui-explicit-id
+msgid "apply.write-mismatch"
+msgstr "{path} does not match the plan after the write. Run {run} stopped; run cedarloom runs show {run} to see which steps were written."
