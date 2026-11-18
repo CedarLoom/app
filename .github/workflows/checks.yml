@@ -32,7 +32,10 @@ jobs:
           persist-credentials: false
       - name: zizmor version
         id: zizmor
-        run: echo "version=$(sed -n 's/^zizmor==//p' tools/requirements.txt)" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(sed -n 's/^zizmor==//p' tools/requirements.txt)
+          if [ -z "$version" ]; then echo "::error::no zizmor version in tools/requirements.txt"; exit 1; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       # zizmor with its online audits, at the version of tools/requirements.txt.
       - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
         with:
@@ -67,7 +70,7 @@ jobs:
 
   # Required check: passes when all parallel jobs pass.
   checks:
-    if: ${{ !cancelled() && github.repository_owner == 'CedarLoom' }}
+    if: always() && github.repository_owner == 'CedarLoom'
     needs: [repository, platforms]
     runs-on: ubuntu-latest
     timeout-minutes: 5
