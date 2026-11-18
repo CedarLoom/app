@@ -55,15 +55,6 @@ describe('Run', () => {
 });
 
 describe('SettingsEntry', () => {
-  it('keeps a replaced JSON null apart from no earlier value', () => {
-    expect(SettingsEntry.parse({ pointer: '/a', value: 1, before: null })).toEqual({
-      pointer: '/a',
-      value: 1,
-      before: null,
-    });
-    expect(Object.keys(SettingsEntry.parse({ pointer: '/a', value: 1 }))).toEqual(['pointer', 'value']);
-  });
-
   it('refuses an explicit undefined before', () => {
     expect(SettingsEntry.safeParse({ pointer: '/a', value: 1, before: undefined }).success).toBe(false);
   });

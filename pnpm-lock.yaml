@@ -119,6 +119,10 @@ importers:
         version: 7.0.2
 
   packages/use-cases:
+    dependencies:
+      '@cedarloom/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

@@ -4,6 +4,18 @@ msgstr ""
 "Language: en\n"
 
 #. js-lingui-explicit-id
+msgid "store.version-unsupported"
+msgstr "The CedarLoom state store has version {found}, and this version of CedarLoom reads only version {supported}."
+
+#. js-lingui-explicit-id
+msgid "store.locked"
+msgstr "The CedarLoom state store {path} is in use by another CedarLoom process, for example a running cedarloom-app. Stop it, or make the change from the UI."
+
+#. js-lingui-explicit-id
+msgid "store.unreadable"
+msgstr "The CedarLoom state store {path} cannot be read. Nothing was changed."
+
+#. js-lingui-explicit-id
 msgid "plan.file-changed"
 msgstr "{path} changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
 

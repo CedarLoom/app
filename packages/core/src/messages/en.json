@@ -24,6 +24,19 @@
       ["path"],
       " is outside the folders CedarLoom writes to (.claude/ and .cedarloom/workflows/)."
     ],
-    "plan.symlink": [["path"], " is a symbolic link. CedarLoom does not write through links."]
+    "plan.symlink": [["path"], " is a symbolic link. CedarLoom does not write through links."],
+    "store.locked": [
+      "The CedarLoom state store ",
+      ["path"],
+      " is in use by another CedarLoom process, for example a running cedarloom-app. Stop it, or make the change from the UI."
+    ],
+    "store.unreadable": ["The CedarLoom state store ", ["path"], " cannot be read. Nothing was changed."],
+    "store.version-unsupported": [
+      "The CedarLoom state store has version ",
+      ["found"],
+      ", and this version of CedarLoom reads only version ",
+      ["supported"],
+      "."
+    ]
   }
 }
