@@ -1,0 +1,2 @@
+# Schemathesis for the API gate in CI, compiled with hashes into schemathesis-requirements.txt by the command in its header.
+schemathesis==4.33.4

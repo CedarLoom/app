@@ -40,8 +40,20 @@ messages_fresh() {
   done
 }
 
+# The committed OpenAPI document matches the server's routes.
+openapi_fresh() {
+  document=packages/app/openapi.json
+  before=$(cksum < $document)
+  pnpm --filter @cedarloom/app run openapi
+  if [ "$(cksum < $document)" != "$before" ]; then
+    echo "check: $document was stale; run pnpm --filter @cedarloom/app run openapi and commit the result" >&2
+    return 1
+  fi
+}
+
 step characters forbidden_characters
 step messages messages_fresh
+step openapi openapi_fresh
 step typecheck pnpm run typecheck
 step lint pnpm run lint
 step format pnpm run format:check

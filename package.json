@@ -19,7 +19,8 @@
   },
   "knip": {
     "ignoreBinaries": [
-      "icacls"
+      "icacls",
+      "schemathesis"
     ]
   },
   "devDependencies": {

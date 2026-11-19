@@ -41,6 +41,7 @@
       ["path"],
       " is outside the folders CedarLoom writes to (.claude/ and .cedarloom/workflows/)."
     ],
+    "plan.stale": ["The plan changed since it was shown. Review the new plan before you apply it."],
     "plan.symlink": [["path"], " is a symbolic link. CedarLoom does not write through links."],
     "plan.text-mismatch": [
       "The new text of ",

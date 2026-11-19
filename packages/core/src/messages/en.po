@@ -20,6 +20,10 @@ msgid "plan.file-changed"
 msgstr "{path} changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
 
 #. js-lingui-explicit-id
+msgid "plan.stale"
+msgstr "The plan changed since it was shown. Review the new plan before you apply it."
+
+#. js-lingui-explicit-id
 msgid "plan.path-outside-roots"
 msgstr "{path} is outside the folders CedarLoom writes to (.claude/ and .cedarloom/workflows/)."
 

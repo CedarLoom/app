@@ -1,6 +1,14 @@
 import { isUtf8 } from 'node:buffer';
 import { join } from 'node:path';
-import { type Finding, PlanOperation, type PlanPreview, planHash, type Refusal, type Run } from '@cedarloom/core';
+import {
+  type Finding,
+  type Hash,
+  PlanOperation,
+  type PlanPreview,
+  planHash,
+  type Refusal,
+  type Run,
+} from '@cedarloom/core';
 import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
 import { entryAt, readFound, sha256 } from './project-files.ts';
 import { type Operation, recover } from './recover.ts';
@@ -11,6 +19,8 @@ export interface UndoRequest {
   root: string;
   /** The id of the run to undo, as the caller gave it. */
   run: string;
+  /** The hash of the undo plan the caller showed; undo refuses with plan.stale when the plan it makes now differs. */
+  planHash?: Hash;
 }
 
 /** The undo plan, or the refusal that stops it; findings: apply.recovered for what recovery settled first. */
@@ -203,6 +213,9 @@ export const undo = (store: RunStore, request: UndoRequest, at?: At): Undone => 
     generatedFrom: [],
   };
   const { plan, findings } = planned;
+  if (request.planHash !== undefined && request.planHash !== plan.planHash) {
+    return { run: null, refusal: { code: 'plan.stale', params: {} }, findings, plan: null };
+  }
   if (plan.operations.length === 0) {
     return { ...recordDone(store, { ...run, planHash: plan.planHash }), findings, plan };
   }

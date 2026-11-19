@@ -1,7 +1,7 @@
 import { parseArgs } from 'node:util';
 import { type Code, type CompiledMessage, messageText, type Params, type Refusal } from '@cedarloom/core';
 import core from '@cedarloom/core/messages/en.json' with { type: 'json' };
-import { projectRoot } from '@cedarloom/use-cases';
+import { projectRoot, type StoreClock } from '@cedarloom/use-cases';
 import { type Redirect, writeRedirect } from './redirect.ts';
 import { buildServer } from './server.ts';
 import { portOf, Session, type SessionSource } from './session.ts';
@@ -12,6 +12,12 @@ export interface AppIo extends SessionSource {
   cwd: string;
   /** The user's own state folder, which holds the redirect page's folder. */
   stateDir: string;
+  /** The store folder of a project root. */
+  storeDir: (root: string) => string;
+  clock: StoreClock;
+  /** The running Node.js version and the package's engines.node range. */
+  node: string;
+  required: string;
   /** Opens a file in its default program: the redirect page in the browser. */
   open: (path: string) => void;
   platform: NodeJS.Platform;
@@ -107,7 +113,8 @@ export const start = async (io: AppIo): Promise<Started> => {
   };
   const options = parse(io.argv);
   if ('refusal' in options) return stop(options.refusal, 2);
-  if (projectRoot(io.cwd) === undefined) return stop({ code: 'project.not-found', params: { cwd: io.cwd } }, 3);
+  const root = projectRoot(io.cwd);
+  if (root === undefined) return stop({ code: 'project.not-found', params: { cwd: io.cwd } }, 3);
   let redirect: Redirect | undefined;
   // A page left behind holds a token that is spent or ends with the server, so a failed removal is only reported.
   const removePage = (): void => {
@@ -118,7 +125,8 @@ export const start = async (io: AppIo): Promise<Started> => {
     }
   };
   const session = new Session(io, removePage);
-  const app = await buildServer({ session, log: io.stderr });
+  const project = { root, storeDir: io.storeDir(root), clock: io.clock, node: io.node, required: io.required };
+  const app = await buildServer({ session, log: io.stderr, project });
   try {
     await app.listen({ host: '127.0.0.1', port: options.port });
   } catch (error) {

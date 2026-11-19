@@ -1,15 +1,10 @@
-import type { Finding } from '@cedarloom/core';
+import type { DoctorReport, Finding } from '@cedarloom/core';
 
 export interface DoctorRequest {
   /** The running Node.js version, as process.versions.node gives it. */
   node: string;
   /** The supported range, as the package's engines.node gives it: ">=" and a major version. */
   required: string;
-}
-
-export interface DoctorReport {
-  checks: { id: 'node'; status: 'pass' | 'fail' }[];
-  plugin: null;
 }
 
 /** Checks this installation; the findings carry the details of each failed check. */
