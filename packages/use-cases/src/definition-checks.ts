@@ -6,6 +6,7 @@ import { type GeneratorRun, generate, unknownOutput } from './generator-run.ts';
 import { isUnreachable, reached } from './plugin-folder.ts';
 import { errorCode, readFound } from './project-files.ts';
 import { stalePaths } from './stale-paths.ts';
+import { linkOnWay } from './write-roots.ts';
 
 /** The checks of the project's definitions: the definitions check's findings, and those of the generated files. */
 export interface DefinitionFindings {
@@ -49,6 +50,8 @@ const read = (project: string, file: string): Definition | Finding | undefined =
 
 // The definition files, as `.cedarloom/workflows/*.json` lists them: no dotfiles, such as an editor's lock link.
 const listed = (project: string): string[] | Finding => {
+  // A folder reached through a link may lie outside the project, as a definition file that is a link may.
+  if (reached(() => linkOnWay(project, FOLDER) ?? null) !== null) return notJson(FOLDER);
   try {
     const files = readdirSync(join(project, FOLDER)).filter((file) => file.endsWith('.json') && !file.startsWith('.'));
     return files.toSorted();

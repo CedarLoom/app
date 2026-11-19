@@ -191,6 +191,15 @@ describe('reports each definition it cannot use with its finding', () => {
     ]);
   });
 
+  it.skipIf(isWindows)('definition.not-json for a definitions folder reached through a link', () => {
+    const { project, check } = setup();
+    const elsewhere = folder();
+    rmSync(join(project, '.cedarloom'), { recursive: true });
+    write(join(elsewhere, 'workflows', 'dev.json'), '{"name": "dev"}');
+    symlinkSync(elsewhere, join(project, '.cedarloom'));
+    expect(check()).toEqual(notJson('.cedarloom/workflows'));
+  });
+
   it.skipIf(isWindows)('definition.not-json for a FIFO, without waiting on it', () => {
     const { project, check } = setup();
     execFileSync('mkfifo', [join(project, '.cedarloom', 'workflows', 'pipe.json')]);
