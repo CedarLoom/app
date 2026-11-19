@@ -251,6 +251,13 @@ describe('reports a generator it cannot use with its finding', () => {
     ]);
   });
 
+  it('generator.output-unknown for an exit code of 1 with no refusal', () => {
+    const { check } = setup("console.log('[]');\nprocess.exit(1);\n");
+    expect(check().definitions).toEqual([
+      { code: 'generator.output-unknown', severity: 'error', params: { output: '[]\n' } },
+    ]);
+  });
+
   it('generator.output-unknown for a file whose header names no definition', () => {
     const { check } = setup(`import { mkdirSync, writeFileSync } from 'node:fs';
 const out = process.argv.at(-1);
