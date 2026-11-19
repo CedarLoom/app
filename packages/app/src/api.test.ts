@@ -109,6 +109,12 @@ describe('reads', () => {
     const { app } = await served();
     expect(answer(await get(app, url))).toEqual([400, { code: 'api.bad-request', params: { issues: ['id'] } }]);
   });
+
+  it.each(['', '/undo'])('refuses GET /api/runs/{id}%s with an id over the router limit with 400', async (rest) => {
+    const { app } = await served();
+    const reply = await get(app, `/api/runs/${'a'.repeat(101)}${rest}`);
+    expect(answer(reply)).toEqual([400, { code: 'api.bad-request', params: { issues: [] } }]);
+  });
 });
 
 describe('undo preview', () => {
