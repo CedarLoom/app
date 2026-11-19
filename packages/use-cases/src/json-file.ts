@@ -3,6 +3,11 @@ import type { Finding } from '@cedarloom/core';
 import type { z } from 'zod';
 import { errorCode } from './project-files.ts';
 
+// ENOTDIR: a folder on the way is a file; ENAMETOOLONG: a name too long to exist.
+const ABSENT = new Set<unknown>(['ENOENT', 'ENOTDIR', 'ENAMETOOLONG']);
+// A folder, a link loop, or a file or folder the app may not read.
+const UNREADABLE = new Set<unknown>(['EISDIR', 'ELOOP', 'EACCES', 'EPERM']);
+
 /** A JSON file read with its schema: no value when the file does not exist, the given finding when it cannot be read or its text or shape is unknown. */
 export const jsonFile = <T>(
   path: string,
@@ -14,10 +19,8 @@ export const jsonFile = <T>(
     text = readFileSync(path, 'utf8');
   } catch (error) {
     const code = errorCode(error);
-    // ENOTDIR: a folder on the way is a file.
-    if (code === 'ENOENT' || code === 'ENOTDIR') return { value: undefined };
-    // A folder, a link loop, or a file or folder the app may not read.
-    if (code === 'EISDIR' || code === 'ELOOP' || code === 'EACCES' || code === 'EPERM') return { finding: unknown };
+    if (ABSENT.has(code)) return { value: undefined };
+    if (UNREADABLE.has(code)) return { finding: unknown };
     throw error;
   }
   let json: unknown;

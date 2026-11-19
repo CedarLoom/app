@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { DoctorReport, Finding } from '@cedarloom/core';
 import { z } from 'zod';
 import { jsonFile } from './json-file.ts';
-import { isContained, realOf, statOf, tooOldFinding } from './plugin-folder.ts';
+import { isContained, reached, realOf, statOf, tooOldFinding } from './plugin-folder.ts';
 import { MARKETPLACE, originFinding } from './plugin-origin.ts';
 import { projectRoot } from './project-root.ts';
 
@@ -48,10 +48,10 @@ const found = (plugin: Plugin): Finding => ({ code: 'plugin.found', severity: 'i
 const failed = (finding: Finding): Located => ({ plugin: null, findings: [finding] });
 const untrusted = (id: string): Located => failed({ code: 'plugin.untrusted', severity: 'error', params: { id } });
 
-// Claude Code applies a project's record when it names a folder of the same Git working tree; outside one, none applies.
+// Claude Code applies a project's record when it names a folder of the same Git working tree; outside one, none applies, nor one whose folder the app cannot reach.
 const isForProject = (projectPath: string, project: string | undefined): boolean => {
   const real = realOf(projectPath);
-  const root = real === undefined ? undefined : projectRoot(real);
+  const root = real === undefined ? undefined : reached(() => projectRoot(real));
   return project !== undefined && root !== undefined && realOf(root) === realOf(project);
 };
 

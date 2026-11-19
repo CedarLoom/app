@@ -3,9 +3,10 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import type { Finding } from '@cedarloom/core';
 import { errorCode } from './project-files.ts';
 
-// What the app cannot reach counts as absent: a missing path, a link loop, a folder it may not read.
-const UNREACHABLE = new Set<unknown>(['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES', 'EPERM']);
-const reached = <T>(read: () => T): T | undefined => {
+// What the app cannot reach counts as absent: a missing path, a link loop, a folder it may not read, a name too long to exist.
+const UNREACHABLE = new Set<unknown>(['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES', 'EPERM', 'ENAMETOOLONG']);
+/** What read returns; undefined when the app cannot reach the path it reads. */
+export const reached = <T>(read: () => T): T | undefined => {
   try {
     return read();
   } catch (error) {

@@ -334,6 +334,81 @@ it.skipIf(modeless)('refuses a version folder with a subfolder it cannot read', 
   expect(pluginFindings(run())).toEqual(UNTRUSTED);
 });
 
+// A name longer than a file system holds.
+const LONG = 'x'.repeat(300);
+
+// Beside the user record of cl-workflow@cedarloom, a record of id that must not apply.
+const ignored = (id: string, other: (plugins: string) => Record<string, unknown>): void => {
+  const { plugins, version, installed, run } = setup();
+  const user = record('user', version('cedarloom', '0.1.0'));
+  const own = id === 'cl-workflow@cedarloom';
+  installed(own ? { [id]: [other(plugins), user] } : { [id]: [other(plugins)], 'cl-workflow@cedarloom': [user] });
+  expect(run().report.plugin).toMatchObject({ version: '0.1.0', scope: 'user' });
+};
+
+// The cache folder exists, so the system meets the long name and not a missing folder first.
+const longInstall = (plugins: string, marketplace: string): string => {
+  const cache = join(plugins, 'cache', marketplace, 'cl-workflow');
+  mkdirSync(cache, { recursive: true });
+  return join(cache, LONG);
+};
+
+it('ignores an install path too long to exist in another marketplace', () =>
+  ignored('cl-workflow@other', (plugins) => record('user', longInstall(plugins, 'other'))));
+
+it('ignores a local record with a project path too long to exist', () =>
+  ignored('cl-workflow@cedarloom', (plugins) => {
+    const root = join(plugins, 'cache', 'cedarloom', 'cl-workflow', '0.2.0');
+    current(root);
+    return record('local', root, { projectPath: join(folder(), LONG) });
+  }));
+
+it.skipIf(modeless).each(['cl-workflow@cedarloom', 'cl-workflow@other'])(
+  'ignores a %s record of a project folder it cannot read',
+  (id) =>
+    ignored(id, (plugins) => {
+      const locked = join(folder(), 'other');
+      mkdirSync(join(locked, '.git'), { recursive: true });
+      chmodSync(locked, 0);
+      onTestFinished(() => chmodSync(locked, 0o700));
+      const root = join(plugins, 'cache', id.split('@')[1] ?? '', 'cl-workflow', '0.2.0');
+      current(root);
+      return record('local', root, { projectPath: locked });
+    }),
+);
+
+it('reports plugin.not-found for an install path too long to exist', () => {
+  const { plugins, installed, run } = setup();
+  installed({ 'cl-workflow@cedarloom': [record('user', longInstall(plugins, 'cedarloom'))] });
+  expect(pluginFindings(run())).toEqual([
+    { code: 'plugin.not-found', severity: 'error', params: { pluginsRoot: plugins } },
+  ]);
+});
+
+it('reports plugin.not-found for a plugins root too long to exist', () => {
+  const pluginsRoot = join(folder(), LONG);
+  const env = { CLAUDE_CODE_PLUGIN_CACHE_DIR: pluginsRoot, CLAUDE_CONFIG_DIR: folder() };
+  const result = doctor({ node: '26.13.0', required: '>=26', cwd: folder(), env, home: '', pluginRoot: null });
+  expect(pluginFindings(result)).toEqual([{ code: 'plugin.not-found', severity: 'error', params: { pluginsRoot } }]);
+});
+
+it.skipIf(process.platform === 'win32')('refuses a version folder with a link to a name too long to exist', () => {
+  const { version, installed, run } = setup();
+  const root = version('cedarloom', '0.1.0');
+  symlinkSync(LONG, join(root, 'definitions', 'long'));
+  installed({ 'cl-workflow@cedarloom': [record('user', root)] });
+  expect(pluginFindings(run())).toEqual(UNTRUSTED);
+});
+
+it('reports plugin.too-old for a --plugin-root folder too long to exist', () => {
+  const { project, run } = setup();
+  const root = join(project, LONG);
+  expect(pluginFindings(run(LONG))).toEqual([
+    { code: 'plugin.trust-bypassed', severity: 'warning', params: { root } },
+    { code: 'plugin.too-old', severity: 'error', params: { root, version: null } },
+  ]);
+});
+
 it('uses the folder relative to cwd and reports plugin.trust-bypassed, whatever the settings enable', () => {
   const { project, config, run } = setup();
   json(join(config, 'settings.json'), {});
@@ -410,6 +485,16 @@ it.each([
     { code: 'settings.unreadable', severity: 'error', params: { path } },
   ]);
 });
+
+it.skipIf(process.platform === 'win32')(
+  'reads project settings that link to a name too long to exist as absent',
+  () => {
+    const { project, run } = located();
+    mkdirSync(join(project, '.claude'));
+    symlinkSync(LONG, join(project, '.claude', 'settings.local.json'));
+    expect(pluginFindings(run()).map(({ code }) => code)).toEqual(['plugin.found']);
+  },
+);
 
 it.skipIf(modeless)('reports settings.unreadable for user settings it cannot read', () => {
   const { config, run } = located();
