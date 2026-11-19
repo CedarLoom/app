@@ -101,7 +101,7 @@ msgstr "The cl-workflow plugin from the CedarLoom marketplace is not installed f
 
 #. js-lingui-explicit-id
 msgid "plugin.record-unknown"
-msgstr "{file} has a shape CedarLoom does not know, so the plugin cannot be located. Name the plugin folder with --plugin-root."
+msgstr "{file} cannot be read or has a shape CedarLoom does not know, so the plugin cannot be located. Name the plugin folder with --plugin-root."
 
 #. js-lingui-explicit-id
 msgid "plugin.untrusted"
@@ -125,7 +125,7 @@ msgstr "{path, select, null {No settings file enables cl-workflow@cedarloom} oth
 
 #. js-lingui-explicit-id
 msgid "settings.unreadable"
-msgstr "{path} is not a JSON object, or its enabledPlugins is not an object, so CedarLoom will not read or change it. Fix the file first."
+msgstr "{path} cannot be read, is not a JSON object, or its enabledPlugins is not an object, so CedarLoom will not use or change it. Fix the file first."
 
 #. js-lingui-explicit-id
 msgid "session.host"

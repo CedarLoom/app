@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
@@ -41,7 +41,7 @@ const setup = () => {
     if (isCurrent) current(root);
     return root;
   };
-  const installed = (records: Record<string, unknown[]>): void =>
+  const installed = (records: Record<string, unknown>): void =>
     json(join(plugins, 'installed_plugins.json'), { version: 2, plugins: records });
   const run = (pluginRoot: string | null = null, cwd = project) =>
     doctor({
@@ -113,15 +113,20 @@ it('applies a project-scope record made in a subfolder of the working tree', () 
     ],
   });
   expect(run().report.plugin).toMatchObject({ version: '0.2.0', scope: 'project' });
+  const root = record('project', version('cedarloom', '0.3.0'), { projectPath: project });
+  installed({
+    'cl-workflow@cedarloom': [root, record('project', version('cedarloom', '0.4.0'), { projectPath: sub })],
+  });
+  expect(run(null, sub).report.plugin).toMatchObject({ version: '0.4.0', scope: 'project' });
 });
 
 it('resolves the user scope only outside a repository, with project.not-found as a warning', () => {
-  const { project, version, installed, run } = setup();
+  const { version, installed, run } = setup();
   const user = record('user', version('cedarloom', '0.1.0'));
-  installed({
-    'cl-workflow@cedarloom': [record('local', version('cedarloom', '0.2.0'), { projectPath: project }), user],
-  });
   const outside = folder();
+  installed({
+    'cl-workflow@cedarloom': [record('local', version('cedarloom', '0.2.0'), { projectPath: outside }), user],
+  });
   const result = run(null, outside);
   expect(result.report.checks[1]).toEqual({ id: 'project', status: 'warn' });
   expect(result.findings[0]).toEqual({ code: 'project.not-found', severity: 'warning', params: { cwd: outside } });
@@ -139,12 +144,13 @@ it('refuses a cl-workflow from another marketplace with plugin.untrusted', () =>
   ]);
 });
 
-it('locates cl-workflow@cedarloom beside another marketplace record of unknown shape', () => {
+it.each([
+  { 'cl-workflow@other': [{ scope: 'user' }] },
+  { 'cl-workflow@other': [{ scope: 'user', installPath: '/x\0y' }] },
+  { 'other@market': {} },
+])('locates cl-workflow@cedarloom beside a record of unknown shape: %j', (others) => {
   const { version, installed, run } = setup();
-  installed({
-    'cl-workflow@other': [{ scope: 'user' }],
-    'cl-workflow@cedarloom': [record('user', version('cedarloom', '0.1.0'))],
-  });
+  installed({ ...others, 'cl-workflow@cedarloom': [record('user', version('cedarloom', '0.1.0'))] });
   expect(run().report.checks[2]).toEqual({ id: 'plugin', status: 'pass' });
 });
 
@@ -157,6 +163,14 @@ it.each([
   [
     { source: 'git', url: 'https://example.com/CedarLoom/cedarloom.git' },
     'https://example.com/CedarLoom/cedarloom.git',
+  ],
+  [
+    { source: 'git', url: 'https://example.com/https://github.com/CedarLoom/cedarloom' },
+    'https://example.com/https://github.com/CedarLoom/cedarloom',
+  ],
+  [
+    { source: 'git', url: 'ssh://evil/git@github.com:CedarLoom/cedarloom' },
+    'ssh://evil/git@github.com:CedarLoom/cedarloom',
   ],
   [{ source: 'directory', path: '/srv/cedarloom' }, '/srv/cedarloom'],
   [{ source: 'settings' }, 'settings'],
@@ -208,6 +222,10 @@ it.each([
     { version: 2, plugins: { 'cl-workflow@cedarloom': [{ scope: 'user', installPath: 'cache/x' }] } },
   ],
   [
+    'installed_plugins.json',
+    { version: 2, plugins: { 'cl-workflow@cedarloom': [{ scope: 'user', installPath: '/x\0y' }] } },
+  ],
+  [
     'known_marketplaces.json',
     { cedarloom: { source: { source: 'github', url: 'https://github.com/CedarLoom/cedarloom' } } },
   ],
@@ -218,6 +236,16 @@ it.each([
   json(join(plugins, name), content);
   expect(pluginFindings(run())).toEqual([
     { code: 'plugin.record-unknown', severity: 'error', params: { file: join(plugins, name) } },
+  ]);
+});
+
+it.skipIf(process.platform === 'win32')('never uses a recorded install path that is a link loop', () => {
+  const { plugins, version, installed, run } = setup();
+  const loop = join(dirname(version('cedarloom', '0.1.0')), '0.2.0');
+  symlinkSync('0.2.0', loop);
+  installed({ 'cl-workflow@cedarloom': [record('user', loop)] });
+  expect(pluginFindings(run())).toEqual([
+    { code: 'plugin.not-found', severity: 'error', params: { pluginsRoot: plugins } },
   ]);
 });
 
@@ -242,6 +270,21 @@ it('refuses a recorded install path that links to another folder with plugin.unt
 it.each([
   ['a folder outside the cache', () => join(folder(), '0.1.0')],
   ['another marketplace', (plugins: string) => join(plugins, 'cache', 'other', 'cl-workflow', '0.1.0')],
+  ['the plugin cache folder itself', (plugins: string) => join(plugins, 'cache', 'cedarloom', 'cl-workflow')],
+  [
+    'a subfolder of a version folder',
+    (plugins: string) => join(plugins, 'cache', 'cedarloom', 'cl-workflow', '0.1.0', 'x'),
+  ],
+  [
+    'another marketplace through a linked plugin cache folder',
+    (plugins: string) => {
+      mkdirSync(join(plugins, 'cache', 'other', 'cl-workflow'), { recursive: true });
+      mkdirSync(join(plugins, 'cache', 'cedarloom'));
+      const linked = join(plugins, 'cache', 'cedarloom', 'cl-workflow');
+      symlinkSync(join(plugins, 'cache', 'other', 'cl-workflow'), linked, 'junction');
+      return join(linked, '0.9.0');
+    },
+  ],
 ])('refuses an install path in %s with plugin.untrusted', (_, path) => {
   const { plugins, installed, run } = setup();
   const root = path(plugins);
@@ -262,10 +305,31 @@ it.skipIf(process.platform === 'win32').each([
     },
   ],
   ['a link loop', (root: string) => symlinkSync('loop', join(root, 'definitions', 'loop'))],
+  [
+    'a definitions folder that links to itself',
+    (root: string) => {
+      rmSync(join(root, 'definitions'), { recursive: true });
+      symlinkSync('definitions', join(root, 'definitions'));
+    },
+  ],
+  ['a link to the folder itself', (root: string) => symlinkSync('.', join(root, 'self'))],
 ])('refuses a version folder with %s', (_, link) => {
   const { version, installed, run } = setup();
   const root = version('cedarloom', '0.1.0');
   link(root);
+  installed({ 'cl-workflow@cedarloom': [record('user', root)] });
+  expect(pluginFindings(run())).toEqual(UNTRUSTED);
+});
+
+// Windows has no mode bits, and root reads any file.
+const modeless = process.platform === 'win32' || process.getuid?.() === 0;
+
+it.skipIf(modeless)('refuses a version folder with a subfolder it cannot read', () => {
+  const { version, installed, run } = setup();
+  const root = version('cedarloom', '0.1.0');
+  const locked = join(root, 'definitions', 'x');
+  mkdirSync(locked, { mode: 0 });
+  onTestFinished(() => chmodSync(locked, 0o700));
   installed({ 'cl-workflow@cedarloom': [record('user', root)] });
   expect(pluginFindings(run())).toEqual(UNTRUSTED);
 });
@@ -326,6 +390,13 @@ it('reports plugin.disabled with no path when no settings file names the plugin'
   });
 });
 
+it('reports no plugin.disabled for a managed install that no settings file names', () => {
+  const { config, version, installed, run } = setup();
+  json(join(config, 'settings.json'), {});
+  installed({ 'cl-workflow@cedarloom': [record('managed', version('cedarloom', '0.1.0'))] });
+  expect(pluginFindings(run()).map(({ code }) => code)).toEqual(['plugin.found']);
+});
+
 it.each([
   ['no JSON object', (path: string) => json(path, [])],
   ['a folder', (path: string) => mkdirSync(path, { recursive: true })],
@@ -338,4 +409,11 @@ it.each([
     { id: 'plugin', status: 'fail' },
     { code: 'settings.unreadable', severity: 'error', params: { path } },
   ]);
+});
+
+it.skipIf(modeless)('reports settings.unreadable for user settings it cannot read', () => {
+  const { config, run } = located();
+  const path = join(config, 'settings.json');
+  chmodSync(path, 0);
+  expect(pluginFindings(run()).at(-1)).toEqual({ code: 'settings.unreadable', severity: 'error', params: { path } });
 });

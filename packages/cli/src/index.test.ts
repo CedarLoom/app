@@ -95,6 +95,11 @@ it.each([
     { argument: '<dir>', command: 'cedarloom doctor --plugin-root' },
   ],
   [
+    ['doctor', '--plugin-root'],
+    'cli.missing-argument',
+    { argument: '<dir>', command: 'cedarloom doctor --plugin-root' },
+  ],
+  [
     ['doctor', '--plugin-root', '--yes'],
     'cli.missing-argument',
     { argument: '<dir>', command: 'cedarloom doctor --plugin-root' },

@@ -84,7 +84,7 @@
     ],
     "plugin.record-unknown": [
       ["file"],
-      " has a shape CedarLoom does not know, so the plugin cannot be located. Name the plugin folder with --plugin-root."
+      " cannot be read or has a shape CedarLoom does not know, so the plugin cannot be located. Name the plugin folder with --plugin-root."
     ],
     "plugin.too-old": [
       "The cl-workflow plugin at ",
@@ -116,7 +116,7 @@
     "session.token": ["This link was already used or has expired. Run cedarloom-app again for a new one."],
     "settings.unreadable": [
       ["path"],
-      " is not a JSON object, or its enabledPlugins is not an object, so CedarLoom will not read or change it. Fix the file first."
+      " cannot be read, is not a JSON object, or its enabledPlugins is not an object, so CedarLoom will not use or change it. Fix the file first."
     ],
     "store.locked": [
       "The CedarLoom state store ",

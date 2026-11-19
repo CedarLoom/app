@@ -62,7 +62,8 @@ const lineOf = (argv: readonly string[]): Line => {
   return {
     words,
     flags,
-    json: flags.some(({ name }) => name === 'json'),
+    // --plugin-root takes a following --json as its folder, which is refused; the document is still asked for.
+    json: flags.some(({ name, value, inlineValue }) => name === 'json' || (!inlineValue && value === '--json')),
     help: flags.some(({ name }) => name === 'help'),
   };
 };
@@ -96,8 +97,7 @@ const allowedFlags = (name: CommandName | 'runs' | null): Set<string> => {
   return allowed;
 };
 
-// --plugin-root needs its folder, and a following flag is no folder (--plugin-root=-x names one); every other flag is a
-// switch, so --json=false is refused rather than read as on.
+// --plugin-root needs a folder, never a following flag (--plugin-root=-x names one); other flags refuse a value.
 const valueRefusal = ({ name, rawName, value, inlineValue }: Flag, command: string): Refusal | undefined => {
   if (name === 'plugin-root')
     return value && (inlineValue === true || !value.startsWith('-'))

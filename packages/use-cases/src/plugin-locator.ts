@@ -1,9 +1,9 @@
-import { existsSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { DoctorReport, Finding } from '@cedarloom/core';
 import { z } from 'zod';
 import { jsonFile } from './json-file.ts';
-import { isContained, isInside, tooOldFinding } from './plugin-folder.ts';
+import { isContained, realOf, statOf, tooOldFinding } from './plugin-folder.ts';
 import { MARKETPLACE, originFinding } from './plugin-origin.ts';
 import { projectRoot } from './project-root.ts';
 
@@ -29,10 +29,10 @@ export interface LocateRequest {
 
 const InstalledPlugins = z.looseObject({
   version: z.literal(2),
-  plugins: z.record(z.string(), z.array(z.unknown())),
+  plugins: z.record(z.string(), z.unknown()),
 });
-// A relative path would resolve against whatever folder the app runs in.
-const AbsolutePath = z.string().refine((path) => isAbsolute(path));
+// A relative path would resolve against whatever folder the app runs in, and no file path holds a NUL.
+const AbsolutePath = z.string().refine((path) => isAbsolute(path) && !path.includes('\0'));
 const Install = { installPath: AbsolutePath, version: z.string().optional() };
 const InstallRecord = z.discriminatedUnion('scope', [
   z.looseObject({ scope: z.literal('local'), projectPath: AbsolutePath, ...Install }),
@@ -48,30 +48,31 @@ const found = (plugin: Plugin): Finding => ({ code: 'plugin.found', severity: 'i
 const failed = (finding: Finding): Located => ({ plugin: null, findings: [finding] });
 const untrusted = (id: string): Located => failed({ code: 'plugin.untrusted', severity: 'error', params: { id } });
 
-const realOf = (path: string): string | undefined => (existsSync(path) ? realpathSync.native(path) : undefined);
-
-// Claude Code applies a project's record when it names cwd or a folder of the same Git working tree.
-const isForProject = (projectPath: string, cwd: string, project: string | undefined): boolean => {
+// Claude Code applies a project's record when it names a folder of the same Git working tree; outside one, none applies.
+const isForProject = (projectPath: string, project: string | undefined): boolean => {
   const real = realOf(projectPath);
-  if (real === undefined) return false;
-  if (real === realOf(cwd)) return true;
-  const root = projectRoot(real);
+  const root = real === undefined ? undefined : projectRoot(real);
   return project !== undefined && root !== undefined && realOf(root) === realOf(project);
 };
 
+const isMadeIn = (record: InstallRecord, folder: string | undefined): boolean =>
+  (record.scope === 'local' || record.scope === 'project') && realOf(record.projectPath) === folder;
+
 // A version folder that is gone, or marked orphaned (a previous version kept for a while), is no install.
 const isUsable = ({ installPath }: InstallRecord): boolean =>
-  statSync(installPath, { throwIfNoEntry: false })?.isDirectory() === true &&
-  !existsSync(join(installPath, '.orphaned_at'));
+  statOf(installPath)?.isDirectory() === true && !existsSync(join(installPath, '.orphaned_at'));
 
 const recordFor = (records: InstallRecord[], cwd: string, project: string | undefined): InstallRecord | undefined => {
   const applying = records.filter(
     (record) =>
       isUsable(record) &&
-      (record.scope === 'user' || record.scope === 'managed' || isForProject(record.projectPath, cwd, project)),
+      (record.scope === 'user' || record.scope === 'managed' || isForProject(record.projectPath, project)),
   );
+  // Within a scope, a record made in cwd itself goes before one made elsewhere in its working tree.
+  const here = realOf(cwd);
+  const ordered = [...applying.filter((record) => isMadeIn(record, here)), ...applying];
   for (const scope of SCOPES) {
-    const record = applying.find((candidate) => candidate.scope === scope);
+    const record = ordered.find((candidate) => candidate.scope === scope);
     if (record !== undefined) return record;
   }
   return undefined;
@@ -132,13 +133,13 @@ const trusted = (record: InstallRecord, pluginsRoot: string): Located => {
   const origin = originFinding(pluginsRoot);
   if (origin !== undefined) return failed(origin);
   const root = resolve(record.installPath);
-  // Claude Code caches a marketplace's plugin versions in cache/<marketplace>/<plugin>; a folder elsewhere does not
-  // come from the trusted marketplace.
-  if (!isInside(root, join(pluginsRoot, 'cache', MARKETPLACE, NAME))) return untrusted(PLUGIN_ID);
+  const real = realOf(pluginsRoot);
+  // Claude Code caches each version of a marketplace's plugin in its own folder of cache/<marketplace>/<plugin>.
+  const cache = real === undefined ? undefined : join(real, 'cache', MARKETPLACE, NAME);
+  if (cache === undefined || realOf(dirname(root)) !== cache || !isContained(root)) return untrusted(PLUGIN_ID);
   const version = record.version ?? null;
   const old = tooOldFinding(root, version);
   if (old !== undefined) return failed(old);
-  if (!isContained(root)) return untrusted(PLUGIN_ID);
   const plugin: Plugin = { id: PLUGIN_ID, version, scope: record.scope, root };
   return { plugin, findings: [found(plugin)] };
 };
