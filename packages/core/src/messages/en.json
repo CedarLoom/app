@@ -1,5 +1,8 @@
 {
   "messages": {
+    "api.bad-request": ["The request is not valid. Fields with issues: ", ["issues"]],
+    "api.internal": ["Something went wrong in CedarLoom. The details are in the terminal where cedarloom-app runs."],
+    "api.not-found": ["Not found."],
     "apply.backup-failed": [
       "The backup of ",
       ["path"],
@@ -47,6 +50,16 @@
     "project.not-found": [["cwd"], " is not inside a Git repository. Run CedarLoom from your project folder."],
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],
+    "server.port-in-use": [
+      "Port ",
+      ["port"],
+      " is in use. Choose another with --port, or leave it out to use a free port."
+    ],
+    "session.cookie": ["No valid session. Open the link that cedarloom-app printed."],
+    "session.csrf": ["The request is missing its session check. Reload the page."],
+    "session.host": ["This server answers only at 127.0.0.1."],
+    "session.origin": ["Requests from other sites are refused."],
+    "session.token": ["This link was already used or has expired. Run cedarloom-app again for a new one."],
     "store.locked": [
       "The CedarLoom state store ",
       ["path"],

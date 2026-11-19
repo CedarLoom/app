@@ -6,9 +6,19 @@
   "engines": {
     "node": ">=26"
   },
+  "bin": {
+    "cedarloom-app": "bin/cedarloom-app.js"
+  },
   "exports": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@cedarloom/core": "workspace:*",
+    "@cedarloom/use-cases": "workspace:*",
+    "@fastify/helmet": "catalog:",
+    "fastify": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

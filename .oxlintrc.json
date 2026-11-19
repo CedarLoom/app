@@ -65,7 +65,7 @@
   },
   "overrides": [
     {
-      "files": ["packages/app/src/index.ts", "packages/ui/src/index.ts"],
+      "files": ["packages/ui/src/index.ts"],
       "rules": {
         "unicorn/no-empty-file": "off"
       }

@@ -1,6 +1,6 @@
-import type { Finding, Refusal } from '@cedarloom/core';
+import { type Finding, printable, type Refusal } from '@cedarloom/core';
 import type { Io } from './io.ts';
-import { message, printable } from './message.ts';
+import { message } from './message.ts';
 
 /** How a command ended: its --json document, and its result as text for text mode. */
 export interface Outcome {
