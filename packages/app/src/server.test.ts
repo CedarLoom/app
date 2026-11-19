@@ -122,14 +122,18 @@ describe('request guard, navigation from the redirect page', () => {
   };
 
   // No UI is served yet, so a passing request reaches the 404 of an unknown path.
-  it.each(['GET', 'HEAD'] as const)(
-    'lets a cross-site %s navigation to a document outside /api/ pass',
-    async (method) => {
-      const { app } = await server();
-      const reply = await app.inject({ method, url: '/', headers: navigation });
-      expect(reply.statusCode).toBe(404);
-    },
-  );
+  it('lets a cross-site GET navigation to a document outside /api/ pass', async () => {
+    const { app } = await server();
+    const reply = await app.inject({ method: 'GET', url: '/', headers: navigation });
+    expect(reply.statusCode).toBe(404);
+  });
+
+  // A HEAD reply has no body, so its status tells the refusal from the 404 of a passing request.
+  it('refuses a cross-site HEAD navigation with 403', async () => {
+    const { app } = await server();
+    const reply = await app.inject({ method: 'HEAD', url: '/', headers: navigation });
+    expect(reply.statusCode).toBe(403);
+  });
 
   it.each([
     ['mode no-cors', 'GET', '/', { 'sec-fetch-mode': 'no-cors' }],
@@ -140,6 +144,7 @@ describe('request guard, navigation from the redirect page', () => {
     ['no dest', 'GET', '/', { 'sec-fetch-dest': undefined }],
     ['method POST', 'POST', '/', {}],
     ['an /api/ path', 'GET', '/api/session', {}],
+    ['an encoded /api/ path', 'GET', '/%61pi/session', {}],
     ['site same-site', 'GET', '/', { 'sec-fetch-site': 'same-site' }],
   ] as const)('refuses a cross-site request with %s with 403 session.origin', async (_case, method, url, changed) => {
     const { app } = await server();

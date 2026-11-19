@@ -89,7 +89,7 @@ const navigation = (req: FastifyRequest): boolean =>
   req.headers['sec-fetch-site'] === 'cross-site' &&
   req.headers['sec-fetch-mode'] === 'navigate' &&
   req.headers['sec-fetch-dest'] === 'document' &&
-  SAFE_METHODS.has(req.method) &&
+  req.method === 'GET' &&
   !api(req);
 
 // This port's literal 127.0.0.1 Host (421 stops DNS rebinding), its Origin, same-origin: other ports are same-site too.

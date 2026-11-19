@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type AppIo, type Started, start } from './start.ts';
+import { type AppIo, openPage, type Started, start } from './start.ts';
 
 const folders: string[] = [];
 const servers: (() => Promise<void>)[] = [];
@@ -40,6 +40,7 @@ const started = async (argv: string[], open?: (path: string) => void) => {
     now: () => 0,
     secret: () => `secret-${count++}`,
     open: open ?? ((path) => opened.push(path)),
+    platform: process.platform,
     stdout: (text) => out.push(text),
     stderr: (text) => errors.push(text),
   };
@@ -127,6 +128,19 @@ describe('start, the redirect page', () => {
     const { result, opened } = await started(['--json']);
     if ('close' in result) await result.close();
     expect([opened.length, existsSync(opened[0] ?? '')]).toEqual([1, false]);
+  });
+});
+
+describe('openPage', () => {
+  it.each([
+    ['linux', 1],
+    ['darwin', 0],
+    ['win32', 0],
+  ] as const)('after opening the page on %s, prints %i line(s) on stderr', (platform, lines) => {
+    const errors: string[] = [];
+    const io = { stateDir: folder(), open: () => undefined, platform, stderr: (text: string) => errors.push(text) };
+    openPage(io, 'http://127.0.0.1:4000/#t=abc', false);
+    expect(errors).toHaveLength(lines);
   });
 });
 

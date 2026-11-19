@@ -34,6 +34,7 @@ export const run = (): void => {
     now: () => performance.now(),
     secret: () => randomBytes(32).toString('base64url'),
     open: openFile,
+    platform: process.platform,
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => process.stderr.write(text),
   }).then((started) => {

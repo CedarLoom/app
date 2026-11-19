@@ -14,6 +14,7 @@ export interface AppIo extends SessionSource {
   stateDir: string;
   /** Opens a file in its default program: the redirect page in the browser. */
   open: (path: string) => void;
+  platform: NodeJS.Platform;
   stdout: (text: string) => void;
   stderr: (text: string) => void;
 }
@@ -76,12 +77,18 @@ const parse = (argv: readonly string[]): Options | { refusal: Refusal } => {
 
 const message = (error: unknown): string => `${error instanceof Error ? error.message : String(error)}\n`;
 
-// The URL is printed already, so a failing page or opener is reported and the server keeps serving.
-const openPage = (io: AppIo, url: string): Redirect | undefined => {
+/** Opens the redirect page; the URL is printed already, so a failing page or opener is reported and serving goes on. */
+export const openPage = (
+  io: Pick<AppIo, 'stateDir' | 'open' | 'platform' | 'stderr'>,
+  url: string,
+  json: boolean,
+): Redirect | undefined => {
   let redirect: Redirect | undefined;
   try {
     redirect = writeRedirect(io.stateDir, url);
     io.open(redirect.path);
+    // Snap-packaged browsers, a Windows browser under WSL and a Chromebook's Linux container cannot read the page.
+    if (io.platform === 'linux' && !json) io.stderr(`${messageText(catalog, 'server.open-hint', {})}\n`);
   } catch (error) {
     io.stderr(message(error));
   }
@@ -122,7 +129,7 @@ export const start = async (io: AppIo): Promise<Started> => {
   const port = portOf(app.server);
   const url = `http://127.0.0.1:${port}/#t=${session.token}`;
   io.stdout(json ? `${JSON.stringify({ result: { url, port }, findings: [], refusals: [] })}\n` : `${url}\n`);
-  if (options.open) redirect = openPage(io, url);
+  if (options.open) redirect = openPage(io, url, json);
   return {
     close: () => {
       removePage();

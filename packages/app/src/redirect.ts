@@ -28,6 +28,12 @@ export const writeRedirect = (parent: string, url: string): Redirect => {
   mkdirSync(parent, { recursive: true, mode: 0o700 });
   const folder = mkdtempSync(join(parent, 'open-'));
   const path = join(folder, 'cedarloom-app.html');
-  writeFileSync(path, page(url), { flag: 'wx', mode: 0o600 });
-  return { path, remove: () => rmSync(folder, { recursive: true, force: true }) };
+  const remove = (): void => rmSync(folder, { recursive: true, force: true });
+  try {
+    writeFileSync(path, page(url), { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    remove();
+    throw error;
+  }
+  return { path, remove };
 };
