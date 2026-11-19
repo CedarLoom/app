@@ -26,27 +26,33 @@ const write = (path: string, text: string): void => {
   writeFileSync(path, text);
 };
 
-// A generator in the plugin's form: refusals from the definition's "refusals", else the entry skill and, with
-// "script", the workflow script, each with the generator's mark.
+// A generator in the plugin's form: for each definition a refusal per entry of its "refusals", else the entry skill
+// and, with "script", the workflow script, each with the generator's header.
 const GENERATOR = `import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-const [file, , , , , out] = process.argv.slice(2);
-const def = JSON.parse(readFileSync(file, 'utf8'));
-if (def.refusals) {
-  console.log(JSON.stringify(def.refusals));
-  process.exit(1);
+const args = process.argv.slice(2);
+const out = args.at(-1);
+const refusals = [];
+const outputs = {};
+for (const file of args.slice(0, args.indexOf('--json'))) {
+  const def = JSON.parse(readFileSync(file, 'utf8'));
+  for (const field of def.refusals ?? []) refusals.push({ file, field, rule: 'refused' });
+  const header = 'Generated from .cedarloom/workflows/' + def.name + ".json by cl-workflow's generator/generate.mjs: edit the definition, not this file.";
+  outputs['skills/' + def.name + '/SKILL.md'] = '<!-- ' + header + ' -->\\n' + def.text + '\\n';
+  if (def.script) outputs['workflows/' + def.name + '.js'] = '// ' + header + '\\n';
 }
-const files = { ['skills/' + def.name + '/SKILL.md']: '<!-- Generated: edit the definition, not this file. -->\\n' + def.text + '\\n' };
-if (def.script) files['workflows/' + def.name + '.js'] = '// Generated: edit the definition, not this file.\\n';
-for (const [path, text] of Object.entries(files)) {
+console.log(JSON.stringify(refusals));
+if (refusals.length) process.exit(1);
+for (const [path, text] of Object.entries(outputs)) {
   mkdirSync(dirname(join(out, path)), { recursive: true });
   writeFileSync(join(out, path), text);
 }
-console.log('[]');
 `;
 
-const SKILL = '<!-- Generated: edit the definition, not this file. -->\nRun dev.\n';
-const SCRIPT = '// Generated: edit the definition, not this file.\n';
+const HEADER =
+  "Generated from .cedarloom/workflows/dev.json by cl-workflow's generator/generate.mjs: edit the definition, not this file.";
+const SKILL = `<!-- ${HEADER} -->\nRun dev.\n`;
+const SCRIPT = `// ${HEADER}\n`;
 const DEV = { name: 'dev', text: 'Run dev.', script: true };
 
 // A project whose definition dev is in sync with its generated files, a plugin root with the generator, and a temp folder.
@@ -130,17 +136,27 @@ describe('names each generated file that differs with definition.stale', () => {
   });
 });
 
-it('reports a definition the generator refuses with definition.invalid and the refusal count', () => {
+it('reports each definition the generator refuses with definition.invalid and its refusal count', () => {
   const { project, check } = setup();
-  const refusals = [
-    { file: 'x', field: '/name', rule: 'kebab-case' },
-    { file: 'x', field: '/stages', rule: 'a non-empty array' },
-  ];
-  write(join(project, '.cedarloom', 'workflows', 'dev.json'), JSON.stringify({ refusals }));
+  const workflows = join(project, '.cedarloom', 'workflows');
+  write(join(workflows, 'dev.json'), JSON.stringify({ ...DEV, refusals: ['/name', '/stages'] }));
+  write(join(workflows, 'other.json'), JSON.stringify({ name: 'other', text: 'Run other.' }));
   expect(check()).toEqual({
     definitions: [{ code: 'definition.invalid', severity: 'error', params: { name: 'dev', count: 2 } }],
     generated: [],
   });
+});
+
+it('reads generated files checked out with CRLF line endings as in sync', () => {
+  const { project, check } = setup();
+  write(join(project, '.claude', 'skills', 'dev', 'SKILL.md'), SKILL.replaceAll('\n', '\r\n'));
+  expect(check()).toEqual({ definitions: [], generated: [] });
+});
+
+it('leaves dotfiles in the definitions folder out, as a *.json glob does', () => {
+  const { project, check } = setup();
+  write(join(project, '.cedarloom', 'workflows', '.#dev.json'), '');
+  expect(check()).toEqual({ definitions: [], generated: [] });
 });
 
 describe('reports each definition it cannot use with its finding', () => {
@@ -193,10 +209,22 @@ describe('reports each definition it cannot use with its finding', () => {
 });
 
 describe('reports a generator it cannot use with its finding', () => {
-  it('generator.failed with the exit code and the error output', () => {
-    const { check } = setup("process.stderr.write('broken');\nprocess.exit(3);\n");
+  it('generator.failed with the exit code and the error output, once for all definitions', () => {
+    const { project, check } = setup("process.stderr.write('broken');\nprocess.exit(3);\n");
+    write(join(project, '.cedarloom', 'workflows', 'other.json'), JSON.stringify({ name: 'other' }));
     expect(check().definitions).toEqual([
       { code: 'generator.failed', severity: 'error', params: { exitCode: 3, signal: null, stderr: 'broken' } },
+    ]);
+  });
+
+  it('generator.failed with exit code 1 and the stack trace for a generator that throws', () => {
+    const { check } = setup("throw new Error('runner.js missing');\n");
+    expect(check().definitions).toEqual([
+      {
+        code: 'generator.failed',
+        severity: 'error',
+        params: { exitCode: 1, signal: null, stderr: expect.stringContaining('Error: runner.js missing') },
+      },
     ]);
   });
 
@@ -211,6 +239,18 @@ describe('reports a generator it cannot use with its finding', () => {
     const { check } = setup("console.log('done');\n");
     expect(check().definitions).toEqual([
       { code: 'generator.output-unknown', severity: 'error', params: { output: 'done\n' } },
+    ]);
+  });
+
+  it('generator.output-unknown for a file whose header names no definition', () => {
+    const { check } = setup(`import { mkdirSync, writeFileSync } from 'node:fs';
+const out = process.argv.at(-1);
+mkdirSync(out + '/skills/x', { recursive: true });
+writeFileSync(out + '/skills/x/SKILL.md', 'x');
+console.log('[]');
+`);
+    expect(check().definitions).toEqual([
+      { code: 'generator.output-unknown', severity: 'error', params: { output: 'skills/x/SKILL.md' } },
     ]);
   });
 });

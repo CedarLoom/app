@@ -4,7 +4,7 @@
       "Usage: cedarloom <command> [options]\ncloom is a short name for cedarloom.\n\nCommands:\n  doctor           Check that this computer and project can run CedarLoom.\n  runs list        List the runs recorded for this project.\n  runs show <run>  Show a run and its steps.\n  undo <run>       Undo a run, as a run of its own.\n\nOptions:\n  --json           Print one JSON document instead of text.\n  --help, -h       Show the usage of a command.\n  --version, -V    Print the version of CedarLoom."
     ],
     "help.doctor": [
-      "Usage: cedarloom doctor [--plugin-root <dir>] [--json]\n\nChecks that this computer can run CedarLoom: the Node.js version, the project,\nand the cl-workflow plugin from the CedarLoom marketplace: installed for this\nproject, new enough and enabled.\n\nOptions:\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin. Its origin is not checked."
+      "Usage: cedarloom doctor [--plugin-root <dir>] [--json]\n\nChecks that this computer can run CedarLoom: the Node.js version, the project,\nthe cl-workflow plugin from the CedarLoom marketplace: installed for this\nproject, new enough and enabled, and the workflow definitions in\n.cedarloom/workflows: valid, and their generated files in .claude up to date.\nFor the definitions it runs the plugin's generator in a temporary folder.\n\nOptions:\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin, and run its generator. Its origin is not\n                       checked."
     ],
     "help.runs": [
       "Usage: cedarloom runs <verb> [options]\n\nVerbs:\n  list        List the runs recorded for this project, newest first.\n  show <run>  Show a run and its steps."

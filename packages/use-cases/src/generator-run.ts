@@ -1,8 +1,9 @@
 import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Finding } from '@cedarloom/core';
 import { z } from 'zod';
+import { filesBelow } from './files-below.ts';
 import { errorCode } from './project-files.ts';
 
 export interface GeneratorRun {
@@ -14,8 +15,11 @@ export interface GeneratorRun {
   env: Readonly<Record<string, string | undefined>>;
 }
 
-/** The generator's files by their path below the output folder, with "/" as separator, or its refusal count, or why it gave neither. */
-export type Generated = { outputs: Map<string, Buffer> } | { refusals: number } | { finding: Finding };
+/**
+ * The generator's files by their path below the output folder, with "/" as separator; or the count of its refusals
+ * for each definition, in their order; or why it gave neither.
+ */
+export type Generated = { outputs: Map<string, Buffer> } | { refusals: number[] } | { finding: Finding };
 
 // What the generator prints with --json: one { file, field, rule } per refusal.
 const Refusals = z.array(z.object({ file: z.string(), field: z.string(), rule: z.string() }));
@@ -29,16 +33,6 @@ const childEnv = (env: GeneratorRun['env']): Record<string, string> =>
     ),
   );
 
-const filesBelow = (folder: string): Map<string, Buffer> =>
-  new Map(
-    readdirSync(folder, { recursive: true, withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => {
-        const path = join(entry.parentPath, entry.name);
-        return [relative(folder, path).split(sep).join('/'), readFileSync(path)];
-      }),
-  );
-
 const jsonOf = (text: string): unknown => {
   try {
     return JSON.parse(text);
@@ -47,32 +41,50 @@ const jsonOf = (text: string): unknown => {
   }
 };
 
-const outcome = (run: SpawnSyncReturns<string>, out: string): Generated => {
-  const { status, signal, stdout, stderr } = run;
-  if (signal !== null || (status !== 0 && status !== 1)) {
-    const params = { exitCode: status, signal, stderr: stderr.slice(0, LIMIT) };
-    return { finding: { code: 'generator.failed', severity: 'error', params } };
-  }
+const failed = ({ status, signal, stderr }: SpawnSyncReturns<string>): Generated => ({
+  finding: {
+    code: 'generator.failed',
+    severity: 'error',
+    params: { exitCode: status, signal, stderr: stderr.slice(0, LIMIT) },
+  },
+});
+/** Output of the generator CedarLoom cannot read. */
+export const unknownOutput = (output: string): { finding: Finding } => ({
+  finding: { code: 'generator.output-unknown', severity: 'error', params: { output: output.slice(0, LIMIT) } },
+});
+
+const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): Generated => {
+  const { status, signal, stdout } = run;
+  if (signal !== null || (status !== 0 && status !== 1)) return failed(run);
   const refusals = Refusals.safeParse(jsonOf(stdout));
-  if (!refusals.success || (status === 0) !== (refusals.data.length === 0)) {
-    const params = { output: stdout.slice(0, LIMIT) };
-    return { finding: { code: 'generator.output-unknown', severity: 'error', params } };
-  }
-  if (status === 1) return { refusals: refusals.data.length };
+  // Node.js exits with 1 on an uncaught error too, which leaves its stack trace on stderr and no refusal list.
+  if (!refusals.success) return status === 1 ? failed(run) : unknownOutput(stdout);
+  const counts = files.map((file) => refusals.data.filter((refusal) => refusal.file === file).length);
+  const counted = counts.reduce((sum, count) => sum + count, 0);
+  if ((status === 0) !== (refusals.data.length === 0) || counted !== refusals.data.length) return unknownOutput(stdout);
+  if (status === 1) return { refusals: counts };
   // A generator that wrote nothing leaves no output folder.
-  return { outputs: existsSync(out) ? filesBelow(out) : new Map() };
+  if (!existsSync(out)) return { outputs: new Map() };
+  return { outputs: new Map(filesBelow(out).map((path) => [path, readFileSync(join(out, path))])) };
 };
 
-/** Runs the plugin's generator on a definition's bytes in a temporary folder of its own, which is removed afterwards. */
-export const generate = (definition: Uint8Array, request: GeneratorRun): Generated => {
+/**
+ * Runs the plugin's generator on the definitions' bytes in one run, as a project regenerates them, in a temporary
+ * folder of its own that is removed afterwards.
+ */
+export const generate = (definitions: Uint8Array[], request: GeneratorRun): Generated => {
   const folder = mkdtempSync(join(request.temp, 'cedarloom-generate-'));
   try {
-    // A copy, so the generator reads neither a link nor a FIFO from the project, and writes only into this folder.
-    const file = join(folder, 'definition.json');
-    writeFileSync(file, definition);
+    // Copies, so the generator reads neither a link nor a FIFO from the project, and writes only into this folder.
+    mkdirSync(join(folder, 'definitions'));
+    const files = definitions.map((bytes, index) => {
+      const file = join(folder, 'definitions', `${index}.json`);
+      writeFileSync(file, bytes);
+      return file;
+    });
     const out = join(folder, 'out');
     const generator = join(request.root, 'generator', 'generate.mjs');
-    const run = spawnSync(process.execPath, [generator, file, '--json', '--prefix', '', '--out', out], {
+    const run = spawnSync(process.execPath, [generator, ...files, '--json', '--prefix', '', '--out', out], {
       cwd: folder,
       env: childEnv(request.env),
       encoding: 'utf8',
@@ -84,8 +96,9 @@ export const generate = (definition: Uint8Array, request: GeneratorRun): Generat
     // ETIMEDOUT and ENOBUFS end the generator, which the outcome reports by its signal.
     const code = errorCode(run.error);
     if (run.error !== undefined && code !== 'ETIMEDOUT' && code !== 'ENOBUFS') throw run.error;
-    return outcome(run, out);
+    return outcome(run, files, out);
   } finally {
-    rmSync(folder, { recursive: true, force: true });
+    // A virus scanner or indexer on Windows can hold a file just written for a moment.
+    rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
   }
 };

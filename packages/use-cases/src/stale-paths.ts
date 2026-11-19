@@ -1,5 +1,5 @@
-import { readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join } from 'node:path';
+import { filesBelow } from './files-below.ts';
 import { reached } from './plugin-folder.ts';
 import { readFound } from './project-files.ts';
 import { linkOnWay } from './write-roots.ts';
@@ -14,21 +14,18 @@ const bytesAt = (project: string, path: string): Buffer | undefined => {
   return typeof found === 'object' ? found.bytes : undefined;
 };
 
+// Git for Windows checks text out with CRLF by default; the generator writes LF.
+const withLf = (bytes: Buffer): Buffer => Buffer.from(bytes.toString('latin1').replaceAll('\r\n', '\n'), 'latin1');
+
 // The files a generator run for name wrote into the project before: those of its skill folder and its workflow script that carry the mark.
 const generatedBefore = (project: string, name: string): string[] => {
   const skill = `.claude/skills/${name}`;
-  const entries =
+  const inSkill =
     reached(() => linkOnWay(project, skill) ?? null) === null
-      ? (reached(() => readdirSync(join(project, skill), { recursive: true, withFileTypes: true })) ?? [])
+      ? (reached(() => filesBelow(join(project, skill))) ?? []).map((path) => `${skill}/${path}`)
       : [];
-  const inSkill = entries
-    .filter((entry) => entry.isFile())
-    .map((entry) => relative(project, join(entry.parentPath, entry.name)).split(sep).join('/'));
   return [...inSkill, `.claude/workflows/${name}.js`].filter((path) => bytesAt(project, path)?.includes(MARK));
 };
-
-// A name that stays one folder: "", "." or ".." would widen the search to its parent.
-const isPlainName = (name: string): boolean => name !== '' && name !== '.' && name !== '..';
 
 /**
  * The project-relative paths where the project's `.claude/` differs from the generator's outputs for the definition
@@ -36,7 +33,10 @@ const isPlainName = (name: string): boolean => name !== '' && name !== '.' && na
  */
 export const stalePaths = (project: string, name: string, outputs: ReadonlyMap<string, Buffer>): string[] => {
   const expected = new Map([...outputs].map(([path, bytes]) => [`.claude/${path}`, bytes]));
-  const differing = [...expected].filter(([path, bytes]) => bytesAt(project, path)?.equals(bytes) !== true);
-  const extra = isPlainName(name) ? generatedBefore(project, name).filter((path) => !expected.has(path)) : [];
+  const differing = [...expected].filter(([path, bytes]) => {
+    const found = bytesAt(project, path);
+    return found === undefined || !withLf(found).equals(bytes);
+  });
+  const extra = generatedBefore(project, name).filter((path) => !expected.has(path));
   return [...differing.map(([path]) => path), ...extra].toSorted();
 };
