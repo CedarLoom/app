@@ -59,7 +59,7 @@ The repository is public, so everything written into it is public text: commits,
 `pnpm run check` runs locally what GitHub's dependency review checks only in a pull request:
 
 - `pnpm audit --audit-level high`: known vulnerabilities in every installed package.
-- `pnpm run licenses`: [scripts/licenses.ts](scripts/licenses.ts) checks every dependency of every workspace package installed for the current platform (`pnpm licenses list --recursive`) against the allow-list in [.github/dependency-review-config.json](.github/dependency-review-config.json), the file dependency review reads.
+- `pnpm run licenses`: [scripts/licenses.ts](scripts/licenses.ts) checks every dependency of every workspace package installed for the current platform (`pnpm licenses list --recursive`) against the allow-list in [.github/dependency-review-config.json](.github/dependency-review-config.json), the file dependency review reads. The exemption for `caniuse-lite` (CC-BY-4.0 browser data) is per package, because dependency review cannot scope a license by dependency type: it stays in `devDependencies` of build tooling and never goes into a shipped package.
 
 ## Licenses
 
