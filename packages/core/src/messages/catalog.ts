@@ -18,6 +18,11 @@ export const MESSAGE_IDS = [
   'cli.missing-argument',
   'cli.unknown-command',
   'cli.unknown-flag',
+  'definition.invalid',
+  'definition.not-json',
+  'definition.stale',
+  'generator.failed',
+  'generator.output-unknown',
   'node.version-unsupported',
   'plan.file-changed',
   'plan.name-too-long',
@@ -70,6 +75,11 @@ export interface MessagePlaceholders {
   'cli.missing-argument': 'argument' | 'command';
   'cli.unknown-command': 'bin' | 'command';
   'cli.unknown-flag': 'command' | 'flag';
+  'definition.invalid': 'count' | 'path';
+  'definition.not-json': 'path';
+  'definition.stale': 'name' | 'paths';
+  'generator.failed': 'exitCode' | 'signal' | 'stderr';
+  'generator.output-unknown': 'output';
   'node.version-unsupported': 'found' | 'required';
   'plan.file-changed': 'path';
   'plan.name-too-long': 'path';

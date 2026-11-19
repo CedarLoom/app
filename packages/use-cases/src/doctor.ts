@@ -1,5 +1,7 @@
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import type { DoctorReport, Finding } from '@cedarloom/core';
+import { definitionFindings } from './definition-checks.ts';
 import { enabledFinding } from './plugin-enabled.ts';
 import { locatePlugin } from './plugin-locator.ts';
 import { type ClaudeDirInputs, claudeConfigDir, pluginsRoot } from './plugins-root.ts';
@@ -15,10 +17,40 @@ export interface DoctorRequest extends ClaudeDirInputs {
 }
 
 type Status = DoctorReport['checks'][number]['status'];
+// A generator run takes well under a second; this ends one that hangs.
+const GENERATOR_TIMEOUT_MS = 30_000;
+
+const SKIPPED_DEFINITIONS = { id: 'definitions', status: 'skipped' } as const;
+const SKIPPED_GENERATED = { id: 'generated', status: 'skipped' } as const;
 
 const statusOf = (findings: Finding[]): Status => {
   if (findings.some(({ severity }) => severity === 'error')) return 'fail';
   return findings.some(({ severity }) => severity === 'warning') ? 'warn' : 'pass';
+};
+
+// A check that needs one that failed is skipped: the definitions need the project and the plugin's generator, the
+// generated files need valid definitions.
+const definitionChecks = (
+  project: string | undefined,
+  plugin: DoctorReport['plugin'],
+  pluginStatus: Status,
+  env: DoctorRequest['env'],
+): { checks: DoctorReport['checks']; findings: Finding[] } => {
+  if (project === undefined || plugin === null || pluginStatus === 'fail') {
+    return { checks: [SKIPPED_DEFINITIONS, SKIPPED_GENERATED], findings: [] };
+  }
+  const { root } = plugin;
+  const found = definitionFindings({ project, root, temp: tmpdir(), timeoutMs: GENERATOR_TIMEOUT_MS, env });
+  const status = statusOf(found.definitions);
+  if (status === 'fail')
+    return { checks: [{ id: 'definitions', status }, SKIPPED_GENERATED], findings: found.definitions };
+  return {
+    checks: [
+      { id: 'definitions', status },
+      { id: 'generated', status: statusOf(found.generated) },
+    ],
+    findings: [...found.definitions, ...found.generated],
+  };
 };
 
 /** Checks this installation and the project of cwd; the findings carry the details of each failed check. */
@@ -39,13 +71,16 @@ export const doctor = (request: DoctorRequest): { report: DoctorReport; findings
       ? undefined
       : enabledFinding(project, claudeConfigDir(request), located.plugin.scope === 'managed');
   const pluginFindings = enabled === undefined ? located.findings : [...located.findings, enabled];
+  const pluginStatus = statusOf(pluginFindings);
+  const definitions = definitionChecks(project, located.plugin, pluginStatus, request.env);
   const report: DoctorReport = {
     checks: [
       { id: 'node', status: statusOf(nodeFindings) },
       { id: 'project', status: statusOf(projectFindings) },
-      { id: 'plugin', status: statusOf(pluginFindings) },
+      { id: 'plugin', status: pluginStatus },
+      ...definitions.checks,
     ],
     plugin: located.plugin,
   };
-  return { report, findings: [...nodeFindings, ...projectFindings, ...pluginFindings] };
+  return { report, findings: [...nodeFindings, ...projectFindings, ...pluginFindings, ...definitions.findings] };
 };

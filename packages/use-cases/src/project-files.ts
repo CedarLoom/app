@@ -10,6 +10,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   renameSync,
   rmSync,
   unlinkSync,
@@ -46,8 +47,20 @@ export type Found = { bytes: Buffer; mode: number } | 'absent' | 'link' | 'not-f
 // No link followed, and no wait on a FIFO.
 const READ = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
 
-/** Reads a regular file from one open handle, so what is checked is what is read. */
-export const readFound = (path: string): Found => {
+// The first length bytes of the file open at fd.
+const headOf = (fd: number, length: number): Buffer => {
+  const bytes = Buffer.alloc(length);
+  let filled = 0;
+  while (filled < length) {
+    const count = readSync(fd, bytes, filled, length - filled, filled);
+    if (count === 0) break;
+    filled += count;
+  }
+  return bytes.subarray(0, filled);
+};
+
+/** Reads a regular file, or its first limit bytes, from one open handle, so what is checked is what is read. */
+export const readFound = (path: string, limit = Number.POSITIVE_INFINITY): Found => {
   let fd: number;
   try {
     fd = openSync(path, READ);
@@ -63,7 +76,8 @@ export const readFound = (path: string): Found => {
   try {
     const info = fstatSync(fd);
     // Permission bits only: like a write by the kernel, a replace drops setuid and setgid.
-    return info.isFile() ? { bytes: readFileSync(fd), mode: info.mode & 0o777 } : 'not-file';
+    if (!info.isFile()) return 'not-file';
+    return { bytes: info.size > limit ? headOf(fd, limit) : readFileSync(fd), mode: info.mode & 0o777 };
   } finally {
     closeSync(fd);
   }

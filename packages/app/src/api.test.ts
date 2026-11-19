@@ -72,6 +72,8 @@ describe('reads', () => {
           { id: 'node', status: 'pass' },
           { id: 'project', status: 'pass' },
           { id: 'plugin', status: 'fail' },
+          { id: 'definitions', status: 'skipped' },
+          { id: 'generated', status: 'skipped' },
         ],
         plugin: null,
         findings: [{ code: 'plugin.not-found', severity: 'error', params: { pluginsRoot: plugins } }],
