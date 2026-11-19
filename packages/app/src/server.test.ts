@@ -113,6 +113,46 @@ describe('request guard', () => {
   });
 });
 
+describe('request guard, navigation from the redirect page', () => {
+  const navigation = {
+    host: HOST,
+    'sec-fetch-site': 'cross-site',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-dest': 'document',
+  };
+
+  // No UI is served yet, so a passing request reaches the 404 of an unknown path.
+  it.each(['GET', 'HEAD'] as const)(
+    'lets a cross-site %s navigation to a document outside /api/ pass',
+    async (method) => {
+      const { app } = await server();
+      const reply = await app.inject({ method, url: '/', headers: navigation });
+      expect(reply.statusCode).toBe(404);
+    },
+  );
+
+  it.each([
+    ['mode no-cors', 'GET', '/', { 'sec-fetch-mode': 'no-cors' }],
+    ['mode cors', 'GET', '/', { 'sec-fetch-mode': 'cors' }],
+    ['no mode', 'GET', '/', { 'sec-fetch-mode': undefined }],
+    ['dest iframe', 'GET', '/', { 'sec-fetch-dest': 'iframe' }],
+    ['dest script', 'GET', '/', { 'sec-fetch-dest': 'script' }],
+    ['no dest', 'GET', '/', { 'sec-fetch-dest': undefined }],
+    ['method POST', 'POST', '/', {}],
+    ['an /api/ path', 'GET', '/api/session', {}],
+    ['site same-site', 'GET', '/', { 'sec-fetch-site': 'same-site' }],
+  ] as const)('refuses a cross-site request with %s with 403 session.origin', async (_case, method, url, changed) => {
+    const { app } = await server();
+    const headers = Object.fromEntries(
+      Object.entries({ ...navigation, ...changed }).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
+    );
+    const reply = await app.inject({ method, url, headers });
+    expect([reply.statusCode, reply.json()]).toEqual([403, { code: 'session.origin', params: {} }]);
+  });
+});
+
 describe('request guard, CSRF and headers', () => {
   it('returns the CSRF value again for the cookie', async () => {
     const { app } = await server();

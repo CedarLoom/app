@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { connect, Server } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type AppIo, type Started, start } from './start.ts';
@@ -14,31 +14,38 @@ afterEach(async () => {
   for (const dir of folders.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
+const folder = (): string => {
+  const path = realpathSync(mkdtempSync(join(tmpdir(), 'cedarloom-app-')));
+  folders.push(path);
+  return path;
+};
+
 // A Git working tree to start in.
 const project = (): string => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cedarloom-app-')));
-  folders.push(root);
+  const root = folder();
   mkdirSync(join(root, '.git'));
   return root;
 };
 
-const started = async (argv: string[], open?: (url: string) => void) => {
+const started = async (argv: string[], open?: (path: string) => void) => {
   const out: string[] = [];
   const errors: string[] = [];
   const opened: string[] = [];
   let count = 0;
+  const state = folder();
   const io: AppIo = {
     argv,
     cwd: project(),
+    stateDir: state,
     now: () => 0,
     secret: () => `secret-${count++}`,
-    open: open ?? ((url) => opened.push(url)),
+    open: open ?? ((path) => opened.push(path)),
     stdout: (text) => out.push(text),
     stderr: (text) => errors.push(text),
   };
   const result: Started = await start(io);
   if ('close' in result) servers.push(result.close);
-  return { result, document: JSON.parse(out.join('')), errors, opened };
+  return { result, document: JSON.parse(out.join('')), errors, opened, state };
 };
 
 // One raw HTTP/1.1 request, so no client adds a Host header.
@@ -83,6 +90,7 @@ describe('start', () => {
       document: { result: null, findings: [], refusals: [{ code: 'server.port-in-use', params: { port } }] },
       errors: [],
       opened: [],
+      state: expect.any(String),
     });
   });
 
@@ -91,6 +99,34 @@ describe('start', () => {
       throw new Error('no browser');
     });
     expect(['close' in result, document.refusals, errors]).toEqual([true, [], ['no browser\n']]);
+  });
+});
+
+describe('start, the redirect page', () => {
+  it('opens a page in the state folder that refreshes to the URL, so no opener argument holds the token', async () => {
+    const { document, opened, state } = await started(['--json']);
+    const { port } = document.result;
+    expect([opened.length, dirname(dirname(opened[0] ?? ''))]).toEqual([1, state]);
+    expect(opened[0]).not.toContain('secret-0');
+    expect(readFileSync(opened[0] ?? '', 'utf8')).toContain(
+      `<meta http-equiv="refresh" content="0;url=http://127.0.0.1:${port}/#t=secret-0">`,
+    );
+  });
+
+  it('removes the page once the token is exchanged', async () => {
+    const { document, opened } = await started(['--json']);
+    const reply = await fetch(`http://127.0.0.1:${document.result.port}/api/session`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"token":"secret-0"}',
+    });
+    expect([reply.status, opened.length, existsSync(opened[0] ?? '')]).toEqual([200, 1, false]);
+  });
+
+  it('removes the page when the server closes', async () => {
+    const { result, opened } = await started(['--json']);
+    if ('close' in result) await result.close();
+    expect([opened.length, existsSync(opened[0] ?? '')]).toEqual([1, false]);
   });
 });
 
@@ -119,6 +155,7 @@ describe('start without a server', () => {
       },
       errors: [],
       opened: [],
+      state: expect.any(String),
     });
   });
 });

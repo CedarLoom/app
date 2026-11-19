@@ -46,11 +46,14 @@ export class Session {
   readonly token: string;
   readonly #source: SessionSource;
   readonly #expires: number;
+  readonly #spent: () => void;
   #pending: string | null;
   #grant: Grant | null = null;
 
-  constructor(source: SessionSource) {
+  /** `spent` runs once the token is exchanged. */
+  constructor(source: SessionSource, spent: () => void = () => undefined) {
     this.#source = source;
+    this.#spent = spent;
     this.token = source.secret();
     this.#pending = this.token;
     this.#expires = source.now() + TOKEN_MS;
@@ -61,6 +64,7 @@ export class Session {
     if (this.#pending === null || this.#source.now() >= this.#expires || !same(token, this.#pending)) return null;
     this.#pending = null;
     this.#grant = { cookie: this.#source.secret(), csrf: this.#source.secret() };
+    this.#spent();
     return this.#grant;
   }
 
@@ -74,21 +78,30 @@ export class Session {
 
 type Denial = [status: number, code: Code];
 
+const SAFE_METHODS = new Set(['GET', 'HEAD']);
+
+// The API by its path and by its matched route, since the router decodes percent-escapes the raw path keeps.
+const api = (req: FastifyRequest): boolean =>
+  req.url.startsWith('/api/') || (req.routeOptions.url?.startsWith('/api/') ?? false);
+
+// The redirect page is a file:// page, so its refresh to the UI arrives as a cross-site top-level navigation.
+const navigation = (req: FastifyRequest): boolean =>
+  req.headers['sec-fetch-site'] === 'cross-site' &&
+  req.headers['sec-fetch-mode'] === 'navigate' &&
+  req.headers['sec-fetch-dest'] === 'document' &&
+  SAFE_METHODS.has(req.method) &&
+  !api(req);
+
 // This port's literal 127.0.0.1 Host (421 stops DNS rebinding), its Origin, same-origin: other ports are same-site too.
 const foreign = (req: FastifyRequest, self: string): Denial | null => {
   const { host, origin } = req.headers;
   const site = req.headers['sec-fetch-site'];
   if (host !== self) return [421, 'session.host'];
   if (origin !== undefined && origin !== `http://${self}`) return [403, 'session.origin'];
-  if (site !== undefined && site !== 'same-origin' && site !== 'none') return [403, 'session.origin'];
+  if (site !== undefined && site !== 'same-origin' && site !== 'none' && !navigation(req))
+    return [403, 'session.origin'];
   return null;
 };
-
-const SAFE_METHODS = new Set(['GET', 'HEAD']);
-
-// The API by its path and by its matched route, since the router decodes percent-escapes the raw path keeps.
-const api = (req: FastifyRequest): boolean =>
-  req.url.startsWith('/api/') || (req.routeOptions.url?.startsWith('/api/') ?? false);
 
 // Without a session: the exchange, and outside /api/ only GET and HEAD (the UI's files).
 const open = (req: FastifyRequest): boolean =>

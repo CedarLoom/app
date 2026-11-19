@@ -1,18 +1,13 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { stateDir } from '@cedarloom/use-cases';
+import { opener } from './opener.ts';
 import { start } from './start.ts';
 
-// The platform's own opener; cmd's start takes its first quoted word as a window title, hence the empty one.
-// cmd by its full path: Windows looks for a bare name in the working directory, the project, before PATH.
-const OPENERS: Partial<Record<NodeJS.Platform, readonly string[]>> = {
-  darwin: ['open'],
-  win32: [join(process.env['SystemRoot'] || 'C:\\Windows', 'System32', 'cmd.exe'), '/c', 'start', '""'],
-};
-
-const openBrowser = (url: string): void => {
-  const [command = 'xdg-open', ...args] = OPENERS[process.platform] ?? [];
-  const child = spawn(command, [...args, url], {
+const openFile = (path: string): void => {
+  const { command, args } = opener(process.platform, process.env['SystemRoot'], path);
+  const child = spawn(command, args, {
     detached: true,
     stdio: 'ignore',
     windowsVerbatimArguments: process.platform === 'win32',
@@ -34,10 +29,11 @@ export const run = (): void => {
   start({
     argv: process.argv.slice(2),
     cwd: process.cwd(),
+    stateDir: stateDir({ env: process.env, platform: process.platform, home: homedir(), cwd: process.cwd() }),
     // Monotonic, so a change of the system clock does not stretch or cut the token's 10 minutes.
     now: () => performance.now(),
     secret: () => randomBytes(32).toString('base64url'),
-    open: openBrowser,
+    open: openFile,
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => process.stderr.write(text),
   }).then((started) => {
