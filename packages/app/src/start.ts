@@ -14,6 +14,8 @@ export interface AppIo extends SessionSource {
   stateDir: string;
   /** The store folder of a project root. */
   storeDir: (root: string) => string;
+  /** The built UI's folder. */
+  uiDir: string;
   clock: StoreClock;
   /** The running Node.js version and the package's engines.node range. */
   node: string;
@@ -126,7 +128,7 @@ export const start = async (io: AppIo): Promise<Started> => {
   };
   const session = new Session(io, removePage);
   const project = { root, storeDir: io.storeDir(root), clock: io.clock, node: io.node, required: io.required };
-  const app = await buildServer({ session, log: io.stderr, project });
+  const app = await buildServer({ session, log: io.stderr, project, ui: io.uiDir });
   try {
     await app.listen({ host: '127.0.0.1', port: options.port });
   } catch (error) {

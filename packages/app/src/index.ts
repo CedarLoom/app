@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { stateDir, storeDir } from '@cedarloom/use-cases';
 import manifest from '../package.json' with { type: 'json' };
 import { opener } from './opener.ts';
@@ -34,6 +35,7 @@ export const run = (): void => {
     cwd: process.cwd(),
     stateDir: stateDir(machine),
     storeDir: (projectRoot) => storeDir({ ...machine, projectRoot, realpath: realpathSync.native }),
+    uiDir: fileURLToPath(new URL('../dist/ui', import.meta.url)),
     clock: { now: () => new Date(), newRunId: randomUUID },
     node: process.versions.node,
     required: manifest.engines.node,

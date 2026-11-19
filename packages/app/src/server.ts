@@ -12,12 +12,15 @@ import {
 import { z } from 'zod';
 import { apiRoutes, ERRORS, type Project } from './api.ts';
 import { cookieName, cookieValues, frameworkErrors, guard, portOf, type Session } from './session.ts';
+import { uiRoutes } from './ui-files.ts';
 
 export interface ServerOptions {
   session: Session;
   /** Where errors the client does not see go: the server's terminal. */
   log: (text: string) => void;
   project: Project;
+  /** The built UI's folder; the server starts without it and answers 404 for its files. */
+  ui: string;
 }
 
 const refusal = (code: Code, params: Params = {}): { code: Code; params: Params } => ({ code, params });
@@ -73,8 +76,8 @@ const SERVER = {
   forceCloseConnections: true,
 } as const;
 
-/** The local server: session security on every request, Refusal bodies for every error, the session and API routes. */
-export const buildServer = async ({ session, log, project }: ServerOptions): Promise<FastifyInstance> => {
+/** The local server: session security on every request, Refusal bodies for every error, the API and the UI's files. */
+export const buildServer = async ({ session, log, project, ui }: ServerOptions): Promise<FastifyInstance> => {
   const app = Fastify(SERVER);
   // Zod schemas validate requests and responses and make the OpenAPI document; swagger collects the routes added after it.
   app.setValidatorCompiler(validatorCompiler);
@@ -106,5 +109,6 @@ export const buildServer = async ({ session, log, project }: ServerOptions): Pro
   errors(app, log);
   sessionRoutes(app, session);
   apiRoutes(app, project);
+  uiRoutes(app, ui);
   return app;
 };
