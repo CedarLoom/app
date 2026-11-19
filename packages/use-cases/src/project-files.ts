@@ -22,13 +22,17 @@ export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update
 export const errorCode = (error: unknown): unknown =>
   error instanceof Error && 'code' in error ? error.code : undefined;
 
-/** What is at a path, not following a link; undefined when nothing is, also when a folder on the way is a file. */
+/**
+ * What is at a path, not following a link; undefined when nothing is, also when a folder on the way is a file or the
+ * name is too long to exist.
+ */
 export const entryAt = (path: string) => {
   try {
     // 64-bit ids: as numbers, Windows file ids lose precision, and two files could look like one.
     return lstatSync(path, { throwIfNoEntry: false, bigint: true });
   } catch (error) {
-    if (errorCode(error) === 'ENOTDIR') return undefined;
+    const code = errorCode(error);
+    if (code === 'ENOTDIR' || code === 'ENAMETOOLONG') return undefined;
     throw error;
   }
 };
@@ -124,20 +128,25 @@ export const copyAtomic = (bytes: Uint8Array, dest: string): void => {
   flushFolder(dirname(dest));
 };
 
+// Moves a file back by a hard link, which never overwrites; false when link() fails, as on a taken path or a
+// filesystem without hard links.
+const linkedBack = (aside: string, path: string): boolean => {
+  try {
+    linkSync(aside, path);
+  } catch {
+    return false;
+  }
+  unlinkSync(aside);
+  return true;
+};
+
 /** Puts a file set aside back at its path; when another process put a file there meanwhile, both stay. */
 export const putBack = (aside: string, path: string, isFile: boolean): void => {
-  // A link or folder goes back by rename, as a hard link to a link would follow it on macOS, and only to a free path.
-  if (!isFile) {
+  // A link or folder goes back by rename, as a hard link to a link would follow it on macOS, and only to a free path;
+  // so does a file a hard link cannot put back.
+  if (!(isFile && linkedBack(aside, path))) {
     if (entryAt(path) !== undefined) return;
     renameSync(aside, path);
-  } else {
-    try {
-      linkSync(aside, path);
-    } catch (error) {
-      if (errorCode(error) === 'EEXIST') return;
-      throw error;
-    }
-    unlinkSync(aside);
   }
   flushFolder(dirname(path));
 };

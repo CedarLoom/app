@@ -20,6 +20,11 @@
       ["path"],
       " changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
     ],
+    "plan.name-too-long": [
+      "The name of ",
+      ["path"],
+      " leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use a shorter name."
+    ],
     "plan.not-text": [["path"], " is not a UTF-8 text file. CedarLoom writes only text files."],
     "plan.path-outside-roots": [
       ["path"],

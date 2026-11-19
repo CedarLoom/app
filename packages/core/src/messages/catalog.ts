@@ -6,6 +6,7 @@ export const MESSAGE_IDS = [
   'apply.recovered',
   'apply.write-mismatch',
   'plan.file-changed',
+  'plan.name-too-long',
   'plan.not-text',
   'plan.path-outside-roots',
   'plan.symlink',
@@ -21,6 +22,7 @@ export interface MessagePlaceholders {
   'apply.recovered': 'path' | 'run';
   'apply.write-mismatch': 'path' | 'run';
   'plan.file-changed': 'path';
+  'plan.name-too-long': 'path';
   'plan.not-text': 'path';
   'plan.path-outside-roots': 'path';
   'plan.symlink': 'path';

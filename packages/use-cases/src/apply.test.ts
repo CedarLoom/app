@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,9 +15,20 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PlanOperation, Refusal } from '@cedarloom/core';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type Applied, type ApplyRequest, apply, type Boundary } from './apply.ts';
 import { openRunView, openStore, type RunStore, type RunView } from './store.ts';
+
+// link() refused as on a filesystem without hard links, such as exFAT, while `refuseLinks.on`.
+const refuseLinks = vi.hoisted(() => ({ on: false }));
+vi.mock('node:fs', async (load) => {
+  const fs = await load<typeof import('node:fs')>();
+  const linkSync: typeof fs.linkSync = (from, to) => {
+    if (refuseLinks.on) throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' });
+    fs.linkSync(from, to);
+  };
+  return { ...fs, linkSync };
+});
 
 const folders: string[] = [];
 const opened: { close(): void }[] = [];
@@ -172,7 +184,7 @@ describe('apply checks the whole plan first', () => {
     '.claude/./a.md',
     '.claude//a.md',
     '/etc/passwd',
-    '.claude\\..\\README.md',
+    '.claude/..\\README.md',
     '.claude/a.md:stream',
     '.claude/.git/config',
     '.cedarloom/workflows/.GIT/config',
@@ -183,6 +195,19 @@ describe('apply checks the whole plan first', () => {
     const plan = [create('.claude/a.md', 'a\n'), create(path, 'x\n')];
     expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.path-outside-roots', path));
     expect(listing(root)).toEqual([]);
+  });
+});
+
+describe('apply checks the plan paths', () => {
+  const long = `.claude/${'n'.repeat(180)}.md`;
+  it.each([
+    ['plan.file-changed', [create('.claude/a', 'a\n'), create('.claude/a/b', 'b\n')], '.claude/a/b'],
+    ['plan.file-changed', [create('.claude/a/b', 'b\n'), create('.claude/a', 'a\n')], '.claude/a'],
+    ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(long, 'x\n')], long],
+  ] as const)('refuses with %s a plan path its steps could not write, before any write', (code, plan, path) => {
+    const { root, state } = project();
+    expect(apply(store(state), request(root, [...plan]))).toEqual(refusedAt(code, path));
+    expect([listing(root), runs(state)]).toEqual([[], []]);
   });
 });
 
@@ -255,6 +280,12 @@ describe('apply stops a step', () => {
   });
 });
 
+// The next apply settles the run left behind, with nothing to report, and its step was never started.
+const nextApplyRuns = (held: RunStore, root: string, state: string): void => {
+  expect(apply(held, request(root, []))).toEqual({ run: null, refusal: null, findings: [] });
+  expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['pending'] });
+};
+
 const failAtSetAside = (boundary: Boundary): void => {
   if (boundary === 'set-aside') throw new Error('disk gone');
 };
@@ -292,6 +323,41 @@ describe('apply stops a run', () => {
       refused({ code: 'apply.write-mismatch', params: { run: 'r1', path: '.claude/a.md' } }, 'r1'),
     );
     expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['failed'] });
+  });
+});
+
+describe('apply after a step throws', () => {
+  it('puts the old file back where the filesystem refuses hard links, and the next apply runs', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state);
+    refuseLinks.on = true;
+    try {
+      expect(() => apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toThrow('EPERM');
+    } finally {
+      refuseLinks.on = false;
+    }
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'old\n']);
+    nextApplyRuns(held, root, state);
+  });
+
+  // A folder mode does not keep a process out on Windows.
+  it.skipIf(process.platform === 'win32')('throws the step error first when the recovery after it fails too', () => {
+    const { root, state } = project({ '.claude/c.md': 'gone\n' });
+    const folder = join(root, '.claude');
+    const readOnly = (boundary: Boundary): void => {
+      if (boundary !== 'set-aside') return;
+      chmodSync(folder, 0o500);
+      throw new Error('disk gone');
+    };
+    let thrown: unknown;
+    try {
+      apply(store(state), request(root, [remove('.claude/c.md', 'gone\n')]), readOnly);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      chmodSync(folder, 0o700);
+    }
+    expect(thrown instanceof AggregateError ? thrown.errors[0] : thrown).toEqual(new Error('disk gone'));
   });
 });
 
@@ -372,6 +438,15 @@ describe('recovery of a delete and of a step not started', () => {
     expect(apply(store(state), request(root, [])).findings).toEqual([recovered('.claude/a.md')]);
     expect([listing(root), run(state, 'r1')]).toEqual([[], { status: 'interrupted', steps: ['settled', 'pending'] }]);
   }, 20_000);
+
+  it('settles a run whose temporary name is too long to exist, so the next apply runs', () => {
+    const { root, state } = project();
+    const held = store(state);
+    const path = `.claude/${'n'.repeat(250)}.md`;
+    const operations = [{ kind: 'create', path, beforeHash: null, afterHash: hash('a\n'), entries: null }] as const;
+    held.begin({ ...request(root, []).run, planHash: 'a'.repeat(64), operations: [...operations] });
+    nextApplyRuns(held, root, state);
+  });
 
   it('leaves a step the run never started pending, and reports nothing for it', async () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });

@@ -1,6 +1,6 @@
 import { isUtf8 } from 'node:buffer';
 import { rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { Finding, PlanOperation, PlanPreview, Refusal } from '@cedarloom/core';
 import {
   asidePath,
@@ -86,18 +86,40 @@ const fileKey = (path: string): string => path.normalize('NFC').toLowerCase();
 const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined =>
   after === null || sha256(Buffer.from(after)) === afterHash ? undefined : refusal('plan.text-mismatch', path);
 
+// RunId allows 64 characters, and most filesystems 255 bytes in a name.
+const LONGEST_RUN_ID = 'r'.repeat(64);
+const nameProblem = (path: string, position: number): Refusal | undefined =>
+  Buffer.byteLength(basename(asidePath(path, LONGEST_RUN_ID, position))) > 255
+    ? refusal('plan.name-too-long', path)
+    : undefined;
+
+// The folders of a path, as keys: ".claude/a/b.md" has ".claude" and ".claude/a".
+const folderKeys = (path: string): string[] => {
+  const parts = fileKey(path).split('/');
+  return parts.slice(1).map((_, end) => parts.slice(0, end + 1).join('/'));
+};
+
+// What the plan alone shows wrong with an operation; a plan path that is a folder of another one would make a step
+// throw after the steps before it wrote.
+const planProblem = (op: PlanOperation, position: number, nested: boolean): Refusal | undefined =>
+  nameProblem(op.path, position) ?? (nested ? refusal('plan.file-changed', op.path) : textProblem(op));
+
 // Every operation is checked before the first write, each against what the ones before it leave: one problem writes none.
 const precheck = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
   const leaves = new Map<string, string | null>();
-  for (const op of operations) {
+  const folders = new Set<string>();
+  for (const [position, op] of operations.entries()) {
     if (!inWriteRoots(op.path)) return refusal('plan.path-outside-roots', op.path);
     const key = fileKey(op.path);
+    const above = folderKeys(op.path);
+    const nested = folders.has(key) || above.some((folder) => leaves.has(folder));
     const problem =
-      textProblem(op) ??
+      planProblem(op, position, nested) ??
       linkRefusal(root, op.path) ??
       (leaves.has(key) ? chainProblem(op, leaves.get(key)) : diskProblem(root, op));
     if (problem !== undefined) return problem;
     leaves.set(key, op.afterHash);
+    for (const folder of above) folders.add(folder);
   }
   return undefined;
 };
@@ -178,6 +200,16 @@ const step = (context: Step, position: number, op: PlanOperation): Refusal | und
   return undefined;
 };
 
+// What a step's exception becomes once recovery ran: the step's own error, kept first when recovery fails too.
+const afterRecovery = (store: RunStore, root: string, error: unknown): unknown => {
+  try {
+    recover(store, root);
+  } catch (failure) {
+    return new AggregateError([error, failure], 'a step failed, and the recovery after it failed too');
+  }
+  return error;
+};
+
 const journal = ({ before: _before, after: _after, ...hashes }: PlanOperation): NewRun['operations'][number] => ({
   ...hashes,
   entries: null,
@@ -202,8 +234,7 @@ export const apply = (store: RunStore, { root, plan, run }: ApplyRequest, at: At
       stopped = step({ store, run: id, root, at }, position, op);
     } catch (error) {
       // Settled now, so the run is not listed as running while this process holds the store.
-      recover(store, root);
-      throw error;
+      throw afterRecovery(store, root, error);
     }
     if (stopped !== undefined) {
       store.settle(id, position, 'failed');

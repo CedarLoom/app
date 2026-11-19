@@ -36,6 +36,10 @@ msgid "plan.text-mismatch"
 msgstr "The new text of {path} does not match the plan's hash. Nothing was changed. Make the plan again."
 
 #. js-lingui-explicit-id
+msgid "plan.name-too-long"
+msgstr "The name of {path} leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use a shorter name."
+
+#. js-lingui-explicit-id
 msgid "apply.backup-failed"
 msgstr "The backup of {path} failed, so run {run} stopped and the file was not changed."
 

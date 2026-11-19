@@ -29,9 +29,10 @@ const settleStep = ({ store, root, run }: Unsettled, position: number, op: Opera
   const path = join(root, op.path);
   const temp = tempPath(path, run, position);
   const aside = asidePath(path, run, position);
-  const left = [temp, aside].some((file) => entryAt(file) !== undefined);
-  const started = left || hashAt(path) === op.afterHash;
-  rmSync(temp, { force: true });
+  const tempLeft = entryAt(temp) !== undefined;
+  const started = tempLeft || entryAt(aside) !== undefined || hashAt(path) === op.afterHash;
+  // rmSync throws for a name that cannot exist, also with force.
+  if (tempLeft) rmSync(temp, { force: true });
   rmSync(`${store.backupPath(run, position)}.tmp`, { force: true });
   settleAside(path, aside, op);
   return started;
