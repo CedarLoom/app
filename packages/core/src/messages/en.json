@@ -33,6 +33,13 @@
       ["count", "plural", { "one": ["#", " problem"], "other": ["#", " problems"] }],
       ". The plugin's generator/generate.mjs names them when run on it from the project's root with --prefix '' --out .claude --check."
     ],
+    "definition.not-found": [
+      "No ",
+      ["source", "select", { "shipped": ["shipped"], "other": ["project"] }],
+      " workflow definition named ",
+      ["name"],
+      "."
+    ],
     "definition.not-json": [["path"], " cannot be read, or is not valid JSON."],
     "definition.stale": [
       "The files generated from the workflow definition ",
@@ -174,6 +181,10 @@
       " left it, and this undo would leave run ",
       ["run"],
       " counted as undone. Nothing was restored."
+    ],
+    "workflow.name-invalid": [
+      ["name"],
+      " is not a valid workflow name. Use lowercase letters, digits and single hyphens."
     ]
   }
 }

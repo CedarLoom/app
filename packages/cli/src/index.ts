@@ -8,6 +8,7 @@ import { message } from './message.ts';
 import { exitCode, type Outcome, refused, write } from './output.ts';
 import { runsList, runsShow } from './runs.ts';
 import { undoRun } from './undo.ts';
+import { workflowsList, workflowsShow, workflowsValidate } from './workflows.ts';
 
 export type { Io } from './io.ts';
 
@@ -16,15 +17,22 @@ const HELP = {
   'runs list': 'help.runs-list',
   'runs show': 'help.runs-show',
   undo: 'help.undo',
+  'workflows list': 'help.workflows-list',
+  'workflows show': 'help.workflows-show',
+  'workflows validate': 'help.workflows-validate',
   runs: 'help.runs',
+  workflows: 'help.workflows',
 } as const;
 
 const commandOutcome = (io: Io, request: Extract<Request, { kind: 'command' }>): Outcome => {
-  const { name, yes, pluginRoot } = request;
-  const argument = request.argument ?? '';
+  const { name, args, yes, shipped, pluginRoot } = request;
+  const [argument = ''] = args;
   if (name === 'doctor') return doctorRun(io, pluginRoot);
   if (name === 'runs list') return runsList(io);
   if (name === 'runs show') return runsShow(io, argument);
+  if (name === 'workflows list') return workflowsList(io, pluginRoot);
+  if (name === 'workflows show') return workflowsShow(io, argument, shipped, pluginRoot);
+  if (name === 'workflows validate') return workflowsValidate(io, args, shipped, pluginRoot);
   return undoRun(io, argument, yes);
 };
 

@@ -1,21 +1,15 @@
-import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Finding } from '@cedarloom/core';
 import { z } from 'zod';
+import { definitionBytes, definitionFileNames, PROJECT_FOLDER } from './definition-files.ts';
 import { headerName } from './generated-header.ts';
 import { type GeneratorRun, generate, unknownOutput } from './generator-run.ts';
-import { isUnreachable, reached } from './plugin-folder.ts';
-import { errorCode, readFound } from './project-files.ts';
 import { generatedFiles, orphanedPaths, stalePaths } from './stale-paths.ts';
-import { linkOnWay } from './write-roots.ts';
 
 /** The checks of the project's definitions: the definitions check's findings, and those of the generated files. */
 export interface DefinitionFindings {
   definitions: Finding[];
   generated: Finding[];
 }
-
-const FOLDER = '.cedarloom/workflows';
 
 interface Definition {
   /** The project-relative path of its file. */
@@ -30,39 +24,19 @@ const Named = z.object({ name: z.string() });
 
 // One definition file, or why it cannot be one: unreadable, or not JSON.
 const read = (project: string, file: string): Definition | Finding | undefined => {
-  const path = `${FOLDER}/${file}`;
-  // Where Node.js has no O_NOFOLLOW, as on Windows, readFound alone would follow a link.
-  if (reached(() => linkOnWay(project, path) ?? null) !== null) return notJson(path);
-  const found = reached(() => readFound(join(project, path)));
+  const path = `${PROJECT_FOLDER}/${file}`;
+  const bytes = definitionBytes(project, path);
   // Removed since the folder was listed.
-  if (found === 'absent') return undefined;
-  if (typeof found !== 'object') return notJson(path);
+  if (bytes === 'absent') return undefined;
+  if (bytes === 'unreadable') return notJson(path);
   let json: unknown;
   try {
-    json = JSON.parse(found.bytes.toString('utf8'));
+    json = JSON.parse(bytes.toString('utf8'));
   } catch {
     return notJson(path);
   }
   const named = Named.safeParse(json);
-  return {
-    path,
-    bytes: found.bytes,
-    name: named.success ? named.data.name : undefined,
-  };
-};
-
-// The definition files, as `.cedarloom/workflows/*.json` lists them: no dotfiles, such as an editor's lock link.
-const listed = (project: string): string[] | Finding => {
-  // A folder reached through a link may lie outside the project, as a definition file that is a link may.
-  if (reached(() => linkOnWay(project, FOLDER) ?? null) !== null) return notJson(FOLDER);
-  try {
-    const files = readdirSync(join(project, FOLDER)).filter((file) => file.endsWith('.json') && !file.startsWith('.'));
-    return files.toSorted();
-  } catch (error) {
-    if (errorCode(error) === 'ENOENT') return [];
-    if (isUnreachable(error)) return notJson(FOLDER);
-    throw error;
-  }
+  return { path, bytes, name: named.success ? named.data.name : undefined };
 };
 
 const stale = (name: string, paths: string[]): Finding[] =>
@@ -98,8 +72,8 @@ const compared = (
  * and compares its outputs with the project.
  */
 export const definitionFindings = (request: GeneratorRun & { project: string }): DefinitionFindings => {
-  const files = listed(request.project);
-  if (!Array.isArray(files)) return { definitions: [files], generated: [] };
+  const files = definitionFileNames(request.project, PROJECT_FOLDER);
+  if (files === 'unreadable') return { definitions: [notJson(PROJECT_FOLDER)], generated: [] };
   const found = files.map((file) => read(request.project, file)).filter((entry) => entry !== undefined);
   const unreadable = found.filter((entry): entry is Finding => 'code' in entry);
   const definitions = found.filter((entry): entry is Definition => 'bytes' in entry);
@@ -113,7 +87,7 @@ export const definitionFindings = (request: GeneratorRun & { project: string }):
   if ('finding' in generated) return { definitions: [...unreadable, generated.finding], generated: [] };
   if ('refusals' in generated) {
     const invalid = definitions.flatMap(({ path }, index): Finding[] => {
-      const count = generated.refusals[index] ?? 0;
+      const count = generated.refusals[index]?.length ?? 0;
       return count === 0 ? [] : [{ code: 'definition.invalid', severity: 'error', params: { path, count } }];
     });
     return { definitions: [...unreadable, ...invalid], generated: [] };

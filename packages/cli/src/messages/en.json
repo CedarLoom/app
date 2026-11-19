@@ -1,7 +1,7 @@
 {
   "messages": {
     "help.cedarloom": [
-      "Usage: cedarloom <command> [options]\ncloom is a short name for cedarloom.\n\nCommands:\n  doctor           Check that this computer and project can run CedarLoom.\n  runs list        List the runs recorded for this project.\n  runs show <run>  Show a run and its steps.\n  undo <run>       Undo a run, as a run of its own.\n\nOptions:\n  --json           Print one JSON document instead of text.\n  --help, -h       Show the usage of a command.\n  --version, -V    Print the version of CedarLoom."
+      "Usage: cedarloom <command> [options]\ncloom is a short name for cedarloom.\n\nCommands:\n  doctor           Check that this computer and project can run CedarLoom.\n  runs list        List the runs recorded for this project.\n  runs show <run>  Show a run and its steps.\n  undo <run>       Undo a run, as a run of its own.\n  workflows list   List the shipped and project workflow definitions.\n  workflows show <name>\n                   Show a workflow definition.\n  workflows validate [<name>...]\n                   Check workflow definitions with the plugin's generator.\n\nOptions:\n  --json           Print one JSON document instead of text.\n  --help, -h       Show the usage of a command.\n  --version, -V    Print the version of CedarLoom."
     ],
     "help.doctor": [
       "Usage: cedarloom doctor [--plugin-root <dir>] [--json]\n\nChecks that this computer can run CedarLoom: the Node.js version, the project,\nthe cl-workflow plugin from the CedarLoom marketplace: installed for this\nproject, new enough and enabled, and the workflow definitions in\n.cedarloom/workflows: valid, and their generated files in .claude up to date.\nFor the definitions it runs the plugin's generator in a temporary folder.\n\nOptions:\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin, and run its generator. Its origin is not\n                       checked."
@@ -16,8 +16,23 @@
     "help.undo": [
       "Usage: cedarloom undo <run> [--yes] [--json]\n\nUndoes the run <run> as a run of its own. Without --yes it shows the plan and does not apply it."
     ],
+    "help.workflows": [
+      "Usage: cedarloom workflows <verb> [options]\n\nVerbs:\n  list                List the shipped and project workflow definitions.\n  show <name>         Show a workflow definition.\n  validate [<name>...]\n                      Check workflow definitions with the plugin's generator."
+    ],
+    "help.workflows-list": [
+      "Usage: cedarloom workflows list [--plugin-root <dir>] [--json]\n\nLists the workflow definitions shipped with the cl-workflow plugin, which are\nread only, and the project's own in .cedarloom/workflows. Without a usable\nplugin it lists the project's alone.\n\nOptions:\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin. Its origin is not checked."
+    ],
+    "help.workflows-show": [
+      "Usage: cedarloom workflows show <name> [--shipped] [--plugin-root <dir>] [--json]\n\nShows the project's workflow definition <name>: each stage and phase by its\nJSON Pointer, then the definition.\n\nOptions:\n  --shipped            Show the definition shipped with the plugin.\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin. Its origin is not checked."
+    ],
+    "help.workflows-validate": [
+      "Usage: cedarloom workflows validate [<name>...] [--shipped] [--plugin-root <dir>] [--json]\n\nChecks the project's workflow definitions <name>, or all of them, with the\nplugin's generator, run in a temporary folder, and prints each problem's file,\nfield and rule. Exits 1 when a definition has a problem.\n\nOptions:\n  --shipped            Check the definitions shipped with the plugin.\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin, and run its generator. Its origin is not\n                       checked."
+    ],
     "output.runs-none": ["No runs are recorded for this project."],
     "output.undo-applied": ["Undone as run ", ["run"], "."],
-    "output.undo-no-steps": ["Every file is already as before run ", ["run"], "."]
+    "output.undo-no-steps": ["Every file is already as before run ", ["run"], "."],
+    "output.workflow-invalid": [["name"], " (", ["source"], "): invalid"],
+    "output.workflow-valid": [["name"], " (", ["source"], "): valid"],
+    "output.workflows-none": ["No workflow definitions found."]
   }
 }
