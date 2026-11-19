@@ -8,6 +8,7 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -91,6 +92,12 @@ const tree = (path: string): Record<string, string> =>
       .map((entry) => [join(entry.parentPath, entry.name), readFileSync(join(entry.parentPath, entry.name), 'utf8')]),
   );
 
+// A file of 2 GiB, more than Node.js reads into one buffer; sparse where the file system allows it.
+const large = (path: string): void => {
+  write(path, '');
+  truncateSync(path, 2 ** 31);
+};
+
 const isWindows = process.platform === 'win32';
 const isRoot = process.getuid?.() === 0;
 
@@ -108,6 +115,18 @@ it('passes definitions whose generated files are in sync, keeping files without 
   const { project, check } = setup();
   write(join(project, '.claude', 'skills', 'dev', 'notes.md'), 'Own notes.\n');
   expect(check()).toEqual({ definitions: [], generated: [] });
+});
+
+it('passes a large file below a skill folder, reading only its head for the mark', () => {
+  const { project, check } = setup();
+  large(join(project, '.claude', 'skills', 'own', 'assets', 'large.bin'));
+  expect(check()).toEqual({ definitions: [], generated: [] });
+});
+
+it('names a generated file too large to read whole with definition.stale', () => {
+  const { project, check } = setup();
+  large(join(project, '.claude', 'skills', 'dev', 'SKILL.md'));
+  expect(check()).toEqual(stale(['.claude/skills/dev/SKILL.md']));
 });
 
 it('passes a project without definitions', () => {
@@ -156,6 +175,12 @@ describe('names each generated file that differs with definition.stale', () => {
     expect(check()).toEqual(stale(['.claude/skills/dev/old.md']));
   });
 
+  it('a file in another skill folder whose header names the definition', () => {
+    const { project, check } = setup();
+    write(join(project, '.claude', 'skills', 'dev2', 'SKILL.md'), SKILL);
+    expect(check()).toEqual(stale(['.claude/skills/dev2/SKILL.md']));
+  });
+
   it.skipIf(isWindows)('a file reached through a link', () => {
     const { project, check } = setup();
     const elsewhere = folder();
@@ -184,6 +209,23 @@ describe('names the generated files of a definition that is gone with definition
       ],
     });
   });
+
+  it.skipIf(isWindows || isRoot)('beside a folder the app may not read', () => {
+    const { project, check } = setup();
+    rmSync(join(project, '.cedarloom', 'workflows', 'dev.json'));
+    const locked = join(project, '.claude', 'skills', 'dev', 'locked');
+    mkdirSync(locked);
+    chmodSync(locked, 0o000);
+    onTestFinished(() => chmodSync(locked, 0o700));
+    expect(check()).toEqual(stale(['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']));
+  });
+});
+
+it('leaves the generated files of other definitions alone while a definition file cannot be read', () => {
+  const { project, check } = setup();
+  write(join(project, '.cedarloom', 'workflows', 'research.json'), '{"name": ');
+  write(join(project, '.claude', 'skills', 'research', 'SKILL.md'), SKILL.replace('dev.json', 'research.json'));
+  expect(check()).toEqual(notJson('.cedarloom/workflows/research.json'));
 });
 
 it('reports each definition the generator refuses with definition.invalid, its file and its refusal count', () => {
@@ -244,8 +286,13 @@ describe('runs the generator apart from the caller', () => {
     expect(check()).toEqual({ definitions: [], generated: [] });
   });
 
-  it('with a relative temporary folder', () => {
-    const { project, root, temp } = setup();
+  it('with a relative temporary folder, giving the generator absolute paths', () => {
+    const { project, root, temp } = setup(
+      GENERATOR.replace(
+        'const out = args.at(-1);',
+        'const out = args.at(-1);\nif (!isAbsolute(out)) process.exit(3);',
+      ).replace('import { dirname, join }', 'import { dirname, isAbsolute, join }'),
+    );
     const relativeTemp = relative(process.cwd(), temp);
     expect(definitionFindings({ project, root, temp: relativeTemp, timeoutMs: 20_000, env: {} })).toEqual({
       definitions: [],

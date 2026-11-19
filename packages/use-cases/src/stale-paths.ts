@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { type Dirent, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { filesBelow } from './files-below.ts';
 import { headerName, MARK } from './generated-header.ts';
@@ -9,41 +9,49 @@ import { linkOnWay } from './write-roots.ts';
 const SKILLS = '.claude/skills';
 const WORKFLOWS = '.claude/workflows';
 
-// A project file's bytes; undefined for anything but a regular file reached without a link, as a write would refuse it.
-const bytesAt = (project: string, path: string): Buffer | undefined => {
+// The mark sits in the header, which follows only the front matter of a few definition fields.
+const HEAD = 1024 * 1024;
+
+// A project file's first limit bytes; undefined for anything but a regular file reached without a link, as a write
+// would refuse it.
+const bytesAt = (project: string, path: string, limit: number): Buffer | undefined => {
   if (reached(() => linkOnWay(project, path) ?? null) !== null) return undefined;
-  const found = reached(() => readFound(join(project, path)));
+  const found = reached(() => readFound(join(project, path), limit));
   return typeof found === 'object' ? found.bytes : undefined;
 };
 
 // Git for Windows checks text out with CRLF by default; the generator writes LF, except where it copies a file as read.
 const withLf = (bytes: Buffer): Buffer => Buffer.from(bytes.toString('latin1').replaceAll('\r\n', '\n'), 'latin1');
 
+// A folder's entries; none when the app cannot read it.
+const readableEntries = (folder: string): Dirent[] => reached(() => readdirSync(folder, { withFileTypes: true })) ?? [];
+
 // A project folder's entries; none when a link is on the way, as it may lead outside the project, or the app cannot read it.
 const entriesOf = (project: string, folder: string) =>
-  reached(() => linkOnWay(project, folder) ?? null) === null
-    ? (reached(() => readdirSync(join(project, folder), { withFileTypes: true })) ?? [])
-    : [];
+  reached(() => linkOnWay(project, folder) ?? null) === null ? readableEntries(join(project, folder)) : [];
 
 // Whether path is where a generator run for name writes: its skill folder or its workflow script.
 const isOwnPath = (path: string, name: string): boolean =>
   path.startsWith(`${SKILLS}/${name}/`) || path === `${WORKFLOWS}/${name}.js`;
 
-/** The project's files a generator run wrote before: those below a skill folder and the workflow scripts that carry the mark. */
+/**
+ * The project's files a generator run wrote before, by their head: those below a skill folder and the workflow scripts
+ * that carry the mark.
+ */
 export const generatedFiles = (project: string): Map<string, Buffer> => {
   const skills = entriesOf(project, SKILLS)
     .filter((entry) => entry.isDirectory())
     .flatMap(({ name }) =>
-      // Each skill folder alone, so one the app cannot read hides only its own files.
-      (reached(() => filesBelow(join(project, SKILLS, name))) ?? []).map((path) => `${SKILLS}/${name}/${path}`),
+      // Folder by folder, so one the app cannot read hides only its own files.
+      filesBelow(join(project, SKILLS, name), readableEntries).map((path) => `${SKILLS}/${name}/${path}`),
     );
   const scripts = entriesOf(project, WORKFLOWS)
     .filter(({ name }) => name.endsWith('.js'))
     .map(({ name }) => `${WORKFLOWS}/${name}`);
   return new Map(
     [...skills, ...scripts].flatMap((path): [string, Buffer][] => {
-      const bytes = bytesAt(project, path);
-      return bytes?.includes(MARK) ? [[path, bytes]] : [];
+      const head = bytesAt(project, path, HEAD);
+      return head?.includes(MARK) ? [[path, head]] : [];
     }),
   );
 };
@@ -60,7 +68,8 @@ export const stalePaths = (
 ): string[] => {
   const expected = new Map([...outputs].map(([path, bytes]) => [`.claude/${path}`, bytes]));
   const differing = [...expected].filter(([path, bytes]) => {
-    const found = bytesAt(project, path);
+    // A file longer than twice the bytes differs from them even with each of its line ends read as CRLF.
+    const found = bytesAt(project, path, 2 * bytes.length + 1);
     return found === undefined || !withLf(found).equals(withLf(bytes));
   });
   const extra = [...generated.keys()].filter((path) => isOwnPath(path, name) && !expected.has(path));
@@ -68,8 +77,8 @@ export const stalePaths = (
 };
 
 /**
- * The generated files of definitions that are gone, by the name their header gives: those whose header names none of
- * the names, outside the skill folders and workflow scripts of the names.
+ * The generated files outside the skill folders and workflow scripts of the names, which no run for the names writes,
+ * by the name their header gives.
  */
 export const orphanedPaths = (
   generated: ReadonlyMap<string, Buffer>,
@@ -77,7 +86,7 @@ export const orphanedPaths = (
 ): Map<string, string[]> => {
   const orphans = [...generated].flatMap(([path, bytes]): [string, string][] => {
     const name = headerName(bytes);
-    if (name === undefined || names.includes(name) || names.some((own) => isOwnPath(path, own))) return [];
+    if (name === undefined || names.some((own) => isOwnPath(path, own))) return [];
     return [[name, path]];
   });
   return new Map(

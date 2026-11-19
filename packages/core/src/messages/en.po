@@ -129,11 +129,11 @@ msgstr "{path} cannot be read, is not a JSON object, or its enabledPlugins is no
 
 #. js-lingui-explicit-id
 msgid "definition.invalid"
-msgstr "The workflow definition {path} has {count, plural, one {# problem} other {# problems}}. The plugin's generator/generate.mjs names them when run on it from the project's root."
+msgstr "The workflow definition {path} has {count, plural, one {# problem} other {# problems}}. The plugin's generator/generate.mjs names them when run on it from the project's root with --prefix '''' --out .claude --check."
 
 #. js-lingui-explicit-id
 msgid "definition.stale"
-msgstr "The files generated from the workflow definition {name} differ from what the plugin's generator writes now: {paths}. Run its generator/generate.mjs on the definitions in .cedarloom/workflows from the project's root, and delete the files of a definition that no longer exists."
+msgstr "The files generated from the workflow definition {name} differ from what the plugin's generator writes now: {paths}. Run its generator/generate.mjs on the definitions in .cedarloom/workflows from the project's root with --prefix '''' --out .claude, and delete the files of a definition that no longer exists."
 
 #. js-lingui-explicit-id
 msgid "definition.not-json"

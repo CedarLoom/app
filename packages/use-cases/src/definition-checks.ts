@@ -68,19 +68,28 @@ const listed = (project: string): string[] | Finding => {
 const stale = (name: string, paths: string[]): Finding[] =>
   paths.length === 0 ? [] : [{ code: 'definition.stale', severity: 'warning', params: { name, paths } }];
 
-// The generated check of each definition: the outputs whose header names its definition, compared with the project;
-// then the generated files of definitions that are gone.
-const compared = (project: string, definitions: Definition[], outputs: Map<string, Buffer>): DefinitionFindings => {
+// The generated check of each definition: the outputs whose header names its definition, compared with the project,
+// and the generated files elsewhere whose header names it; then, when every definition file was read, the generated
+// files of definitions that are gone, as an unread file may hold theirs.
+const compared = (
+  project: string,
+  definitions: Definition[],
+  outputs: Map<string, Buffer>,
+  allRead: boolean,
+): DefinitionFindings => {
   const names = definitions.flatMap(({ name }) => (name === undefined ? [] : [name]));
   const ownerOf = (bytes: Buffer) => names.find((name) => name === headerName(bytes));
   const unowned = [...outputs].filter(([, bytes]) => ownerOf(bytes) === undefined).map(([path]) => path);
   if (unowned.length > 0) return { definitions: [unknownOutput(unowned.join('\n')).finding], generated: [] };
   const generated = generatedFiles(project);
+  const orphans = orphanedPaths(generated, names);
   const present = names.flatMap((name) => {
     const own = new Map([...outputs].filter(([, bytes]) => ownerOf(bytes) === name));
-    return stale(name, stalePaths(project, name, own, generated));
+    return stale(name, [...stalePaths(project, name, own, generated), ...(orphans.get(name) ?? [])].toSorted());
   });
-  const gone = [...orphanedPaths(generated, names)].flatMap(([name, paths]) => stale(name, paths));
+  const gone = allRead
+    ? [...orphans].filter(([name]) => !names.includes(name)).flatMap(([name, paths]) => stale(name, paths))
+    : [];
   return { definitions: [], generated: [...present, ...gone] };
 };
 
@@ -96,7 +105,7 @@ export const definitionFindings = (request: GeneratorRun & { project: string }):
   const definitions = found.filter((entry): entry is Definition => 'bytes' in entry);
   if (unreadable.length > 0 && definitions.length === 0) return { definitions: unreadable, generated: [] };
   // Nothing to generate, but the files of removed definitions may be left.
-  if (definitions.length === 0) return compared(request.project, [], new Map());
+  if (definitions.length === 0) return compared(request.project, [], new Map(), true);
   const generated = generate(
     definitions.map(({ bytes }) => bytes),
     request,
@@ -109,6 +118,6 @@ export const definitionFindings = (request: GeneratorRun & { project: string }):
     });
     return { definitions: [...unreadable, ...invalid], generated: [] };
   }
-  const result = compared(request.project, definitions, generated.outputs);
+  const result = compared(request.project, definitions, generated.outputs, unreadable.length === 0);
   return { definitions: [...unreadable, ...result.definitions], generated: result.generated };
 };
