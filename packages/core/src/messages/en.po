@@ -50,3 +50,23 @@ msgstr "{path} does not match the plan after the write. Run {run} stopped; run c
 #. js-lingui-explicit-id
 msgid "apply.recovered"
 msgstr "{path} was left from the interrupted run {run} and was settled."
+
+#. js-lingui-explicit-id
+msgid "run.not-found"
+msgstr "No run with the id {run}."
+
+#. js-lingui-explicit-id
+msgid "run.already-undone"
+msgstr "Run {run} was already undone by run {by}."
+
+#. js-lingui-explicit-id
+msgid "undo.file-changed"
+msgstr "{path} changed after the run, so undo would lose that change. Nothing was restored."
+
+#. js-lingui-explicit-id
+msgid "undo.backup-missing"
+msgstr "The backup of {path} is missing, so the run cannot be undone."
+
+#. js-lingui-explicit-id
+msgid "undo.backup-changed"
+msgstr "The backup of {path} no longer matches its recorded hash, so the run cannot be undone."

@@ -18,6 +18,7 @@ import type { PlanOperation, Refusal } from '@cedarloom/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type Applied, type ApplyRequest, apply, type Boundary } from './apply.ts';
 import { openRunView, openStore, type RunStore, type RunView } from './store.ts';
+import { type UndoRequest, undo } from './undo.ts';
 
 // link() refused as on a filesystem without hard links, such as exFAT, while `refuseLinks.on`.
 const refuseLinks = vi.hoisted(() => ({ on: false }));
@@ -51,8 +52,9 @@ const project = (files: Record<string, string> = {}): { root: string; state: str
   return { root, state: fresh() };
 };
 
-const clock = { now: () => new Date('2026-11-18T22:17:39.123Z'), newRunId: () => 'r1' };
-const store = (state: string): RunStore => {
+// The store gives the run ids in order, then r1.
+const store = (state: string, ...ids: string[]): RunStore => {
+  const clock = { now: () => new Date('2026-11-18T22:17:39.123Z'), newRunId: () => ids.shift() ?? 'r1' };
   const result = openStore(state, clock);
   if (!result.ok) throw new Error(result.refusal.code);
   opened.push(result.value);
@@ -113,7 +115,11 @@ const runs = (state: string): string[] => {
 const text = (path: string): string | null => (existsSync(path) ? readFileSync(path, 'utf8') : null);
 const listing = (root: string): string[] => readdirSync(join(root, '.claude')).toSorted();
 const refused = (refusal: Refusal, id: string | null = null): Applied => ({ run: id, refusal, findings: [] });
-const recovered = (path: string) => ({ code: 'apply.recovered', severity: 'info', params: { run: 'r1', path } });
+const recovered = (path: string, id = 'r1') => ({
+  code: 'apply.recovered',
+  severity: 'info',
+  params: { run: id, path },
+});
 const refusedAt = (code: Refusal['code'], path: string, id: string | null = null): Applied =>
   refused({ code, params: { path } }, id);
 
@@ -361,15 +367,24 @@ describe('apply after a step throws', () => {
   });
 });
 
-// Another process that applies the plan and kills itself at `boundary` of the operation at `position`.
-const crash = async (state: string, plan: ApplyRequest, boundary: Boundary, position: number): Promise<void> => {
+// Another process that applies the plan as run r1, or undoes the run as run u1, and kills itself at `boundary` of the
+// operation at `position`.
+const crash = async (
+  state: string,
+  plan: ApplyRequest | UndoRequest,
+  boundary: Boundary,
+  position: number,
+): Promise<void> => {
   const script = `
     import { apply } from ${JSON.stringify(new URL('apply.ts', import.meta.url).href)};
+    import { undo } from ${JSON.stringify(new URL('undo.ts', import.meta.url).href)};
     import { openStore } from ${JSON.stringify(new URL('store.ts', import.meta.url).href)};
     const [state, plan, boundary, position] = process.argv.slice(1);
-    const store = openStore(state, { now: () => new Date('2026-11-18T22:00:00.000Z'), newRunId: () => 'r1' });
+    const request = JSON.parse(plan);
+    const id = 'plan' in request ? 'r1' : 'u1';
+    const store = openStore(state, { now: () => new Date('2026-11-18T22:00:00.000Z'), newRunId: () => id });
     if (!store.ok) throw new Error(store.refusal.code);
-    apply(store.value, JSON.parse(plan), (at, index) => {
+    ('plan' in request ? apply : undo)(store.value, request, (at, index) => {
       if (at === boundary && index === Number(position)) process.kill(process.pid, 'SIGKILL');
     });
     process.stdout.write('not killed');
@@ -415,6 +430,12 @@ describe('recovery', () => {
   );
 });
 
+// A run recorded as running whose one step, a create at `path`, never started.
+const begin = (held: RunStore, root: string, path: string): void => {
+  const operations = [{ kind: 'create', path, beforeHash: null, afterHash: hash('a\n'), entries: null }] as const;
+  held.begin({ ...request(root, []).run, planHash: 'a'.repeat(64), operations: [...operations] });
+};
+
 describe('recovery of a delete and of a step not started', () => {
   it.each([
     ['set-aside', 'gone\n'],
@@ -442,9 +463,7 @@ describe('recovery of a delete and of a step not started', () => {
   it('settles a run whose temporary name is too long to exist, so the next apply runs', () => {
     const { root, state } = project();
     const held = store(state);
-    const path = `.claude/${'n'.repeat(250)}.md`;
-    const operations = [{ kind: 'create', path, beforeHash: null, afterHash: hash('a\n'), entries: null }] as const;
-    held.begin({ ...request(root, []).run, planHash: 'a'.repeat(64), operations: [...operations] });
+    begin(held, root, `.claude/${'n'.repeat(250)}.md`);
     nextApplyRuns(held, root, state);
   });
 
@@ -455,5 +474,157 @@ describe('recovery of a delete and of a step not started', () => {
     expect(apply(store(state), request(root, [])).findings).toEqual([recovered('.claude/a.md')]);
     expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled', 'pending'] });
     expect(text(join(root, '.claude/b.md'))).toBe('old\n');
+  }, 20_000);
+});
+
+const undone = (state: string, id: string): string | null => {
+  const found = view(state).run(id);
+  if (!found.ok || found.value === undefined) throw new Error(`no run ${id}`);
+  return found.value.undoneBy;
+};
+
+// Releases a store before another process takes it.
+const release = (held: RunStore): void => {
+  opened.splice(opened.indexOf(held), 1);
+  held.close();
+};
+
+describe('undo', () => {
+  it('restores each file to its text from before the run, newest step first, as a run of its own', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n', '.claude/c.md': 'gone\n' });
+    const held = store(state, 'r1', 'u1');
+    const plan = [
+      create('.claude/a.md', 'a\n'),
+      replace('.claude/b.md', 'old\n', 'v2\n'),
+      replace('.claude/b.md', 'v2\n', 'new\n'),
+      remove('.claude/c.md', 'gone\n'),
+    ];
+    expect(apply(held, request(root, plan)).refusal).toBeNull();
+    const result = undo(held, { root, run: 'r1' });
+    expect([result.run, result.refusal, result.findings]).toEqual(['u1', null, []]);
+    expect(result.plan?.operations.map(({ kind, path }) => `${kind} ${path}`)).toEqual([
+      'create .claude/c.md',
+      'replace .claude/b.md',
+      'replace .claude/b.md',
+      'delete .claude/a.md',
+    ]);
+    expect(listing(root)).toEqual(['b.md', 'c.md']);
+    expect([text(join(root, '.claude/b.md')), text(join(root, '.claude/c.md'))]).toEqual(['old\n', 'gone\n']);
+    expect(run(state, 'u1')).toEqual({ status: 'done', steps: ['done', 'done', 'done', 'done'] });
+    expect(undone(state, 'r1')).toBe('u1');
+  });
+
+  it('undo refuses a file changed after the run, and restores nothing', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n'), create('.claude/a.md', 'a\n')]));
+    writeFileSync(join(root, '.claude/b.md'), 'theirs\n');
+    expect(undo(held, { root, run: 'r1' })).toEqual({
+      ...refusedAt('undo.file-changed', '.claude/b.md'),
+      plan: null,
+    });
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['a.md', 'b.md'], 'theirs\n']);
+    expect(runs(state)).toEqual(['done']);
+  });
+
+  it.each([
+    ['undo.backup-missing', (backup: string) => rmSync(backup)],
+    ['undo.backup-changed', (backup: string) => writeFileSync(backup, 'other\n')],
+  ] as const)('undo refuses with %s when the backup is missing or changed', (code, spoil) => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
+    spoil(join(state, 'backups/r1/0'));
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({ code, params: { path: '.claude/b.md' } });
+    expect(text(join(root, '.claude/b.md'))).toBe('new\n');
+  });
+});
+
+describe('undo refuses', () => {
+  it.each(['r9', '-r1', '../r1'])('refuses the run id %s as no run', (id) => {
+    const { root, state } = project();
+    const held = store(state);
+    apply(held, request(root, [create('.claude/a.md', 'a\n')]));
+    expect(undo(held, { root, run: id }).refusal).toEqual({ code: 'run.not-found', params: { run: id } });
+  });
+});
+
+describe('undo of an undo', () => {
+  it('restores the run result, and refuses a run that is not in effect', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'u1', 'u2', 'u3');
+    apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]));
+    expect(undo(held, { root, run: 'r1' }).run).toBe('u1');
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+      code: 'run.already-undone',
+      params: { run: 'r1', by: 'u1' },
+    });
+    expect(undo(held, { root, run: 'u1' }).run).toBe('u2');
+    expect([text(join(root, '.claude/a.md')), text(join(root, '.claude/b.md'))]).toEqual(['a\n', 'new\n']);
+    expect(undo(held, { root, run: 'u1' }).refusal).toEqual({
+      code: 'run.already-undone',
+      params: { run: 'u1', by: 'u2' },
+    });
+    expect(undo(held, { root, run: 'r1' }).run).toBe('u3');
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'old\n']);
+  });
+
+  it('an undo that fails midway can be undone, and a file it never reached is left alone', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'u1', 'u2');
+    apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]));
+    const edit = (boundary: Boundary, position: number): void => {
+      if (boundary === 'written' && position === 0) writeFileSync(join(root, '.claude/a.md'), 'theirs\n');
+    };
+    expect(undo(held, { root, run: 'r1' }, edit).refusal).toEqual({
+      code: 'plan.file-changed',
+      params: { path: '.claude/a.md' },
+    });
+    expect([run(state, 'u1'), undone(state, 'r1')]).toEqual([{ status: 'failed', steps: ['done', 'failed'] }, null]);
+    expect(undo(held, { root, run: 'u1' }).run).toBe('u2');
+    expect([text(join(root, '.claude/a.md')), text(join(root, '.claude/b.md'))]).toEqual(['theirs\n', 'new\n']);
+  });
+
+  it('waits for a step recovery left unsettled while a link is on its way', () => {
+    const { root, state } = project();
+    const held = store(state);
+    begin(held, root, '.claude/skills/a.md');
+    symlinkSync(fresh(), join(root, '.claude/skills'), 'junction');
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+      code: 'plan.symlink',
+      params: { path: '.claude/skills' },
+    });
+  });
+});
+
+describe('recovery of an undo', () => {
+  it.each([
+    ['temp-written', null],
+    ['set-aside', null],
+    ['linked', 'u2'],
+    ['written', 'u2'],
+  ] as const)(
+    'settles an undo killed after %s like any run, and its undo leaves the run result',
+    async (boundary, again) => {
+      const { root, state } = project({ '.claude/b.md': 'old\n' });
+      const first = store(state);
+      apply(first, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
+      release(first);
+      await crash(state, { root, run: 'r1' }, boundary, 0);
+      const result = undo(store(state, 'u2'), { root, run: 'u1' });
+      expect([result.run, result.refusal, result.findings]).toEqual([again, null, [recovered('.claude/b.md', 'u1')]]);
+      expect(run(state, 'u1')).toEqual({ status: 'interrupted', steps: ['settled'] });
+      expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'new\n']);
+    },
+    20_000,
+  );
+
+  it('undoes an interrupted run once recovery settled it', async () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const plan = request(root, [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]);
+    await crash(state, plan, 'linked', 1);
+    const result = undo(store(state, 'u1'), { root, run: 'r1' });
+    expect([result.run, result.refusal, result.findings]).toEqual(['u1', null, [recovered('.claude/b.md')]]);
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'old\n']);
   }, 20_000);
 });

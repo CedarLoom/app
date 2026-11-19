@@ -44,7 +44,8 @@ export interface Applied {
   findings: Finding[];
 }
 
-type At = (boundary: Boundary, position: number) => void;
+/** Runs at each boundary of each step. */
+export type At = (boundary: Boundary, position: number) => void;
 
 interface Step {
   store: RunStore;

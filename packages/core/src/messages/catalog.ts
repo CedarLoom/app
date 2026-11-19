@@ -11,9 +11,14 @@ export const MESSAGE_IDS = [
   'plan.path-outside-roots',
   'plan.symlink',
   'plan.text-mismatch',
+  'run.already-undone',
+  'run.not-found',
   'store.locked',
   'store.unreadable',
   'store.version-unsupported',
+  'undo.backup-changed',
+  'undo.backup-missing',
+  'undo.file-changed',
 ] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
@@ -27,7 +32,12 @@ export interface MessagePlaceholders {
   'plan.path-outside-roots': 'path';
   'plan.symlink': 'path';
   'plan.text-mismatch': 'path';
+  'run.already-undone': 'by' | 'run';
+  'run.not-found': 'run';
   'store.locked': 'path';
   'store.unreadable': 'path';
   'store.version-unsupported': 'found' | 'supported';
+  'undo.backup-changed': 'path';
+  'undo.backup-missing': 'path';
+  'undo.file-changed': 'path';
 }
