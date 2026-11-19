@@ -273,6 +273,16 @@ export class RunStore {
       .map((row) => runOf(this.#db, row));
   }
 
+  /** The ended runs that generated from definitions, newest first; a failed or interrupted one keeps its done steps. */
+  generations(): Run[] {
+    return this.#db
+      .prepare(
+        `SELECT ${RUN_COLUMNS} FROM runs r WHERE r.status <> 'running' AND r.generatedFrom <> '[]' ORDER BY r.rowid DESC`,
+      )
+      .all()
+      .map((row) => runOf(this.#db, row));
+  }
+
   /** Where the backup of the file at `position` of a run is kept, for undo. */
   backupPath(runId: string, position: number): string {
     return join(this.#dir, 'backups', runId, String(position));

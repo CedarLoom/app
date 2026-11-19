@@ -10,6 +10,7 @@ const COMMANDS = {
   'workflows list': { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false },
   'workflows show': { argument: '<name>', variadic: false, change: false, pluginRoot: true, shipped: true },
   'workflows validate': { argument: '<name>', variadic: true, change: false, pluginRoot: true, shipped: true },
+  'workflows generate': { argument: '<name>', variadic: true, change: true, pluginRoot: true, shipped: false },
 } as const;
 type CommandName = keyof typeof COMMANDS;
 const NOUNS = ['runs', 'workflows'] as const;

@@ -48,6 +48,10 @@
       ["paths"],
       ". Run its generator/generate.mjs on the definitions in .cedarloom/workflows from the project's root with --prefix '' --out .claude, and delete the files of a definition that no longer exists."
     ],
+    "generate.delete-skipped": [
+      ["path"],
+      " is no longer generated, but it changed since it was written, so CedarLoom kept it. Delete it yourself if it is not needed."
+    ],
     "generator.failed": [
       "The workflow generator stopped with ",
       ["signal", "select", { "null": ["exit code ", ["exitCode"]], "other": ["signal ", ["signal"]] }],

@@ -1,7 +1,7 @@
 {
   "messages": {
     "help.cedarloom": [
-      "Usage: cedarloom <command> [options]\ncloom is a short name for cedarloom.\n\nCommands:\n  doctor           Check that this computer and project can run CedarLoom.\n  runs list        List the runs recorded for this project.\n  runs show <run>  Show a run and its steps.\n  undo <run>       Undo a run, as a run of its own.\n  workflows list   List the shipped and project workflow definitions.\n  workflows show <name>\n                   Show a workflow definition.\n  workflows validate [<name>...]\n                   Check workflow definitions with the plugin's generator.\n\nOptions:\n  --json           Print one JSON document instead of text.\n  --help, -h       Show the usage of a command.\n  --version, -V    Print the version of CedarLoom."
+      "Usage: cedarloom <command> [options]\ncloom is a short name for cedarloom.\n\nCommands:\n  doctor           Check that this computer and project can run CedarLoom.\n  runs list        List the runs recorded for this project.\n  runs show <run>  Show a run and its steps.\n  undo <run>       Undo a run, as a run of its own.\n  workflows list   List the shipped and project workflow definitions.\n  workflows show <name>\n                   Show a workflow definition.\n  workflows validate [<name>...]\n                   Check workflow definitions with the plugin's generator.\n  workflows generate [<name>...]\n                   Write the files of workflow definitions into .claude.\n\nOptions:\n  --json           Print one JSON document instead of text.\n  --help, -h       Show the usage of a command.\n  --version, -V    Print the version of CedarLoom."
     ],
     "help.doctor": [
       "Usage: cedarloom doctor [--plugin-root <dir>] [--json]\n\nChecks that this computer can run CedarLoom: the Node.js version, the project,\nthe cl-workflow plugin from the CedarLoom marketplace: installed for this\nproject, new enough and enabled, and the workflow definitions in\n.cedarloom/workflows: valid, and their generated files in .claude up to date.\nFor the definitions it runs the plugin's generator in a temporary folder.\n\nOptions:\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin, and run its generator. Its origin is not\n                       checked."
@@ -17,7 +17,10 @@
       "Usage: cedarloom undo <run> [--yes] [--json]\n\nUndoes the run <run> as a run of its own. Without --yes it shows the plan and does not apply it."
     ],
     "help.workflows": [
-      "Usage: cedarloom workflows <verb> [options]\n\nVerbs:\n  list                List the shipped and project workflow definitions.\n  show <name>         Show a workflow definition.\n  validate [<name>...]\n                      Check workflow definitions with the plugin's generator."
+      "Usage: cedarloom workflows <verb> [options]\n\nVerbs:\n  list                List the shipped and project workflow definitions.\n  show <name>         Show a workflow definition.\n  validate [<name>...]\n                      Check workflow definitions with the plugin's generator.\n  generate [<name>...]\n                      Write the files of workflow definitions into .claude."
+    ],
+    "help.workflows-generate": [
+      "Usage: cedarloom workflows generate [<name>...] [--yes] [--plugin-root <dir>] [--json]\n\nGenerates the project's workflow definitions <name>, or all of them, with the\nplugin's generator, run in a temporary folder, and plans the changes to\n.claude: the files to create or replace, and the files an earlier generation\nwrote that are no longer generated, deleted only while unchanged. Without --yes\nit shows the plan and does not apply it. Undo a generation with cedarloom undo.\n\nOptions:\n  --yes                Apply the plan as a run.\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin, and run its generator. Its origin is not\n                       checked."
     ],
     "help.workflows-list": [
       "Usage: cedarloom workflows list [--plugin-root <dir>] [--json]\n\nLists the workflow definitions shipped with the cl-workflow plugin, which are\nread only, and the project's own in .cedarloom/workflows. Without a usable\nplugin it lists the project's alone.\n\nOptions:\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin. Its origin is not checked."
@@ -28,6 +31,8 @@
     "help.workflows-validate": [
       "Usage: cedarloom workflows validate [<name>...] [--shipped] [--plugin-root <dir>] [--json]\n\nChecks the project's workflow definitions <name>, or all of them, with the\nplugin's generator, run in a temporary folder, and prints each problem's file,\nfield and rule. Exits 1 when a definition has a problem.\n\nOptions:\n  --shipped            Check the definitions shipped with the plugin.\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin, and run its generator. Its origin is not\n                       checked."
     ],
+    "output.generate-applied": ["Applied as run ", ["run"], "."],
+    "output.generate-none": ["Every generated file in .claude is up to date."],
     "output.runs-none": ["No runs are recorded for this project."],
     "output.undo-applied": ["Undone as run ", ["run"], "."],
     "output.undo-no-steps": ["Every file is already as before run ", ["run"], "."],

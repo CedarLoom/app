@@ -148,6 +148,10 @@ msgid "generator.output-unknown"
 msgstr "The workflow generator printed output CedarLoom cannot read: {output}"
 
 #. js-lingui-explicit-id
+msgid "generate.delete-skipped"
+msgstr "{path} is no longer generated, but it changed since it was written, so CedarLoom kept it. Delete it yourself if it is not needed."
+
+#. js-lingui-explicit-id
 msgid "definition.not-found"
 msgstr "No {source, select, shipped {shipped} other {project}} workflow definition named {name}."
 

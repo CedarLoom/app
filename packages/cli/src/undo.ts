@@ -1,7 +1,7 @@
 import { type PlanPreview, RunId } from '@cedarloom/core';
-import { openStore, planUndo, undo } from '@cedarloom/use-cases';
+import { planUndo, undo } from '@cedarloom/use-cases';
 import type { Io } from './io.ts';
-import { locate } from './locate.ts';
+import { withStore } from './locate.ts';
 import { message } from './message.ts';
 import { columns, type Outcome, refused } from './output.ts';
 
@@ -45,13 +45,5 @@ const applied = (store: Parameters<typeof undo>[0], root: string, target: string
 /** cedarloom undo <run>: plans the undo of a run, and applies it with --yes. */
 export const undoRun = (io: Io, run: string, yes: boolean): Outcome => {
   if (!RunId.safeParse(run).success) return refused({ code: 'run.not-found', params: { run } });
-  const place = locate(io);
-  if ('refusal' in place) return refused(place.refusal);
-  const store = openStore(place.dir, io.clock);
-  if (!store.ok) return refused(store.refusal);
-  try {
-    return yes ? applied(store.value, place.root, run) : shown(store.value, place.root, run);
-  } finally {
-    store.value.close();
-  }
+  return withStore(io, (store, root) => (yes ? applied(store, root, run) : shown(store, root, run)));
 };

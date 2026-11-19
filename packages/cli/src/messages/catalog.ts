@@ -12,9 +12,12 @@ export const MESSAGE_IDS = [
   'help.runs-show',
   'help.undo',
   'help.workflows',
+  'help.workflows-generate',
   'help.workflows-list',
   'help.workflows-show',
   'help.workflows-validate',
+  'output.generate-applied',
+  'output.generate-none',
   'output.runs-none',
   'output.undo-applied',
   'output.undo-no-steps',
@@ -32,9 +35,12 @@ export interface MessagePlaceholders {
   'help.runs-show': never;
   'help.undo': never;
   'help.workflows': never;
+  'help.workflows-generate': never;
   'help.workflows-list': never;
   'help.workflows-show': never;
   'help.workflows-validate': never;
+  'output.generate-applied': 'run';
+  'output.generate-none': never;
   'output.runs-none': never;
   'output.undo-applied': 'run';
   'output.undo-no-steps': 'run';
