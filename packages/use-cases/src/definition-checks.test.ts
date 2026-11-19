@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { definitionFindings } from './definition-checks.ts';
 
@@ -42,10 +42,13 @@ for (const file of args.slice(0, args.indexOf('--json'))) {
   if (def.script) outputs['workflows/' + def.name + '.js'] = '// ' + header + '\\n';
 }
 console.log(JSON.stringify(refusals));
-if (refusals.length) process.exit(1);
-for (const [path, text] of Object.entries(outputs)) {
-  mkdirSync(dirname(join(out, path)), { recursive: true });
-  writeFileSync(join(out, path), text);
+// As the plugin's generator does: process.exit could end the process before a long refusal list is written.
+process.exitCode = refusals.length ? 1 : 0;
+if (!refusals.length) {
+  for (const [path, text] of Object.entries(outputs)) {
+    mkdirSync(dirname(join(out, path)), { recursive: true });
+    writeFileSync(join(out, path), text);
+  }
 }
 `;
 
@@ -64,14 +67,17 @@ const setup = (generator = GENERATOR) => {
   write(join(project, '.cedarloom', 'workflows', 'dev.json'), JSON.stringify(DEV));
   write(join(project, '.claude', 'skills', 'dev', 'SKILL.md'), SKILL);
   write(join(project, '.claude', 'workflows', 'dev.js'), SCRIPT);
-  const check = (timeoutMs = 20_000) => definitionFindings({ project, root, temp, timeoutMs, env: process.env });
-  return { project, temp, check };
+  const check = (timeoutMs = 20_000, env: NodeJS.ProcessEnv = process.env) =>
+    definitionFindings({ project, root, temp, timeoutMs, env });
+  return { project, root, temp, check };
 };
 
-const stale = (paths: string[]) => ({
-  definitions: [],
-  generated: [{ code: 'definition.stale', severity: 'warning', params: { name: 'dev', paths } }],
+const staleFinding = (name: string, paths: string[]) => ({
+  code: 'definition.stale',
+  severity: 'warning',
+  params: { name, paths },
 });
+const stale = (paths: string[]) => ({ definitions: [], generated: [staleFinding('dev', paths)] });
 const notJson = (path: string) => ({
   definitions: [{ code: 'definition.not-json', severity: 'error', params: { path } }],
   generated: [],
@@ -87,6 +93,16 @@ const tree = (path: string): Record<string, string> =>
 
 const isWindows = process.platform === 'win32';
 const isRoot = process.getuid?.() === 0;
+
+// A link at path; the test is skipped where the platform refuses to make one, as Windows does without the privilege.
+const link = (target: string, path: string, skip: (note: string) => never): void => {
+  try {
+    symlinkSync(target, path);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'EPERM') skip('this account cannot make links');
+    throw error;
+  }
+};
 
 it('passes definitions whose generated files are in sync, keeping files without the mark out of the comparison', () => {
   const { project, check } = setup();
@@ -126,6 +142,20 @@ describe('names each generated file that differs with definition.stale', () => {
     expect(check()).toEqual(stale(['.claude/skills/dev/agents/old.yaml', '.claude/workflows/dev.js']));
   });
 
+  it.skipIf(isWindows || isRoot)('an extra file beside a link in the skill folder, which is not followed', () => {
+    const { project, check } = setup();
+    const elsewhere = folder();
+    mkdirSync(join(elsewhere, 'locked'));
+    chmodSync(join(elsewhere, 'locked'), 0o000);
+    onTestFinished(() => chmodSync(join(elsewhere, 'locked'), 0o700));
+    symlinkSync(elsewhere, join(project, '.claude', 'skills', 'dev', 'elsewhere'));
+    write(
+      join(project, '.claude', 'skills', 'dev', 'old.md'),
+      '<!-- Generated: edit the definition, not this file. -->\n',
+    );
+    expect(check()).toEqual(stale(['.claude/skills/dev/old.md']));
+  });
+
   it.skipIf(isWindows)('a file reached through a link', () => {
     const { project, check } = setup();
     const elsewhere = folder();
@@ -136,21 +166,92 @@ describe('names each generated file that differs with definition.stale', () => {
   });
 });
 
-it('reports each definition the generator refuses with definition.invalid and its refusal count', () => {
+describe('names the generated files of a definition that is gone with definition.stale', () => {
+  it('removed, also when none is left', () => {
+    const { project, check } = setup();
+    rmSync(join(project, '.cedarloom', 'workflows', 'dev.json'));
+    expect(check()).toEqual(stale(['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']));
+  });
+
+  it('renamed, by the name their header gives', () => {
+    const { project, check } = setup();
+    write(join(project, '.cedarloom', 'workflows', 'dev.json'), JSON.stringify({ ...DEV, name: 'study' }));
+    expect(check()).toEqual({
+      definitions: [],
+      generated: [
+        staleFinding('study', ['.claude/skills/study/SKILL.md', '.claude/workflows/study.js']),
+        staleFinding('dev', ['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']),
+      ],
+    });
+  });
+});
+
+it('reports each definition the generator refuses with definition.invalid, its file and its refusal count', () => {
   const { project, check } = setup();
   const workflows = join(project, '.cedarloom', 'workflows');
-  write(join(workflows, 'dev.json'), JSON.stringify({ ...DEV, refusals: ['/name', '/stages'] }));
+  write(join(workflows, 'dev.json'), JSON.stringify({ ...DEV, name: 'study', refusals: ['/name', '/stages'] }));
   write(join(workflows, 'other.json'), JSON.stringify({ name: 'other', text: 'Run other.' }));
   expect(check()).toEqual({
-    definitions: [{ code: 'definition.invalid', severity: 'error', params: { name: 'dev', count: 2 } }],
+    definitions: [
+      { code: 'definition.invalid', severity: 'error', params: { path: '.cedarloom/workflows/dev.json', count: 2 } },
+    ],
     generated: [],
   });
+});
+
+it('reports a refusal list longer than 1 MiB with definition.invalid', () => {
+  const { project, check } = setup();
+  const refusals = Array.from({ length: 20_000 }, (_, index) => `/field-${String(index).padStart(60, '0')}`);
+  write(join(project, '.cedarloom', 'workflows', 'dev.json'), JSON.stringify({ ...DEV, refusals }));
+  expect(check().definitions).toEqual([
+    { code: 'definition.invalid', severity: 'error', params: { path: '.cedarloom/workflows/dev.json', count: 20_000 } },
+  ]);
 });
 
 it('reads generated files checked out with CRLF line endings as in sync', () => {
   const { project, check } = setup();
   write(join(project, '.claude', 'skills', 'dev', 'SKILL.md'), SKILL.replaceAll('\n', '\r\n'));
   expect(check()).toEqual({ definitions: [], generated: [] });
+});
+
+it('reads generated files as in sync where the generator writes CRLF, as it copies a runner checked out with CRLF', () => {
+  const { project, check } = setup(
+    GENERATOR.replace("'// ' + header + '\\n'", "'// ' + header + '\\r\\nrun();\\r\\n'"),
+  );
+  write(join(project, '.claude', 'workflows', 'dev.js'), `// ${HEADER}\r\nrun();\r\n`);
+  expect(check()).toEqual({ definitions: [], generated: [] });
+});
+
+it('matches outputs to their definition by the header line alone', () => {
+  const { project, check } = setup();
+  const RESEARCH = { name: 'research', text: 'See .cedarloom/workflows/dev.json by hand.' };
+  write(join(project, '.cedarloom', 'workflows', 'research.json'), JSON.stringify(RESEARCH));
+  write(
+    join(project, '.claude', 'skills', 'research', 'SKILL.md'),
+    `<!-- ${HEADER.replace('dev.json', 'research.json')} -->\n${RESEARCH.text}\n`,
+  );
+  expect(check()).toEqual({ definitions: [], generated: [] });
+});
+
+describe('runs the generator apart from the caller', () => {
+  it('with no variable of the caller environment but SystemRoot', () => {
+    const { check } = setup(`if ('CEDARLOOM_TEST_MARKER' in process.env) process.exit(3);\n${GENERATOR}`);
+    expect(check(20_000, { ...process.env, CEDARLOOM_TEST_MARKER: '1' })).toEqual({ definitions: [], generated: [] });
+  });
+
+  it('in its temporary folder, where a relative path leads', () => {
+    const { check } = setup(GENERATOR.replace('const out = args.at(-1);', "const out = 'out';"));
+    expect(check()).toEqual({ definitions: [], generated: [] });
+  });
+
+  it('with a relative temporary folder', () => {
+    const { project, root, temp } = setup();
+    const relativeTemp = relative(process.cwd(), temp);
+    expect(definitionFindings({ project, root, temp: relativeTemp, timeoutMs: 20_000, env: {} })).toEqual({
+      definitions: [],
+      generated: [],
+    });
+  });
 });
 
 it('leaves dotfiles in the definitions folder out, as a *.json glob does', () => {
@@ -179,11 +280,11 @@ describe('reports each definition it cannot use with its finding', () => {
     expect(check()).toEqual(notJson('.cedarloom/workflows'));
   });
 
-  it.skipIf(isWindows)('definition.not-json for a link, also one that loops', () => {
+  it('definition.not-json for a link, also one that loops', ({ skip }) => {
     const { project, check } = setup();
     const workflows = join(project, '.cedarloom', 'workflows');
-    symlinkSync(join(workflows, 'dev.json'), join(workflows, 'copy.json'));
-    symlinkSync(join(workflows, 'loop.json'), join(workflows, 'loop.json'));
+    link(join(workflows, 'dev.json'), join(workflows, 'copy.json'), skip);
+    link(join(workflows, 'loop.json'), join(workflows, 'loop.json'), skip);
     expect(check().definitions).toEqual([
       ...notJson('.cedarloom/workflows/copy.json').definitions,
       ...notJson('.cedarloom/workflows/loop.json').definitions,
@@ -216,8 +317,8 @@ describe('reports each definition it cannot use with its finding', () => {
   });
 });
 
-describe('reports a generator it cannot use with its finding', () => {
-  it('generator.failed with the exit code and the error output, once for all definitions', () => {
+describe('reports a generator that fails with generator.failed', () => {
+  it('with the exit code and the error output, once for all definitions', () => {
     const { project, check } = setup("process.stderr.write('broken');\nprocess.exit(3);\n");
     write(join(project, '.cedarloom', 'workflows', 'other.json'), JSON.stringify({ name: 'other' }));
     expect(check().definitions).toEqual([
@@ -225,7 +326,7 @@ describe('reports a generator it cannot use with its finding', () => {
     ]);
   });
 
-  it('generator.failed with exit code 1 and the stack trace for a generator that throws', () => {
+  it('with exit code 1 and the stack trace for a generator that throws', () => {
     const { check } = setup("throw new Error('runner.js missing');\n");
     expect(check().definitions).toEqual([
       {
@@ -236,28 +337,39 @@ describe('reports a generator it cannot use with its finding', () => {
     ]);
   });
 
-  it('generator.failed with SIGKILL for a generator that does not end in time', () => {
+  it('with SIGKILL for a generator that does not end in time', () => {
     const { check } = setup('setInterval(() => {}, 1000);\n');
     expect(check(500).definitions).toEqual([
       { code: 'generator.failed', severity: 'error', params: { exitCode: null, signal: 'SIGKILL', stderr: '' } },
     ]);
   });
 
-  it('generator.output-unknown for output that is no refusal list', () => {
+  it('with the error output for an exit code of 1 with an empty refusal list', () => {
+    const { check } = setup("console.log('[]');\nprocess.stderr.write('ENAMETOOLONG');\nprocess.exit(1);\n");
+    expect(check().definitions).toEqual([
+      { code: 'generator.failed', severity: 'error', params: { exitCode: 1, signal: null, stderr: 'ENAMETOOLONG' } },
+    ]);
+  });
+});
+
+describe('reports output it cannot read with generator.output-unknown', () => {
+  it('for output that is no refusal list', () => {
     const { check } = setup("console.log('done');\n");
     expect(check().definitions).toEqual([
       { code: 'generator.output-unknown', severity: 'error', params: { output: 'done\n' } },
     ]);
   });
 
-  it('generator.output-unknown for an exit code of 1 with no refusal', () => {
-    const { check } = setup("console.log('[]');\nprocess.exit(1);\n");
+  it('for an exit code of 0 with a refusal', () => {
+    const { check } = setup(
+      "console.log(JSON.stringify([{ file: process.argv[2], field: '/name', rule: 'refused' }]));\n",
+    );
     expect(check().definitions).toEqual([
-      { code: 'generator.output-unknown', severity: 'error', params: { output: '[]\n' } },
+      { code: 'generator.output-unknown', severity: 'error', params: { output: expect.stringContaining('"/name"') } },
     ]);
   });
 
-  it('generator.output-unknown for a file whose header names no definition', () => {
+  it('for a file whose header names no definition', () => {
     const { check } = setup(`import { mkdirSync, writeFileSync } from 'node:fs';
 const out = process.argv.at(-1);
 mkdirSync(out + '/skills/x', { recursive: true });

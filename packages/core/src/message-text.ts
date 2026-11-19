@@ -17,8 +17,9 @@ const argument = (id: string, params: Params, name: unknown): string => {
 
 const ENGLISH_PLURAL = new Intl.PluralRules('en');
 
-// A select argument picks the branch named by its value, "null" for null; a plural argument its "=n" branch, else
-// its English plural category, with # in the branch as the number. Both fall back to their "other" branch.
+// A select argument picks the branch named by its value, "null" for null; a plural argument its exact branch "=n",
+// which the compiler keys as "n", else its English plural category, with # in the branch as the number. Both fall back
+// to their "other" branch.
 const branchOf = (id: string, params: Params, [name, format, choices]: readonly unknown[]): CompiledMessage => {
   const value = params[String(name)];
   if (value === undefined) throw new Error(`${id} has no parameter ${String(name)}`);
@@ -27,7 +28,7 @@ const branchOf = (id: string, params: Params, [name, format, choices]: readonly 
   );
   const keys =
     format === 'plural' && typeof value === 'number'
-      ? [`=${value}`, ENGLISH_PLURAL.select(value)]
+      ? [String(value), ENGLISH_PLURAL.select(value)]
       : [value === null ? 'null' : String(value)];
   const branch = [...keys, 'other'].map((key) => branches.get(key)).find((found) => found !== undefined);
   if (typeof branch === 'string') return branch;

@@ -28,22 +28,18 @@
     "cli.unknown-flag": [["command"], " has no option ", ["flag"], "."],
     "definition.invalid": [
       "The workflow definition ",
-      ["name"],
+      ["path"],
       " has ",
       ["count", "plural", { "one": ["#", " problem"], "other": ["#", " problems"] }],
-      ". Run cedarloom workflows validate ",
-      ["name"],
-      " for details."
+      ". The plugin's generator/generate.mjs names them when run on it from the project's root."
     ],
     "definition.not-json": [["path"], " cannot be read, or is not valid JSON."],
     "definition.stale": [
-      "The files generated from ",
+      "The files generated from the workflow definition ",
       ["name"],
-      " differ from what the plugin generates now: ",
+      " differ from what the plugin's generator writes now: ",
       ["paths"],
-      ". Run cedarloom workflows generate ",
-      ["name"],
-      "."
+      ". Run its generator/generate.mjs on the definitions in .cedarloom/workflows from the project's root, and delete the files of a definition that no longer exists."
     ],
     "generator.failed": [
       "The workflow generator stopped with ",

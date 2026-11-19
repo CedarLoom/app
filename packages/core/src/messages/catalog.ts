@@ -75,7 +75,7 @@ export interface MessagePlaceholders {
   'cli.missing-argument': 'argument' | 'command';
   'cli.unknown-command': 'bin' | 'command';
   'cli.unknown-flag': 'command' | 'flag';
-  'definition.invalid': 'count' | 'name';
+  'definition.invalid': 'count' | 'path';
   'definition.not-json': 'path';
   'definition.stale': 'name' | 'paths';
   'generator.failed': 'exitCode' | 'signal' | 'stderr';

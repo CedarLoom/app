@@ -1,6 +1,6 @@
 import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { Finding } from '@cedarloom/core';
 import { z } from 'zod';
 import { filesBelow } from './files-below.ts';
@@ -24,6 +24,7 @@ export type Generated = { outputs: Map<string, Buffer> } | { refusals: number[] 
 // What the generator prints with --json: one { file, field, rule } per refusal.
 const Refusals = z.array(z.object({ file: z.string(), field: z.string(), rule: z.string() }));
 const LIMIT = 4096;
+const OUTPUT_LIMIT = 64 * 1024 * 1024;
 
 // Windows needs SystemRoot to start a process; nothing else of the caller's environment reaches the generator.
 const childEnv = (env: GeneratorRun['env']): Record<string, string> =>
@@ -53,16 +54,23 @@ export const unknownOutput = (output: string): { finding: Finding } => ({
   finding: { code: 'generator.output-unknown', severity: 'error', params: { output: output.slice(0, LIMIT) } },
 });
 
-const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): Generated => {
-  const { status, signal, stdout } = run;
-  if (signal !== null || (status !== 0 && status !== 1)) return failed(run);
+// The refusal count of each file, in their order, from the list a run that exited with 0 or 1 printed; or why it gave none.
+const refusalCounts = (run: SpawnSyncReturns<string>, files: string[]): number[] | Generated => {
+  const { status, stdout } = run;
   const refusals = Refusals.safeParse(jsonOf(stdout));
-  // Node.js exits with 1 on an uncaught error too, which leaves its stack trace on stderr and no refusal list.
-  if (!refusals.success) return status === 1 ? failed(run) : unknownOutput(stdout);
+  // Node.js exits with 1 on an uncaught error too, which leaves its stack trace on stderr; the generator prints its
+  // refusal list before it writes, so an error in a write leaves an empty one.
+  if (status === 1 && !(refusals.success && refusals.data.length > 0)) return failed(run);
+  if (!refusals.success || (status === 0) !== (refusals.data.length === 0)) return unknownOutput(stdout);
   const counts = files.map((file) => refusals.data.filter((refusal) => refusal.file === file).length);
-  const counted = counts.reduce((sum, count) => sum + count, 0);
-  if ((status === 0) !== (refusals.data.length === 0) || counted !== refusals.data.length) return unknownOutput(stdout);
-  if (status === 1) return { refusals: counts };
+  return counts.reduce((sum, count) => sum + count, 0) === refusals.data.length ? counts : unknownOutput(stdout);
+};
+
+const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): Generated => {
+  if (run.signal !== null || (run.status !== 0 && run.status !== 1)) return failed(run);
+  const counts = refusalCounts(run, files);
+  if (!Array.isArray(counts)) return counts;
+  if (run.status === 1) return { refusals: counts };
   // A generator that wrote nothing leaves no output folder.
   if (!existsSync(out)) return { outputs: new Map() };
   return { outputs: new Map(filesBelow(out).map((path) => [path, readFileSync(join(out, path))])) };
@@ -73,7 +81,8 @@ const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): G
  * folder of its own that is removed afterwards.
  */
 export const generate = (definitions: Uint8Array[], request: GeneratorRun): Generated => {
-  const folder = mkdtempSync(join(request.temp, 'cedarloom-generate-'));
+  // Absolute, as the generator resolves the paths it gets from its own working folder.
+  const folder = mkdtempSync(join(resolve(request.temp), 'cedarloom-generate-'));
   try {
     // Copies, so the generator reads neither a link nor a FIFO from the project, and writes only into this folder.
     mkdirSync(join(folder, 'definitions'));
@@ -88,6 +97,8 @@ export const generate = (definitions: Uint8Array[], request: GeneratorRun): Gene
       cwd: folder,
       env: childEnv(request.env),
       encoding: 'utf8',
+      // The refusal list of a large definition can pass the default of 1 MiB.
+      maxBuffer: OUTPUT_LIMIT,
       timeout: request.timeoutMs,
       // A generator that ignores SIGTERM would keep the doctor waiting.
       killSignal: 'SIGKILL',
