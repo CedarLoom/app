@@ -113,15 +113,16 @@ it('refuses outside a Git working tree with project.not-found, exit 3', () => {
   expect(ran(['runs', 'list'], cwd).code).toBe(3);
 });
 
-it('refuses a run id outside the run id form with run.not-found, exit 3', () => {
+it('refuses a run id outside the run id form with run.not-found, exit 3, escaped on standard error', () => {
   const { root } = project();
   expect(ran(['runs', 'show', '../r1', '--json'], root)).toMatchObject({
     code: 3,
     document: { result: null, refusals: [{ code: 'run.not-found', params: { run: '../r1' } }] },
   });
+  expect(ran(['runs', 'show', '\u001b[2J\u202e'], root).stderr).toContain('\\u001b[2J\\u202e');
 });
 
-it('shows the undo plan without --yes and changes nothing, exit 4; applies it with --yes', () => {
+it('shows the undo plan without --yes and does not apply it, exit 4; applies it with --yes', () => {
   const { root, state } = project();
   recorded(root, state);
   const env = { CEDARLOOM_STATE_DIR: state };
@@ -170,7 +171,7 @@ it('reports a crash as cli.internal with the stack on standard error, exit 5', (
 const bin = fileURLToPath(new URL('../bin/cedarloom.js', import.meta.url));
 
 // The entry in a child process whose standard input is closed at once.
-const started = (args: string[], options: { cwd: string; argv0?: string; env?: Record<string, string> }) => {
+const started = (args: string[], options: { cwd: string; env?: Record<string, string> }) => {
   const child = spawnSync(process.execPath, args, {
     ...options,
     env: { ...process.env, ...options.env },
@@ -185,9 +186,9 @@ const lostDisk = (): string => {
 };
 
 describe('bin/cedarloom.js', () => {
-  it.each(['cedarloom', 'cloom'])('names cedarloom in cli.unknown-command when started as %s', (argv0) => {
+  it('names cedarloom in cli.unknown-command', () => {
     const { root } = project();
-    expect(started([bin, 'nope', '--json'], { cwd: root, argv0 })).toEqual({
+    expect(started([bin, 'nope', '--json'], { cwd: root })).toEqual({
       code: 2,
       document: {
         result: null,

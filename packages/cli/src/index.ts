@@ -63,7 +63,7 @@ export const run = (manifest: { version: string; engines: { node: string } }): v
     cwd: process.cwd(),
     home: homedir(),
     platform: process.platform,
-    realpath: realpathSync,
+    realpath: realpathSync.native,
     node: process.versions.node,
     version: manifest.version,
     required: manifest.engines.node,

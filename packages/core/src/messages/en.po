@@ -109,7 +109,7 @@ msgstr "These options cannot be used together: {flags}."
 
 #. js-lingui-explicit-id
 msgid "cli.confirm-required"
-msgstr "Nothing was changed. Run the command again with --yes to apply this plan."
+msgstr "This plan was not applied. Run the command again with --yes to apply it."
 
 #. js-lingui-explicit-id
 msgid "cli.internal"

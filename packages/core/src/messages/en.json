@@ -17,7 +17,7 @@
       " to see which steps were written."
     ],
     "cli.bad-value": [["value"], " is not a valid value for ", ["flag"], "."],
-    "cli.confirm-required": ["Nothing was changed. Run the command again with --yes to apply this plan."],
+    "cli.confirm-required": ["This plan was not applied. Run the command again with --yes to apply it."],
     "cli.flag-conflict": ["These options cannot be used together: ", ["flags"], "."],
     "cli.internal": ["CedarLoom stopped on an unexpected error. Please report it with the output above."],
     "cli.missing-argument": [["command"], " needs ", ["argument"], "."],

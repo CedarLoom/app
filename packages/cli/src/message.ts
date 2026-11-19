@@ -7,9 +7,10 @@ import own from './messages/en.json' with { type: 'json' };
 type Compiled = string | readonly (string | readonly unknown[])[];
 const catalog: Readonly<Record<string, Compiled>> = { ...core.messages, ...own.messages };
 
-/** A value as the terminal shows it: control characters escaped, so a name cannot move the cursor or recolor text. */
+const escaped = (unit: string): string => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`;
+/** A value as the terminal shows it: control, format and separator characters escaped, so names cannot alter the display. */
 export const printable = (value: string): string =>
-  value.replace(/\p{Cc}/gu, (character) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (character) => character.split('').map(escaped).join(''));
 
 const argument = (id: string, params: Params, name: unknown): string => {
   const value = params[String(name)];

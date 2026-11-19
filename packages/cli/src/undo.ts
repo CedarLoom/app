@@ -17,7 +17,7 @@ const result = (plan: PlanPreview | null, applied: boolean, run: string | null) 
   generatorRefusals: [],
 });
 
-// Without --yes: the plan, and nothing changed.
+// Without --yes: the plan, not applied.
 const shown = (store: Parameters<typeof planUndo>[0], root: string, run: string): Outcome => {
   const planned = planUndo(store, { root, run });
   if (planned.plan === null) return refused(planned.refusal, planned.findings);

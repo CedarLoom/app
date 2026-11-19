@@ -14,7 +14,7 @@
     ],
     "help.runs-show": ["Usage: cedarloom runs show <run> [--json]\n\nShows the run <run> and its steps."],
     "help.undo": [
-      "Usage: cedarloom undo <run> [--yes] [--json]\n\nUndoes the run <run> as a run of its own. Without --yes it shows the plan and changes nothing."
+      "Usage: cedarloom undo <run> [--yes] [--json]\n\nUndoes the run <run> as a run of its own. Without --yes it shows the plan and does not apply it."
     ],
     "output.runs-none": ["No runs are recorded for this project."],
     "output.undo-applied": ["Undone as run ", ["run"], "."],
