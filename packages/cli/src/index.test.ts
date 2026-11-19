@@ -377,3 +377,109 @@ it('refuses validate without a generator with plugin.too-old, exit 3, and lists 
     },
   });
 });
+
+it.each(['show', 'validate'])('refuses in workflows %s a name that leads out of the folder, exit 3', (verb) => {
+  const { root, workflows } = workflowsSetup({});
+  writeFileSync(join(root, 'x.json'), '{}');
+  expect(workflows(verb, '../../x')).toEqual({
+    code: 3,
+    document: {
+      result: null,
+      findings: [],
+      refusals: [{ code: 'workflow.name-invalid', params: { name: '../../x' } }],
+    },
+    stderr: '',
+  });
+});
+
+it('refuses validate without --plugin-root when only cl-workflow@other is installed with plugin.untrusted, exit 3', () => {
+  const { root } = project();
+  // A plugin folder in the project, with a definition to run it on: only the trust rule keeps it from running.
+  mkdirSync(join(root, 'definitions'));
+  mkdirSync(join(root, 'generator'));
+  writeFileSync(join(root, 'generator', 'generate.mjs'), GENERATOR);
+  mkdirSync(join(root, '.cedarloom', 'workflows'), { recursive: true });
+  writeFileSync(join(root, '.cedarloom', 'workflows', 'mine.json'), '{}');
+  const plugins = fresh();
+  const record = {
+    scope: 'user',
+    installPath: root,
+    version: '0.1.0',
+    installedAt: '2026-11-01T00:00:00.000Z',
+    lastUpdated: '2026-11-01T00:00:00.000Z',
+    gitCommitSha: 'a'.repeat(40),
+  };
+  const installed = { version: 2, plugins: { 'cl-workflow@other': [record] } };
+  writeFileSync(join(plugins, 'installed_plugins.json'), JSON.stringify(installed));
+  const env = { CEDARLOOM_STATE_DIR: fresh(), CLAUDE_CODE_PLUGIN_CACHE_DIR: plugins };
+  expect(ran(['workflows', 'validate', '--json'], root, { env })).toEqual({
+    code: 3,
+    document: {
+      result: null,
+      findings: [],
+      refusals: [{ code: 'plugin.untrusted', params: { id: 'cl-workflow@other' } }],
+    },
+    stderr: '',
+  });
+});
+
+// 2,000 levels, past the depth at which a recursive JSON check overflows the stack.
+const DEEP = `{"stages":${'['.repeat(2000)}${']'.repeat(2000)}}`;
+const deepNotJson = { code: 'definition.not-json', params: { path: '.cedarloom/workflows/a-deep.json' } };
+
+it('refuses with workflows show a definition nested too deep, or with a __proto__ member, as definition.not-json', () => {
+  const { workflows } = workflowsSetup({ 'a-deep': DEEP, proto: '{"stages":[{"__proto__":{}}]}' });
+  expect(workflows('show', 'a-deep')).toEqual({
+    code: 3,
+    document: { result: null, findings: [], refusals: [deepNotJson] },
+    stderr: '',
+  });
+  expect(workflows('show', 'proto')).toMatchObject({
+    code: 3,
+    document: {
+      refusals: [{ code: 'definition.not-json', params: { path: '.cedarloom/workflows/proto.json' } }],
+    },
+  });
+});
+
+it('answers a definition nested too deep with definition.not-json in workflows validate, next to a refused one', () => {
+  const { workflows } = workflowsSetup({ 'a-deep': DEEP, bad: '{"refusals":["stages"]}' });
+  expect(workflows('validate')).toMatchObject({
+    code: 1,
+    document: {
+      result: {
+        definitions: [
+          { name: 'a-deep', source: 'project', generatorRefusals: [], refusals: [deepNotJson] },
+          {
+            name: 'bad',
+            source: 'project',
+            generatorRefusals: [{ file: '.cedarloom/workflows/bad.json', field: 'stages', rule: 'refused' }],
+            refusals: [],
+          },
+        ],
+      },
+      refusals: [],
+    },
+  });
+});
+
+it('lists a definition nested too deep with the error finding definition.not-json, exit 1', () => {
+  const { workflows } = workflowsSetup({ 'a-deep': DEEP });
+  expect(workflows('list')).toMatchObject({
+    code: 1,
+    document: {
+      result: { workflows: [{ name: 'dev' }, { name: 'a-deep', source: 'project', description: null }] },
+      findings: [{ code: 'plugin.trust-bypassed' }, { code: 'plugin.found' }, { ...deepNotJson, severity: 'error' }],
+      refusals: [],
+    },
+  });
+});
+
+it('answers with workflows show a name too long for a file with definition.not-found, exit 3', () => {
+  const { workflows } = workflowsSetup({});
+  const name = 'a'.repeat(300);
+  expect(workflows('show', name)).toMatchObject({
+    code: 3,
+    document: { refusals: [{ code: 'definition.not-found', params: { name, source: 'project' } }] },
+  });
+});

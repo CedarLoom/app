@@ -27,7 +27,15 @@ export const definitionFileNames = (base: string, folder: string): string[] | 'u
 export const definitionBytes = (base: string, path: string): Buffer | 'absent' | 'unreadable' => {
   // Where Node.js has no O_NOFOLLOW, as on Windows, readFound alone would follow a link.
   if (reached(() => linkOnWay(base, path) ?? null) !== null) return 'unreadable';
-  const found = reached(() => readFound(join(base, path)));
+  const found = reached(() => {
+    try {
+      return readFound(join(base, path));
+    } catch (error) {
+      // A name too long to exist names no file.
+      if (errorCode(error) === 'ENAMETOOLONG') return 'absent';
+      throw error;
+    }
+  });
   if (found === 'absent') return 'absent';
   return typeof found === 'object' ? found.bytes : 'unreadable';
 };

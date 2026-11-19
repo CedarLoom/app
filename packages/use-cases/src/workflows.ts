@@ -14,6 +14,7 @@ import {
 import { z } from 'zod';
 import { definitionBytes, definitionFileNames, PROJECT_FOLDER, SHIPPED_FOLDER } from './definition-files.ts';
 import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
+import { nestsBeyond } from './json-nesting.ts';
 import { locatePlugin } from './plugin-locator.ts';
 import { type ClaudeDirInputs, pluginsRoot } from './plugins-root.ts';
 import { sha256 } from './project-files.ts';
@@ -43,6 +44,8 @@ interface Place {
 const stopped = <T>(refusals: Refusal[], findings: Finding[] = []): Answer<T> => ({ result: null, findings, refusals });
 const notJson = (path: string): Refusal => ({ code: 'definition.not-json', params: { path } });
 const Described = z.object({ description: z.string() });
+// zod's JSON schema and the "__proto__" check recurse once per level, so a deeper file could overflow the stack.
+const NESTING_LIMIT = 100;
 
 const projectPlace = (project: string): Place => ({
   source: 'project',
@@ -79,6 +82,12 @@ const invalidName = (names: readonly string[]): Refusal | undefined => {
   return name === undefined ? undefined : { code: 'workflow.name-invalid', params: { name } };
 };
 
+// A definition's bytes; one nested beyond the limit is unreadable in every verb, as no reader can take it.
+const definitionAt = (place: Place, path: string): Buffer | 'absent' | 'unreadable' => {
+  const bytes = definitionBytes(place.base, path);
+  return typeof bytes === 'string' || !nestsBeyond(bytes, NESTING_LIMIT) ? bytes : 'unreadable';
+};
+
 const descriptionOf = (bytes: Buffer | 'absent' | 'unreadable'): string | null => {
   if (typeof bytes === 'string') return null;
   try {
@@ -95,12 +104,18 @@ const listed = (place: Place): { workflows: WorkflowList['workflows']; findings:
     const finding: Finding = { ...notJson(place.shown(place.folder)), severity: 'error' };
     return { workflows: [], findings: [finding] };
   }
-  const workflows = files.map((file) => {
+  const read = files.map((file) => {
     const path = `${place.folder}/${file}`;
-    const description = descriptionOf(definitionBytes(place.base, path));
-    return { name: file.slice(0, -'.json'.length), source: place.source, path: place.shown(path), description };
+    return { file, path: place.shown(path), bytes: definitionAt(place, path) };
   });
-  return { workflows, findings: [] };
+  const workflows = read.map(({ file, path, bytes }) => {
+    const description = descriptionOf(bytes);
+    return { name: file.slice(0, -'.json'.length), source: place.source, path, description };
+  });
+  const findings = read.flatMap(({ path, bytes }): Finding[] =>
+    bytes === 'unreadable' ? [{ ...notJson(path), severity: 'error' }] : [],
+  );
+  return { workflows, findings };
 };
 
 /** The shipped definitions of the located plugin and the project's own; without a usable plugin, the project's alone. */
@@ -127,7 +142,7 @@ export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: b
   const { place, findings } = shipped ? pluginPlace(request, project) : { place: projectPlace(project), findings: [] };
   if (place === null) return stoppedOn(findings);
   const path = `${place.folder}/${name}.json`;
-  const bytes = definitionBytes(place.base, path);
+  const bytes = definitionAt(place, path);
   if (bytes === 'absent')
     return stopped([{ code: 'definition.not-found', params: { name, source: place.source } }], findings);
   if (bytes === 'unreadable') return stopped([notJson(place.shown(path))], findings);
@@ -173,7 +188,7 @@ interface Entry {
 // Each chosen definition with its bytes; a file removed since the folder was listed is left out.
 const entriesOf = (place: Place, list: { name: string; path: string }[]): Entry[] =>
   list.flatMap(({ name, path }) => {
-    const bytes = definitionBytes(place.base, path);
+    const bytes = definitionAt(place, path);
     if (bytes === 'absent') return [];
     return [{ name, path, bytes: bytes === 'unreadable' ? undefined : bytes }];
   });
