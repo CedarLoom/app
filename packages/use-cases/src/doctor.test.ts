@@ -15,6 +15,15 @@ const json = (path: string, value: unknown): void => {
   writeFileSync(path, JSON.stringify(value));
 };
 
+// A plugin folder with the generator and the shipped definitions.
+const current = (root: string): void => {
+  mkdirSync(join(root, 'definitions'), { recursive: true });
+  mkdirSync(join(root, 'generator'));
+  writeFileSync(join(root, 'generator', 'generate.mjs'), '');
+};
+
+const UNTRUSTED = [{ code: 'plugin.untrusted', severity: 'error', params: { id: 'cl-workflow@cedarloom' } }];
+
 const CEDARLOOM = { source: 'github', repo: 'CedarLoom/cedarloom', ref: 'stable' };
 
 // A Git project, a plugins root and Claude Code's folder, whose user settings enable cl-workflow@cedarloom.
@@ -26,14 +35,10 @@ const setup = () => {
   json(join(config, 'settings.json'), { enabledPlugins: { 'cl-workflow@cedarloom': true } });
   json(join(plugins, 'known_marketplaces.json'), { cedarloom: { source: CEDARLOOM, installLocation: plugins } });
   // A version folder in the cache; a current one has the generator and the shipped definitions.
-  const version = (marketplace: string, name: string, current = true): string => {
+  const version = (marketplace: string, name: string, isCurrent = true): string => {
     const root = join(plugins, 'cache', marketplace, 'cl-workflow', name);
     mkdirSync(join(root, '.claude-plugin'), { recursive: true });
-    if (current) {
-      mkdirSync(join(root, 'definitions'));
-      mkdirSync(join(root, 'generator'));
-      writeFileSync(join(root, 'generator', 'generate.mjs'), '');
-    }
+    if (isCurrent) current(root);
     return root;
   };
   const installed = (records: Record<string, unknown[]>): void =>
@@ -90,6 +95,24 @@ it('takes the local-scope install over project scope and project over user, and 
   });
   installed({ 'cl-workflow@cedarloom': [user, shared, elsewhere] });
   expect(run().report.plugin).toMatchObject({ version: '0.2.0', scope: 'project' });
+  const managed = record('managed', version('cedarloom', '0.0.9'));
+  installed({ 'cl-workflow@cedarloom': [managed, user] });
+  expect(run().report.plugin).toMatchObject({ version: '0.1.0', scope: 'user' });
+  installed({ 'cl-workflow@cedarloom': [managed] });
+  expect(run().report.plugin).toMatchObject({ version: '0.0.9', scope: 'managed' });
+});
+
+it('applies a project-scope record made in a subfolder of the working tree', () => {
+  const { project, version, installed, run } = setup();
+  const sub = join(project, 'sub');
+  mkdirSync(sub);
+  installed({
+    'cl-workflow@cedarloom': [
+      record('user', version('cedarloom', '0.1.0')),
+      record('project', version('cedarloom', '0.2.0'), { projectPath: sub }),
+    ],
+  });
+  expect(run().report.plugin).toMatchObject({ version: '0.2.0', scope: 'project' });
 });
 
 it('resolves the user scope only outside a repository, with project.not-found as a warning', () => {
@@ -114,6 +137,15 @@ it('refuses a cl-workflow from another marketplace with plugin.untrusted', () =>
     null,
     [{ code: 'plugin.untrusted', severity: 'error', params: { id: 'cl-workflow@other' } }],
   ]);
+});
+
+it('locates cl-workflow@cedarloom beside another marketplace record of unknown shape', () => {
+  const { version, installed, run } = setup();
+  installed({
+    'cl-workflow@other': [{ scope: 'user' }],
+    'cl-workflow@cedarloom': [record('user', version('cedarloom', '0.1.0'))],
+  });
+  expect(run().report.checks[2]).toEqual({ id: 'plugin', status: 'pass' });
 });
 
 it.each([
@@ -152,19 +184,13 @@ it.each([
   expect(run().report.checks[2]).toEqual({ id: 'plugin', status: 'pass' });
 });
 
-it('never uses an orphaned version folder, nor a folder no record names', () => {
+it('never uses an orphaned or missing version folder, nor a folder no record names', () => {
   const { plugins, version, installed, run } = setup();
   const orphaned = version('cedarloom', '0.2.0');
   writeFileSync(join(orphaned, '.orphaned_at'), '1762000000000');
   version('cedarloom', '0.3.0');
-  installed({ 'cl-workflow@cedarloom': [record('user', orphaned)] });
-  expect(pluginFindings(run())).toEqual([
-    { code: 'plugin.not-found', severity: 'error', params: { pluginsRoot: plugins } },
-  ]);
-});
-
-it('reports plugin.not-found when no install record exists', () => {
-  const { plugins, run } = setup();
+  const gone = join(plugins, 'cache', 'cedarloom', 'cl-workflow', '0.4.0');
+  installed({ 'cl-workflow@cedarloom': [record('user', orphaned), record('user', gone)] });
   expect(pluginFindings(run())).toEqual([
     { code: 'plugin.not-found', severity: 'error', params: { pluginsRoot: plugins } },
   ]);
@@ -204,37 +230,51 @@ it('reports plugin.too-old for a version folder without the generator', () => {
   ]);
 });
 
-it('refuses a recorded install path that links to a folder elsewhere with plugin.untrusted', () => {
+it('refuses a recorded install path that links to another folder with plugin.untrusted', () => {
   const { plugins, version, installed, run } = setup();
-  const elsewhere = version('other', '0.9.0');
+  const elsewhere = version('cedarloom', '0.0.9');
   const linked = join(plugins, 'cache', 'cedarloom', 'cl-workflow', '0.1.0');
-  mkdirSync(dirname(linked), { recursive: true });
   symlinkSync(elsewhere, linked, 'junction');
   installed({ 'cl-workflow@cedarloom': [record('user', linked)] });
-  expect(pluginFindings(run())).toEqual([
-    { code: 'plugin.untrusted', severity: 'error', params: { id: 'cl-workflow@cedarloom' } },
-  ]);
+  expect(pluginFindings(run())).toEqual(UNTRUSTED);
 });
 
-it.skipIf(process.platform === 'win32')('refuses a generator that links outside the install path', () => {
+it.each([
+  ['a folder outside the cache', () => join(folder(), '0.1.0')],
+  ['another marketplace', (plugins: string) => join(plugins, 'cache', 'other', 'cl-workflow', '0.1.0')],
+])('refuses an install path in %s with plugin.untrusted', (_, path) => {
+  const { plugins, installed, run } = setup();
+  const root = path(plugins);
+  current(root);
+  installed({ 'cl-workflow@cedarloom': [record('user', root)] });
+  expect(pluginFindings(run())).toEqual(UNTRUSTED);
+});
+
+// File links need a privilege on Windows.
+it.skipIf(process.platform === 'win32').each([
+  [
+    'a module that links outside the install path',
+    (root: string) => {
+      const outside = join(folder(), 'x.mjs');
+      writeFileSync(outside, '');
+      mkdirSync(join(root, 'generator', 'lib'));
+      symlinkSync(outside, join(root, 'generator', 'lib', 'x.mjs'));
+    },
+  ],
+  ['a link loop', (root: string) => symlinkSync('loop', join(root, 'definitions', 'loop'))],
+])('refuses a version folder with %s', (_, link) => {
   const { version, installed, run } = setup();
   const root = version('cedarloom', '0.1.0');
-  const outside = join(folder(), 'generate.mjs');
-  writeFileSync(outside, '');
-  rmSync(join(root, 'generator', 'generate.mjs'));
-  symlinkSync(outside, join(root, 'generator', 'generate.mjs'));
+  link(root);
   installed({ 'cl-workflow@cedarloom': [record('user', root)] });
-  expect(pluginFindings(run())).toEqual([
-    { code: 'plugin.untrusted', severity: 'error', params: { id: 'cl-workflow@cedarloom' } },
-  ]);
+  expect(pluginFindings(run())).toEqual(UNTRUSTED);
 });
 
-it('uses the folder relative to cwd and reports plugin.trust-bypassed', () => {
-  const { project, run } = setup();
+it('uses the folder relative to cwd and reports plugin.trust-bypassed, whatever the settings enable', () => {
+  const { project, config, run } = setup();
+  json(join(config, 'settings.json'), {});
   const root = join(project, 'plugin');
-  mkdirSync(join(root, 'definitions'), { recursive: true });
-  mkdirSync(join(root, 'generator'));
-  writeFileSync(join(root, 'generator', 'generate.mjs'), '');
+  current(root);
   const plugin = { id: 'cl-workflow', version: null, scope: 'override', root };
   const result = run('plugin');
   expect([result.report.checks[2], result.report.plugin, pluginFindings(result)]).toEqual([
@@ -286,12 +326,16 @@ it('reports plugin.disabled with no path when no settings file names the plugin'
   });
 });
 
-it('reports settings.unreadable for project settings that are no JSON object', () => {
+it.each([
+  ['no JSON object', (path: string) => json(path, [])],
+  ['a folder', (path: string) => mkdirSync(path, { recursive: true })],
+])('reports settings.unreadable for project settings that are %s', (_, write) => {
   const { project, run } = located();
-  json(join(project, '.claude', 'settings.json'), []);
+  const path = join(project, '.claude', 'settings.json');
+  write(path);
   const result = run();
   expect([result.report.checks[2], pluginFindings(result).at(-1)]).toEqual([
     { id: 'plugin', status: 'fail' },
-    { code: 'settings.unreadable', severity: 'error', params: { path: join(project, '.claude', 'settings.json') } },
+    { code: 'settings.unreadable', severity: 'error', params: { path } },
   ]);
 });

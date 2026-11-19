@@ -3,7 +3,7 @@ import type { Finding } from '@cedarloom/core';
 import { z } from 'zod';
 import { jsonFile } from './json-file.ts';
 
-const MARKETPLACE = 'cedarloom';
+export const MARKETPLACE = 'cedarloom';
 // GitHub resolves owner and repository names without regard to case.
 const REPOSITORY = 'cedarloom/cedarloom';
 const GIT_URLS = [

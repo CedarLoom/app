@@ -32,8 +32,10 @@ export const doctor = (request: DoctorRequest): { report: DoctorReport; findings
   const projectFindings: Finding[] =
     project === undefined ? [{ code: 'project.not-found', severity: 'warning', params: { cwd } }] : [];
   const override = pluginRoot === null ? null : resolve(cwd, pluginRoot);
-  const located = locatePlugin({ pluginsRoot: pluginsRoot(request), project, override });
-  const enabled = located.plugin === null ? undefined : enabledFinding(project, claudeConfigDir(request));
+  const located = locatePlugin({ pluginsRoot: pluginsRoot(request), cwd, project, override });
+  // The settings enable the installed plugin, which --plugin-root bypasses.
+  const enabled =
+    located.plugin === null || override !== null ? undefined : enabledFinding(project, claudeConfigDir(request));
   const pluginFindings = enabled === undefined ? located.findings : [...located.findings, enabled];
   const report: DoctorReport = {
     checks: [

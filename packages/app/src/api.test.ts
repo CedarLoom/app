@@ -40,7 +40,6 @@ const served = async () => {
   let count = 0;
   const session = new Session({ now: () => 0, secret: () => `secret-${count++}` });
   const clock = { now: () => new Date('2026-11-19T07:00:00.000Z'), newRunId: () => 'u1' };
-  // An empty plugins root: the doctor finds no plugin.
   const plugins = folder();
   const env = { CLAUDE_CODE_PLUGIN_CACHE_DIR: plugins, CLAUDE_CONFIG_DIR: folder() };
   const doctorInputs = { node: '26.13.0', required: '>=26', cwd: root, env, home: '', pluginRoot: null };

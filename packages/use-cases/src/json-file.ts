@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs';
 import type { Finding } from '@cedarloom/core';
 import type { z } from 'zod';
+import { errorCode } from './project-files.ts';
 
-const isMissing = (error: unknown): boolean => error instanceof Error && 'code' in error && error.code === 'ENOENT';
-
-/** A JSON file read with its schema: no value when the file does not exist, the given finding when its text or shape is unknown. */
+/** A JSON file read with its schema: no value when the file does not exist, the given finding when it is a folder or its text or shape is unknown. */
 export const jsonFile = <T>(
   path: string,
   schema: z.ZodType<T>,
@@ -14,7 +13,10 @@ export const jsonFile = <T>(
   try {
     text = readFileSync(path, 'utf8');
   } catch (error) {
-    if (isMissing(error)) return { value: undefined };
+    const code = errorCode(error);
+    // ENOTDIR: a folder on the way is a file.
+    if (code === 'ENOENT' || code === 'ENOTDIR') return { value: undefined };
+    if (code === 'EISDIR') return { finding: unknown };
     throw error;
   }
   let json: unknown;

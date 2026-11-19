@@ -179,6 +179,12 @@ describe('start without a server', () => {
       state: expect.any(String),
     });
   });
+
+  it('refuses --plugin-root followed by a flag with cli.missing-argument, exit 2', async () => {
+    const { result, document } = await started(['--json', '--plugin-root', '--no-open']);
+    const params = { argument: '<dir>', command: 'cedarloom-app --plugin-root' };
+    expect([result, document.refusals]).toEqual([{ exitCode: 2 }, [{ code: 'cli.missing-argument', params }]]);
+  });
 });
 
 describe('bin/cedarloom-app.js', () => {

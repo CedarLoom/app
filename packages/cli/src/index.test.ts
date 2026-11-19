@@ -65,6 +65,8 @@ const ran = (argv: string[], cwd: string, change: Partial<Io> = {}) => {
     env: { CEDARLOOM_STATE_DIR: change.env?.['CEDARLOOM_STATE_DIR'] ?? fresh() },
     cwd,
     ...machine,
+    // A home of its own, so no doctor run reads the plugins or settings of the checkout it runs in.
+    home: fresh(),
     node: '26.13.0',
     version: '0.0.0',
     required: '>=26',
@@ -89,6 +91,11 @@ it.each([
   [['doctor', '--help'], 'cli.flag-conflict', { flags: '--help, --json' }],
   [
     ['doctor', '--plugin-root='],
+    'cli.missing-argument',
+    { argument: '<dir>', command: 'cedarloom doctor --plugin-root' },
+  ],
+  [
+    ['doctor', '--plugin-root', '--yes'],
     'cli.missing-argument',
     { argument: '<dir>', command: 'cedarloom doctor --plugin-root' },
   ],

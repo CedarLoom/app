@@ -12,7 +12,7 @@
               "type": "object",
               "properties": {
                 "id": { "type": "string", "enum": ["node", "project", "plugin"] },
-                "status": { "type": "string", "enum": ["pass", "warn", "fail", "skipped"] }
+                "status": { "type": "string", "enum": ["pass", "warn", "fail"] }
               },
               "required": ["id", "status"],
               "additionalProperties": false
@@ -25,7 +25,7 @@
                 "properties": {
                   "id": { "type": "string" },
                   "version": { "type": ["string", "null"] },
-                  "scope": { "type": "string", "enum": ["local", "project", "user", "override"] },
+                  "scope": { "type": "string", "enum": ["local", "project", "user", "managed", "override"] },
                   "root": { "type": "string" }
                 },
                 "required": ["id", "version", "scope", "root"],
@@ -680,7 +680,7 @@
               "type": "object",
               "properties": {
                 "id": { "type": "string", "enum": ["node", "project", "plugin"] },
-                "status": { "type": "string", "enum": ["pass", "warn", "fail", "skipped"] }
+                "status": { "type": "string", "enum": ["pass", "warn", "fail"] }
               },
               "required": ["id", "status"],
               "additionalProperties": false
@@ -693,7 +693,7 @@
                 "properties": {
                   "id": { "type": "string" },
                   "version": { "type": ["string", "null"] },
-                  "scope": { "type": "string", "enum": ["local", "project", "user", "override"] },
+                  "scope": { "type": "string", "enum": ["local", "project", "user", "managed", "override"] },
                   "root": { "type": "string" }
                 },
                 "required": ["id", "version", "scope", "root"],

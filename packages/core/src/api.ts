@@ -8,7 +8,7 @@ export const DoctorReport = z.strictObject({
   checks: z.array(
     z.strictObject({
       id: z.enum(['node', 'project', 'plugin']),
-      status: z.enum(['pass', 'warn', 'fail', 'skipped']),
+      status: z.enum(['pass', 'warn', 'fail']),
     }),
   ),
   /** The cl-workflow plugin in use: its install record's version, or the --plugin-root folder as scope override. */
@@ -16,7 +16,7 @@ export const DoctorReport = z.strictObject({
     .strictObject({
       id: z.string(),
       version: z.string().nullable(),
-      scope: z.enum(['local', 'project', 'user', 'override']),
+      scope: z.enum(['local', 'project', 'user', 'managed', 'override']),
       root: z.string(),
     })
     .nullable(),

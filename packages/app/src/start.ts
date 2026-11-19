@@ -33,7 +33,6 @@ export interface AppIo extends SessionSource {
 interface Options {
   port: number;
   open: boolean;
-  /** The --plugin-root folder, absolute, or null. */
   pluginRoot: string | null;
 }
 
@@ -55,6 +54,7 @@ interface Flag {
   name: string;
   rawName: string;
   value: string | undefined;
+  inlineValue: boolean | undefined;
 }
 
 // A flag this command does not take, or a value on a switch: --no-open=false is refused rather than read as on.
@@ -72,7 +72,9 @@ const applied = (options: Options, flag: Flag, cwd: string): { refusal: Refusal 
     return undefined;
   }
   if (flag.name === 'plugin-root') {
-    if (!flag.value) return refused('cli.missing-argument', { argument: '<dir>', command: `${BIN} --plugin-root` });
+    // A following flag is no folder; --plugin-root=-x names one.
+    if (!flag.value || (flag.inlineValue !== true && flag.value.startsWith('-')))
+      return refused('cli.missing-argument', { argument: '<dir>', command: `${BIN} --plugin-root` });
     options.pluginRoot = resolve(cwd, flag.value);
     return undefined;
   }

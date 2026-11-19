@@ -96,10 +96,11 @@ const allowedFlags = (name: CommandName | 'runs' | null): Set<string> => {
   return allowed;
 };
 
-// --plugin-root needs its folder; every other flag is a switch, so --json=false is refused rather than read as on.
-const valueRefusal = ({ name, rawName, value }: Flag, command: string): Refusal | undefined => {
+// --plugin-root needs its folder, and a following flag is no folder (--plugin-root=-x names one); every other flag is a
+// switch, so --json=false is refused rather than read as on.
+const valueRefusal = ({ name, rawName, value, inlineValue }: Flag, command: string): Refusal | undefined => {
   if (name === 'plugin-root')
-    return value
+    return value && (inlineValue === true || !value.startsWith('-'))
       ? undefined
       : { code: 'cli.missing-argument', params: { argument: '<dir>', command: `${command} --plugin-root` } };
   return value === undefined ? undefined : { code: 'cli.bad-value', params: { flag: rawName, value } };
