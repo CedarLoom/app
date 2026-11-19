@@ -19,6 +19,7 @@ export const MESSAGE_IDS = [
   'undo.backup-changed',
   'undo.backup-missing',
   'undo.file-changed',
+  'undo.replaced',
 ] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
@@ -40,4 +41,5 @@ export interface MessagePlaceholders {
   'undo.backup-changed': 'path';
   'undo.backup-missing': 'path';
   'undo.file-changed': 'path';
+  'undo.replaced': 'by' | 'run';
 }

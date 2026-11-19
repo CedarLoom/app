@@ -630,20 +630,29 @@ const failAt =
     if (at === boundary && index === position) throw new Error('disk gone');
   };
 
+// r1 replaces old with new, then each id is undone in turn; `!` marks an undo stopped after its write.
+const undos = (ids: string[]) => {
+  const { root, state } = project({ '.claude/b.md': 'old\n' });
+  const held = store(state, 'r1', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6');
+  apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
+  for (const id of ids) {
+    if (!id.endsWith('!')) expect(undo(held, { root, run: id }).refusal).toBeNull();
+    else expect(() => undo(held, { root, run: id.slice(0, -1) }, failAt('linked', 0))).toThrow('disk gone');
+  }
+  return { root, held, file: () => text(join(root, '.claude/b.md')) };
+};
+
 describe('undo of a replaced undo', () => {
   // Each undo before the last one runs; the last one would leave r1 counted as in effect, or not, against its file.
   it.each([
-    [['r1', 'u1', 'r1'], 'old\n'],
-    [['r1', 'u1', 'r1', 'u3'], 'new\n'],
-  ])('refuses to undo u2 after the undos of %j: u3 replaced u1 as the undo of r1', (before, left) => {
+    [['r1', 'u1', 'r1'], 'old\n', 'run.already-undone'],
+    [['r1', 'u1', 'r1', 'u3'], 'new\n', 'undo.replaced'],
+  ] as const)('refuses to undo u2 after the undos of %j: u3 replaced u1 as the undo of r1', (before, left, code) => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     const held = store(state, 'r1', 'u1', 'u2', 'u3', 'u4', 'u5');
     apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
     for (const id of before) expect(undo(held, { root, run: id }).refusal).toBeNull();
-    expect(undo(held, { root, run: 'u2' }).refusal).toEqual({
-      code: 'run.already-undone',
-      params: { run: 'r1', by: 'u3' },
-    });
+    expect(undo(held, { root, run: 'u2' }).refusal).toEqual({ code, params: { run: 'r1', by: 'u3' } });
     expect(text(join(root, '.claude/b.md'))).toBe(left);
   });
 
@@ -658,6 +667,24 @@ describe('undo of a replaced undo', () => {
       params: { run: 'r1', by: 'u2' },
     });
     expect(text(join(root, '.claude/b.md'))).toBe('old\n');
+  });
+
+  it('refuses to bring back an undo that restored nothing once the file holds the run result again', () => {
+    const { root, held, file } = undos(['r1!', 'r1', 'u2', 'u1']);
+    expect(file()).toBe('new\n');
+    expect(undo(held, { root, run: 'u3' }).refusal).toEqual({
+      code: 'undo.file-changed',
+      params: { path: '.claude/b.md' },
+    });
+    expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'u5', refusal: null });
+    expect(file()).toBe('old\n');
+  });
+
+  it('undoes a stopped undo of an undo once the undo that restored nothing after it is undone', () => {
+    const { root, held, file } = undos(['r1', 'u1', 'u2!', 'r1', 'u4']);
+    expect(file()).toBe('old\n');
+    expect(undo(held, { root, run: 'u3' })).toMatchObject({ run: 'u6', refusal: null });
+    expect(file()).toBe('new\n');
   });
 });
 
@@ -717,6 +744,20 @@ describe('undo of a chain on one file', () => {
     apply(held, request(root, [create('.claude/a.md', 'a\n'), remove('.claude/a.md', 'a\n')]));
     rmSync(join(state, 'backups/r1/1'));
     expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'u1', refusal: null });
+    expect(listing(root)).toEqual([]);
+  });
+
+  it('deletes a file the run created, deleted and created again, also without the backup of the delete', () => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(
+      held,
+      request(root, [create('.claude/a.md', 'a\n'), remove('.claude/a.md', 'a\n'), create('.claude/a.md', 'a\n')]),
+    );
+    rmSync(join(state, 'backups/r1/1'));
+    const done = undo(held, { root, run: 'r1' });
+    expect(done).toMatchObject({ run: 'u1', refusal: null });
+    expect(done.plan?.operations.map((op) => op.kind)).toEqual(['delete']);
     expect(listing(root)).toEqual([]);
   });
 });

@@ -60,6 +60,10 @@ msgid "run.already-undone"
 msgstr "Run {run} was already undone by run {by}."
 
 #. js-lingui-explicit-id
+msgid "undo.replaced"
+msgstr "Run {run} was undone again later by run {by}, so an older undo of it can no longer be brought back."
+
+#. js-lingui-explicit-id
 msgid "undo.file-changed"
 msgstr "{path} changed after the run, so undo would lose that change. Nothing was restored."
 
