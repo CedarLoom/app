@@ -1,5 +1,6 @@
 export { canonicalHash, canonicalJson, type Hasher, JsonValue } from './canonical-json.ts';
 export { Code, Finding, Params, Refusal } from './finding.ts';
+export { type CompiledMessage, messageText, printable } from './message-text.ts';
 export type { MessagePlaceholders } from './messages/catalog.ts';
 export { CreateFile, DeleteFile, Hash, PlanOperation, PlanPreview, planHash, ReplaceFile } from './plan.ts';
 export { Action, Run, RunId, RunOperation, RunSummary, SettingsEntry } from './run.ts';

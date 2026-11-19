@@ -5,6 +5,9 @@
  * @public a catalog lists every id, whether its package reads the list or not.
  */
 export const MESSAGE_IDS = [
+  'api.bad-request',
+  'api.internal',
+  'api.not-found',
   'apply.backup-failed',
   'apply.recovered',
   'apply.write-mismatch',
@@ -25,6 +28,12 @@ export const MESSAGE_IDS = [
   'project.not-found',
   'run.already-undone',
   'run.not-found',
+  'server.port-in-use',
+  'session.cookie',
+  'session.csrf',
+  'session.host',
+  'session.origin',
+  'session.token',
   'store.locked',
   'store.unreadable',
   'store.version-unsupported',
@@ -37,6 +46,9 @@ export const MESSAGE_IDS = [
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
 export interface MessagePlaceholders {
+  'api.bad-request': never;
+  'api.internal': never;
+  'api.not-found': never;
   'apply.backup-failed': 'path' | 'run';
   'apply.recovered': 'path' | 'run';
   'apply.write-mismatch': 'path' | 'run';
@@ -57,6 +69,12 @@ export interface MessagePlaceholders {
   'project.not-found': 'cwd';
   'run.already-undone': 'by' | 'run';
   'run.not-found': 'run';
+  'server.port-in-use': 'port';
+  'session.cookie': never;
+  'session.csrf': never;
+  'session.host': never;
+  'session.origin': never;
+  'session.token': never;
   'store.locked': 'path';
   'store.unreadable': 'path';
   'store.version-unsupported': 'found' | 'supported';

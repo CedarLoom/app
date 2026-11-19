@@ -88,6 +88,42 @@ msgid "project.not-found"
 msgstr "{cwd} is not inside a Git repository. Run CedarLoom from your project folder."
 
 #. js-lingui-explicit-id
+msgid "session.host"
+msgstr "This server answers only at 127.0.0.1."
+
+#. js-lingui-explicit-id
+msgid "session.origin"
+msgstr "Requests from other sites are refused."
+
+#. js-lingui-explicit-id
+msgid "session.token"
+msgstr "This link was already used or has expired. Run cedarloom-app again for a new one."
+
+#. js-lingui-explicit-id
+msgid "session.cookie"
+msgstr "No valid session. Open the link that cedarloom-app printed."
+
+#. js-lingui-explicit-id
+msgid "session.csrf"
+msgstr "The request is missing its session check. Reload the page."
+
+#. js-lingui-explicit-id
+msgid "server.port-in-use"
+msgstr "Port {port} is in use. Choose another with --port, or leave it out to use a free port."
+
+#. js-lingui-explicit-id
+msgid "api.bad-request"
+msgstr "The request is not valid."
+
+#. js-lingui-explicit-id
+msgid "api.not-found"
+msgstr "Not found."
+
+#. js-lingui-explicit-id
+msgid "api.internal"
+msgstr "Something went wrong in CedarLoom. The details are in the terminal where cedarloom-app runs."
+
+#. js-lingui-explicit-id
 msgid "cli.unknown-command"
 msgstr "Unknown command: {command}. Run {bin} --help for usage."
 
