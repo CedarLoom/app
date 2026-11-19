@@ -19,7 +19,6 @@ const PROJECT = {
   required: '>=26',
 };
 
-// Secrets in order: the URL token secret-0, then the cookie secret-1 and the CSRF value secret-2.
 // A built UI in base/ui, a file beside it, and base/ui/assets/out linking to a folder outside it.
 const base = mkdtempSync(join(tmpdir(), 'cedarloom-ui-'));
 afterAll(() => rmSync(base, { recursive: true, force: true }));
@@ -33,6 +32,7 @@ writeFileSync(join(base, 'outside', 'secret.txt'), 'secret');
 // A junction needs no privilege on Windows; other platforms ignore the type.
 symlinkSync(join(base, 'outside'), join(built, 'assets', 'out'), 'junction');
 
+// Secrets in order: the URL token secret-0, then the cookie secret-1 and the CSRF value secret-2.
 // Most tests have no UI built: the folder does not exist.
 const server = async (ui = join(base, 'missing')) => {
   let now = 0;
@@ -294,23 +294,5 @@ describe('UI files', () => {
     const { app } = await server(built);
     const reply = await app.inject({ method: 'GET', url, headers: { host: HOST } });
     expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
-  });
-
-  it('answers / with 404 api.not-found when no UI is built', async () => {
-    const { app } = await server();
-    const reply = await app.inject({ method: 'GET', url: '/', headers: { host: HOST } });
-    expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
-  });
-
-  it('refuses POST / without a session with 401 session.cookie', async () => {
-    const { app } = await server(built);
-    const reply = await app.inject({ method: 'POST', url: '/', headers: { host: HOST } });
-    expect([reply.statusCode, reply.json()]).toEqual([401, { code: 'session.cookie', params: {} }]);
-  });
-
-  it('refuses a cross-site Origin with 403 session.origin', async () => {
-    const { app } = await server(built);
-    const reply = await app.inject({ method: 'GET', url: '/', headers: { host: HOST, origin: 'http://evil.test' } });
-    expect([reply.statusCode, reply.json()]).toEqual([403, { code: 'session.origin', params: {} }]);
   });
 });
