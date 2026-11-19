@@ -107,10 +107,8 @@ export const writeNew = (path: string, bytes: Uint8Array, mode: number | undefin
 export const makeFolders = (path: string, mode = 0o777): void => {
   const first = mkdirSync(path, { recursive: true, mode });
   if (first === undefined) return;
-  for (let folder = path; ; folder = dirname(folder)) {
-    flushFolder(dirname(folder));
-    if (folder === first) return;
-  }
+  // Bounded by length, not by equality: Windows may spell the returned folder differently.
+  for (let folder = path; folder.length >= first.length; folder = dirname(folder)) flushFolder(dirname(folder));
 };
 
 /** Writes a private copy beside `dest` and renames it in, so `dest` is whole or missing, never half written. */
