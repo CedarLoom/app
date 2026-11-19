@@ -112,6 +112,10 @@ msgid "server.port-in-use"
 msgstr "Port {port} is in use. Choose another with --port, or leave it out to use a free port."
 
 #. js-lingui-explicit-id
+msgid "server.open-hint"
+msgstr "If the browser shows an error about a file instead of CedarLoom, open the URL printed above."
+
+#. js-lingui-explicit-id
 msgid "api.bad-request"
 msgstr "The request is not valid. Fields with issues: {issues}"
 

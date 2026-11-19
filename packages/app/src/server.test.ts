@@ -113,6 +113,51 @@ describe('request guard', () => {
   });
 });
 
+describe('request guard, navigation from the redirect page', () => {
+  const navigation = {
+    host: HOST,
+    'sec-fetch-site': 'cross-site',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-dest': 'document',
+  };
+
+  // No UI is served yet, so a passing request reaches the 404 of an unknown path.
+  it('lets a cross-site GET navigation to a document outside /api/ pass', async () => {
+    const { app } = await server();
+    const reply = await app.inject({ method: 'GET', url: '/', headers: navigation });
+    expect(reply.statusCode).toBe(404);
+  });
+
+  // A HEAD reply has no body, so its status tells the refusal from the 404 of a passing request.
+  it('refuses a cross-site HEAD navigation with 403', async () => {
+    const { app } = await server();
+    const reply = await app.inject({ method: 'HEAD', url: '/', headers: navigation });
+    expect(reply.statusCode).toBe(403);
+  });
+
+  it.each([
+    ['mode no-cors', 'GET', '/', { 'sec-fetch-mode': 'no-cors' }],
+    ['mode cors', 'GET', '/', { 'sec-fetch-mode': 'cors' }],
+    ['no mode', 'GET', '/', { 'sec-fetch-mode': undefined }],
+    ['dest iframe', 'GET', '/', { 'sec-fetch-dest': 'iframe' }],
+    ['dest script', 'GET', '/', { 'sec-fetch-dest': 'script' }],
+    ['no dest', 'GET', '/', { 'sec-fetch-dest': undefined }],
+    ['method POST', 'POST', '/', {}],
+    ['an /api/ path', 'GET', '/api/session', {}],
+    ['an encoded /api/ path', 'GET', '/%61pi/session', {}],
+    ['site same-site', 'GET', '/', { 'sec-fetch-site': 'same-site' }],
+  ] as const)('refuses a cross-site request with %s with 403 session.origin', async (_case, method, url, changed) => {
+    const { app } = await server();
+    const headers = Object.fromEntries(
+      Object.entries({ ...navigation, ...changed }).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
+    );
+    const reply = await app.inject({ method, url, headers });
+    expect([reply.statusCode, reply.json()]).toEqual([403, { code: 'session.origin', params: {} }]);
+  });
+});
+
 describe('request guard, CSRF and headers', () => {
   it('returns the CSRF value again for the cookie', async () => {
     const { app } = await server();

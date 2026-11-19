@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 import { type Code, type CompiledMessage, messageText, type Params, type Refusal } from '@cedarloom/core';
 import core from '@cedarloom/core/messages/en.json' with { type: 'json' };
 import { projectRoot } from '@cedarloom/use-cases';
+import { type Redirect, writeRedirect } from './redirect.ts';
 import { buildServer } from './server.ts';
 import { portOf, Session, type SessionSource } from './session.ts';
 
@@ -9,8 +10,11 @@ import { portOf, Session, type SessionSource } from './session.ts';
 export interface AppIo extends SessionSource {
   argv: readonly string[];
   cwd: string;
-  /** Opens the URL in the default browser. */
-  open: (url: string) => void;
+  /** The user's own state folder, which holds the redirect page's folder. */
+  stateDir: string;
+  /** Opens a file in its default program: the redirect page in the browser. */
+  open: (path: string) => void;
+  platform: NodeJS.Platform;
   stdout: (text: string) => void;
   stderr: (text: string) => void;
 }
@@ -71,6 +75,26 @@ const parse = (argv: readonly string[]): Options | { refusal: Refusal } => {
   return options;
 };
 
+const message = (error: unknown): string => `${error instanceof Error ? error.message : String(error)}\n`;
+
+/** Opens the redirect page; the URL is printed already, so a failing page or opener is reported and serving goes on. */
+export const openPage = (
+  io: Pick<AppIo, 'stateDir' | 'open' | 'platform' | 'stderr'>,
+  url: string,
+  json: boolean,
+): Redirect | undefined => {
+  let redirect: Redirect | undefined;
+  try {
+    redirect = writeRedirect(io.stateDir, url);
+    io.open(redirect.path);
+    // Snap-packaged browsers, a Windows browser under WSL and a Chromebook's Linux container cannot read the page.
+    if (io.platform === 'linux' && !json) io.stderr(`${messageText(catalog, 'server.open-hint', {})}\n`);
+  } catch (error) {
+    io.stderr(message(error));
+  }
+  return redirect;
+};
+
 const inUse = (error: unknown): boolean => error instanceof Error && 'code' in error && error.code === 'EADDRINUSE';
 
 /** Starts the server for the project in cwd on 127.0.0.1 and prints its URL with the one-time token in the fragment. */
@@ -84,7 +108,16 @@ export const start = async (io: AppIo): Promise<Started> => {
   const options = parse(io.argv);
   if ('refusal' in options) return stop(options.refusal, 2);
   if (projectRoot(io.cwd) === undefined) return stop({ code: 'project.not-found', params: { cwd: io.cwd } }, 3);
-  const session = new Session(io);
+  let redirect: Redirect | undefined;
+  // A page left behind holds a token that is spent or ends with the server, so a failed removal is only reported.
+  const removePage = (): void => {
+    try {
+      redirect?.remove();
+    } catch (error) {
+      io.stderr(message(error));
+    }
+  };
+  const session = new Session(io, removePage);
   const app = await buildServer({ session, log: io.stderr });
   try {
     await app.listen({ host: '127.0.0.1', port: options.port });
@@ -96,13 +129,11 @@ export const start = async (io: AppIo): Promise<Started> => {
   const port = portOf(app.server);
   const url = `http://127.0.0.1:${port}/#t=${session.token}`;
   io.stdout(json ? `${JSON.stringify({ result: { url, port }, findings: [], refusals: [] })}\n` : `${url}\n`);
-  // The URL is printed already, so a failing opener is reported and the server keeps serving.
-  if (options.open) {
-    try {
-      io.open(url);
-    } catch (error) {
-      io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
-    }
-  }
-  return { close: () => app.close() };
+  if (options.open) redirect = openPage(io, url, json);
+  return {
+    close: () => {
+      removePage();
+      return app.close();
+    },
+  };
 };

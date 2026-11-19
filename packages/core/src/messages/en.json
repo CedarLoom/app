@@ -50,6 +50,9 @@
     "project.not-found": [["cwd"], " is not inside a Git repository. Run CedarLoom from your project folder."],
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],
+    "server.open-hint": [
+      "If the browser shows an error about a file instead of CedarLoom, open the URL printed above."
+    ],
     "server.port-in-use": [
       "Port ",
       ["port"],
