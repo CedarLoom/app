@@ -176,8 +176,7 @@ describe('reports each definition it cannot use with its finding', () => {
     const { project, check } = setup();
     rmSync(join(project, '.cedarloom', 'workflows'), { recursive: true });
     write(join(project, '.cedarloom', 'workflows'), '');
-    // ENOTDIR on Linux and macOS, ENOENT on Windows, which reads it as no definitions.
-    expect(check()).toEqual(isWindows ? { definitions: [], generated: [] } : notJson('.cedarloom/workflows'));
+    expect(check()).toEqual(notJson('.cedarloom/workflows'));
   });
 
   it.skipIf(isWindows)('definition.not-json for a link, also one that loops', () => {
