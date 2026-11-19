@@ -21,7 +21,7 @@ const fresh = (): string => {
 };
 
 const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
-const machine = { home: '', platform: process.platform, realpath: realpathSync };
+const machine = { home: '', platform: process.platform, realpath: realpathSync.native };
 
 // A Git working tree with .claude/, and a state folder of its own.
 const project = (): { root: string; state: string } => {
