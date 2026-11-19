@@ -23,6 +23,7 @@ export const MESSAGE_IDS = [
   'plan.name-too-long',
   'plan.not-text',
   'plan.path-outside-roots',
+  'plan.stale',
   'plan.symlink',
   'plan.text-mismatch',
   'project.not-found',
@@ -65,6 +66,7 @@ export interface MessagePlaceholders {
   'plan.name-too-long': 'path';
   'plan.not-text': 'path';
   'plan.path-outside-roots': 'path';
+  'plan.stale': never;
   'plan.symlink': 'path';
   'plan.text-mismatch': 'path';
   'project.not-found': 'cwd';

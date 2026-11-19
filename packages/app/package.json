@@ -11,16 +11,21 @@
   },
   "exports": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "openapi": "node scripts/openapi.ts && biome format --write openapi.json"
   },
   "dependencies": {
     "@cedarloom/core": "workspace:*",
     "@cedarloom/use-cases": "workspace:*",
     "@fastify/helmet": "catalog:",
+    "@fastify/swagger": "catalog:",
     "fastify": "catalog:",
+    "fastify-type-provider-zod": "catalog:",
+    "openapi-types": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@biomejs/biome": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:"
   }

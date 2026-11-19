@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { stateDir } from '@cedarloom/use-cases';
+import { stateDir, storeDir } from '@cedarloom/use-cases';
+import manifest from '../package.json' with { type: 'json' };
 import { opener } from './opener.ts';
 import { start } from './start.ts';
 
@@ -26,10 +28,15 @@ const crashed = (error: unknown): void => {
 
 /** The bin's entry: serves until SIGINT or SIGTERM, then closes the server and exits 0. */
 export const run = (): void => {
+  const machine = { env: process.env, platform: process.platform, home: homedir(), cwd: process.cwd() };
   start({
     argv: process.argv.slice(2),
     cwd: process.cwd(),
-    stateDir: stateDir({ env: process.env, platform: process.platform, home: homedir(), cwd: process.cwd() }),
+    stateDir: stateDir(machine),
+    storeDir: (projectRoot) => storeDir({ ...machine, projectRoot, realpath: realpathSync.native }),
+    clock: { now: () => new Date(), newRunId: randomUUID },
+    node: process.versions.node,
+    required: manifest.engines.node,
     // Monotonic, so a change of the system clock does not stretch or cut the token's 10 minutes.
     now: () => performance.now(),
     secret: () => randomBytes(32).toString('base64url'),

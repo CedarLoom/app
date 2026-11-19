@@ -1,0 +1,1416 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "cedarloom-app", "version": "0.0.0" },
+  "components": {
+    "schemas": {
+      "DoctorResultInput": {
+        "type": "object",
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "const": "node" },
+                "status": { "type": "string", "enum": ["pass", "fail"] }
+              },
+              "required": ["id", "status"],
+              "additionalProperties": false
+            }
+          },
+          "plugin": { "type": "null" },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "api.bad-request",
+                    "api.internal",
+                    "api.not-found",
+                    "apply.backup-failed",
+                    "apply.recovered",
+                    "apply.write-mismatch",
+                    "cli.bad-value",
+                    "cli.confirm-required",
+                    "cli.flag-conflict",
+                    "cli.internal",
+                    "cli.missing-argument",
+                    "cli.unknown-command",
+                    "cli.unknown-flag",
+                    "node.version-unsupported",
+                    "plan.file-changed",
+                    "plan.name-too-long",
+                    "plan.not-text",
+                    "plan.path-outside-roots",
+                    "plan.stale",
+                    "plan.symlink",
+                    "plan.text-mismatch",
+                    "project.not-found",
+                    "run.already-undone",
+                    "run.not-found",
+                    "server.open-hint",
+                    "server.port-in-use",
+                    "session.cookie",
+                    "session.csrf",
+                    "session.host",
+                    "session.origin",
+                    "session.token",
+                    "store.locked",
+                    "store.unreadable",
+                    "store.version-unsupported",
+                    "undo.backup-changed",
+                    "undo.backup-missing",
+                    "undo.file-changed",
+                    "undo.replaced",
+                    "undo.result-kept"
+                  ]
+                },
+                "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+                "params": {
+                  "type": "object",
+                  "propertyNames": { "type": "string" },
+                  "additionalProperties": {
+                    "anyOf": [
+                      { "type": "string" },
+                      { "type": "number" },
+                      { "type": "boolean" },
+                      { "type": "null" },
+                      { "type": "array", "items": { "type": "string" } }
+                    ]
+                  }
+                }
+              },
+              "required": ["code", "severity", "params"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["checks", "plugin", "findings"],
+        "additionalProperties": false
+      },
+      "RunListInput": {
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+                "kind": { "type": "string", "enum": ["apply", "undo"] },
+                "action": {
+                  "type": "string",
+                  "enum": ["workflow.new", "workflow.edit", "workflow.generate", "workflow.off", "workflow.on", "undo"]
+                },
+                "subject": { "type": ["string", "null"] },
+                "status": { "type": "string", "enum": ["running", "done", "failed", "interrupted"] },
+                "startedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+                },
+                "endedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+                    },
+                    { "type": "null" }
+                  ]
+                },
+                "undoes": {
+                  "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+                },
+                "undoneBy": {
+                  "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+                }
+              },
+              "required": ["id", "kind", "action", "subject", "status", "startedAt", "endedAt", "undoes", "undoneBy"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["runs"],
+        "additionalProperties": false
+      },
+      "RunInput": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+          "kind": { "type": "string", "enum": ["apply", "undo"] },
+          "action": {
+            "type": "string",
+            "enum": ["workflow.new", "workflow.edit", "workflow.generate", "workflow.off", "workflow.on", "undo"]
+          },
+          "subject": { "type": ["string", "null"] },
+          "status": { "type": "string", "enum": ["running", "done", "failed", "interrupted"] },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+              },
+              { "type": "null" }
+            ]
+          },
+          "undoes": {
+            "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+          },
+          "undoneBy": {
+            "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+          },
+          "planHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "operations": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "create" },
+                    "path": { "type": "string", "minLength": 1 },
+                    "beforeHash": { "type": "null" },
+                    "afterHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "status": { "type": "string", "enum": ["pending", "done", "failed", "settled"] },
+                    "entries": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "pointer": { "type": "string", "format": "starts_with", "pattern": "^\\/.*" },
+                              "value": {},
+                              "before": {}
+                            },
+                            "required": ["pointer", "value"],
+                            "additionalProperties": false
+                          }
+                        },
+                        { "type": "null" }
+                      ]
+                    }
+                  },
+                  "required": ["kind", "path", "beforeHash", "afterHash", "status", "entries"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "replace" },
+                    "path": { "type": "string", "minLength": 1 },
+                    "beforeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "afterHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "status": { "type": "string", "enum": ["pending", "done", "failed", "settled"] },
+                    "entries": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "pointer": { "type": "string", "format": "starts_with", "pattern": "^\\/.*" },
+                              "value": {},
+                              "before": {}
+                            },
+                            "required": ["pointer", "value"],
+                            "additionalProperties": false
+                          }
+                        },
+                        { "type": "null" }
+                      ]
+                    }
+                  },
+                  "required": ["kind", "path", "beforeHash", "afterHash", "status", "entries"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "delete" },
+                    "path": { "type": "string", "minLength": 1 },
+                    "beforeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "afterHash": { "type": "null" },
+                    "status": { "type": "string", "enum": ["pending", "done", "failed", "settled"] },
+                    "entries": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "pointer": { "type": "string", "format": "starts_with", "pattern": "^\\/.*" },
+                              "value": {},
+                              "before": {}
+                            },
+                            "required": ["pointer", "value"],
+                            "additionalProperties": false
+                          }
+                        },
+                        { "type": "null" }
+                      ]
+                    }
+                  },
+                  "required": ["kind", "path", "beforeHash", "afterHash", "status", "entries"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "generatedFrom": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "name": { "type": "string" }, "definition": { "type": "string" } },
+              "required": ["name", "definition"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "action",
+          "subject",
+          "status",
+          "startedAt",
+          "endedAt",
+          "undoes",
+          "undoneBy",
+          "planHash",
+          "operations",
+          "generatedFrom"
+        ],
+        "additionalProperties": false
+      },
+      "UndoPreviewInput": {
+        "type": "object",
+        "properties": {
+          "planHash": { "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }] },
+          "plan": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "planHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "operations": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "create" },
+                            "path": { "type": "string", "minLength": 1 },
+                            "beforeHash": { "type": "null" },
+                            "afterHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                            "before": { "type": "null" },
+                            "after": { "type": "string" }
+                          },
+                          "required": ["kind", "path", "beforeHash", "afterHash", "before", "after"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "replace" },
+                            "path": { "type": "string", "minLength": 1 },
+                            "beforeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                            "afterHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                            "before": { "type": "string" },
+                            "after": { "type": "string" }
+                          },
+                          "required": ["kind", "path", "beforeHash", "afterHash", "before", "after"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "delete" },
+                            "path": { "type": "string", "minLength": 1 },
+                            "beforeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                            "afterHash": { "type": "null" },
+                            "before": { "type": "string" },
+                            "after": { "type": "null" }
+                          },
+                          "required": ["kind", "path", "beforeHash", "afterHash", "before", "after"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "skipped": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "api.bad-request",
+                            "api.internal",
+                            "api.not-found",
+                            "apply.backup-failed",
+                            "apply.recovered",
+                            "apply.write-mismatch",
+                            "cli.bad-value",
+                            "cli.confirm-required",
+                            "cli.flag-conflict",
+                            "cli.internal",
+                            "cli.missing-argument",
+                            "cli.unknown-command",
+                            "cli.unknown-flag",
+                            "node.version-unsupported",
+                            "plan.file-changed",
+                            "plan.name-too-long",
+                            "plan.not-text",
+                            "plan.path-outside-roots",
+                            "plan.stale",
+                            "plan.symlink",
+                            "plan.text-mismatch",
+                            "project.not-found",
+                            "run.already-undone",
+                            "run.not-found",
+                            "server.open-hint",
+                            "server.port-in-use",
+                            "session.cookie",
+                            "session.csrf",
+                            "session.host",
+                            "session.origin",
+                            "session.token",
+                            "store.locked",
+                            "store.unreadable",
+                            "store.version-unsupported",
+                            "undo.backup-changed",
+                            "undo.backup-missing",
+                            "undo.file-changed",
+                            "undo.replaced",
+                            "undo.result-kept"
+                          ]
+                        },
+                        "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+                        "params": {
+                          "type": "object",
+                          "propertyNames": { "type": "string" },
+                          "additionalProperties": {
+                            "anyOf": [
+                              { "type": "string" },
+                              { "type": "number" },
+                              { "type": "boolean" },
+                              { "type": "null" },
+                              { "type": "array", "items": { "type": "string" } }
+                            ]
+                          }
+                        }
+                      },
+                      "required": ["code", "severity", "params"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["planHash", "operations", "skipped"],
+                "additionalProperties": false
+              },
+              { "type": "null" }
+            ]
+          },
+          "refusals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "api.bad-request",
+                    "api.internal",
+                    "api.not-found",
+                    "apply.backup-failed",
+                    "apply.recovered",
+                    "apply.write-mismatch",
+                    "cli.bad-value",
+                    "cli.confirm-required",
+                    "cli.flag-conflict",
+                    "cli.internal",
+                    "cli.missing-argument",
+                    "cli.unknown-command",
+                    "cli.unknown-flag",
+                    "node.version-unsupported",
+                    "plan.file-changed",
+                    "plan.name-too-long",
+                    "plan.not-text",
+                    "plan.path-outside-roots",
+                    "plan.stale",
+                    "plan.symlink",
+                    "plan.text-mismatch",
+                    "project.not-found",
+                    "run.already-undone",
+                    "run.not-found",
+                    "server.open-hint",
+                    "server.port-in-use",
+                    "session.cookie",
+                    "session.csrf",
+                    "session.host",
+                    "session.origin",
+                    "session.token",
+                    "store.locked",
+                    "store.unreadable",
+                    "store.version-unsupported",
+                    "undo.backup-changed",
+                    "undo.backup-missing",
+                    "undo.file-changed",
+                    "undo.replaced",
+                    "undo.result-kept"
+                  ]
+                },
+                "params": {
+                  "type": "object",
+                  "propertyNames": { "type": "string" },
+                  "additionalProperties": {
+                    "anyOf": [
+                      { "type": "string" },
+                      { "type": "number" },
+                      { "type": "boolean" },
+                      { "type": "null" },
+                      { "type": "array", "items": { "type": "string" } }
+                    ]
+                  }
+                }
+              },
+              "required": ["code", "params"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["planHash", "plan", "refusals"],
+        "additionalProperties": false
+      },
+      "UndoApplyInput": {
+        "type": "object",
+        "properties": { "planHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+        "required": ["planHash"],
+        "additionalProperties": false
+      },
+      "UndoAppliedInput": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+              "kind": { "type": "string", "enum": ["apply", "undo"] },
+              "action": {
+                "type": "string",
+                "enum": ["workflow.new", "workflow.edit", "workflow.generate", "workflow.off", "workflow.on", "undo"]
+              },
+              "subject": { "type": ["string", "null"] },
+              "status": { "type": "string", "enum": ["running", "done", "failed", "interrupted"] },
+              "startedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+              },
+              "endedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+                  },
+                  { "type": "null" }
+                ]
+              },
+              "undoes": {
+                "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+              },
+              "undoneBy": {
+                "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+              }
+            },
+            "required": ["id", "kind", "action", "subject", "status", "startedAt", "endedAt", "undoes", "undoneBy"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["run"],
+        "additionalProperties": false
+      },
+      "RefusalInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "api.bad-request",
+              "api.internal",
+              "api.not-found",
+              "apply.backup-failed",
+              "apply.recovered",
+              "apply.write-mismatch",
+              "cli.bad-value",
+              "cli.confirm-required",
+              "cli.flag-conflict",
+              "cli.internal",
+              "cli.missing-argument",
+              "cli.unknown-command",
+              "cli.unknown-flag",
+              "node.version-unsupported",
+              "plan.file-changed",
+              "plan.name-too-long",
+              "plan.not-text",
+              "plan.path-outside-roots",
+              "plan.stale",
+              "plan.symlink",
+              "plan.text-mismatch",
+              "project.not-found",
+              "run.already-undone",
+              "run.not-found",
+              "server.open-hint",
+              "server.port-in-use",
+              "session.cookie",
+              "session.csrf",
+              "session.host",
+              "session.origin",
+              "session.token",
+              "store.locked",
+              "store.unreadable",
+              "store.version-unsupported",
+              "undo.backup-changed",
+              "undo.backup-missing",
+              "undo.file-changed",
+              "undo.replaced",
+              "undo.result-kept"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": { "type": "string" },
+            "additionalProperties": {
+              "anyOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" },
+                { "type": "array", "items": { "type": "string" } }
+              ]
+            }
+          }
+        },
+        "required": ["code", "params"],
+        "additionalProperties": false
+      },
+      "SessionExchangeInput": {
+        "type": "object",
+        "properties": { "token": { "type": "string" } },
+        "required": ["token"],
+        "additionalProperties": false
+      },
+      "SessionCsrfInput": {
+        "type": "object",
+        "properties": { "csrf": { "type": "string" } },
+        "required": ["csrf"],
+        "additionalProperties": false
+      },
+      "DoctorResult": {
+        "type": "object",
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "const": "node" },
+                "status": { "type": "string", "enum": ["pass", "fail"] }
+              },
+              "required": ["id", "status"],
+              "additionalProperties": false
+            }
+          },
+          "plugin": { "type": "null" },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "api.bad-request",
+                    "api.internal",
+                    "api.not-found",
+                    "apply.backup-failed",
+                    "apply.recovered",
+                    "apply.write-mismatch",
+                    "cli.bad-value",
+                    "cli.confirm-required",
+                    "cli.flag-conflict",
+                    "cli.internal",
+                    "cli.missing-argument",
+                    "cli.unknown-command",
+                    "cli.unknown-flag",
+                    "node.version-unsupported",
+                    "plan.file-changed",
+                    "plan.name-too-long",
+                    "plan.not-text",
+                    "plan.path-outside-roots",
+                    "plan.stale",
+                    "plan.symlink",
+                    "plan.text-mismatch",
+                    "project.not-found",
+                    "run.already-undone",
+                    "run.not-found",
+                    "server.open-hint",
+                    "server.port-in-use",
+                    "session.cookie",
+                    "session.csrf",
+                    "session.host",
+                    "session.origin",
+                    "session.token",
+                    "store.locked",
+                    "store.unreadable",
+                    "store.version-unsupported",
+                    "undo.backup-changed",
+                    "undo.backup-missing",
+                    "undo.file-changed",
+                    "undo.replaced",
+                    "undo.result-kept"
+                  ]
+                },
+                "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+                "params": {
+                  "type": "object",
+                  "propertyNames": { "type": "string" },
+                  "additionalProperties": {
+                    "anyOf": [
+                      { "type": "string" },
+                      { "type": "number" },
+                      { "type": "boolean" },
+                      { "type": "null" },
+                      { "type": "array", "items": { "type": "string" } }
+                    ]
+                  }
+                }
+              },
+              "required": ["code", "severity", "params"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["checks", "plugin", "findings"],
+        "additionalProperties": false
+      },
+      "RunList": {
+        "type": "object",
+        "properties": {
+          "runs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+                "kind": { "type": "string", "enum": ["apply", "undo"] },
+                "action": {
+                  "type": "string",
+                  "enum": ["workflow.new", "workflow.edit", "workflow.generate", "workflow.off", "workflow.on", "undo"]
+                },
+                "subject": { "type": ["string", "null"] },
+                "status": { "type": "string", "enum": ["running", "done", "failed", "interrupted"] },
+                "startedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+                },
+                "endedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+                    },
+                    { "type": "null" }
+                  ]
+                },
+                "undoes": {
+                  "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+                },
+                "undoneBy": {
+                  "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+                }
+              },
+              "required": ["id", "kind", "action", "subject", "status", "startedAt", "endedAt", "undoes", "undoneBy"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["runs"],
+        "additionalProperties": false
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+          "kind": { "type": "string", "enum": ["apply", "undo"] },
+          "action": {
+            "type": "string",
+            "enum": ["workflow.new", "workflow.edit", "workflow.generate", "workflow.off", "workflow.on", "undo"]
+          },
+          "subject": { "type": ["string", "null"] },
+          "status": { "type": "string", "enum": ["running", "done", "failed", "interrupted"] },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+              },
+              { "type": "null" }
+            ]
+          },
+          "undoes": {
+            "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+          },
+          "undoneBy": {
+            "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+          },
+          "planHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "operations": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "create" },
+                    "path": { "type": "string", "minLength": 1 },
+                    "beforeHash": { "type": "null" },
+                    "afterHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "status": { "type": "string", "enum": ["pending", "done", "failed", "settled"] },
+                    "entries": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "pointer": { "type": "string", "format": "starts_with", "pattern": "^\\/.*" },
+                              "value": { "$ref": "#/components/schemas/__shared/$defs/schema0" },
+                              "before": { "$ref": "#/components/schemas/__shared/$defs/schema0" }
+                            },
+                            "required": ["pointer", "value"],
+                            "additionalProperties": false
+                          }
+                        },
+                        { "type": "null" }
+                      ]
+                    }
+                  },
+                  "required": ["kind", "path", "beforeHash", "afterHash", "status", "entries"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "replace" },
+                    "path": { "type": "string", "minLength": 1 },
+                    "beforeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "afterHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "status": { "type": "string", "enum": ["pending", "done", "failed", "settled"] },
+                    "entries": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "pointer": { "type": "string", "format": "starts_with", "pattern": "^\\/.*" },
+                              "value": { "$ref": "#/components/schemas/__shared/$defs/schema0" },
+                              "before": { "$ref": "#/components/schemas/__shared/$defs/schema0" }
+                            },
+                            "required": ["pointer", "value"],
+                            "additionalProperties": false
+                          }
+                        },
+                        { "type": "null" }
+                      ]
+                    }
+                  },
+                  "required": ["kind", "path", "beforeHash", "afterHash", "status", "entries"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": { "type": "string", "const": "delete" },
+                    "path": { "type": "string", "minLength": 1 },
+                    "beforeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                    "afterHash": { "type": "null" },
+                    "status": { "type": "string", "enum": ["pending", "done", "failed", "settled"] },
+                    "entries": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "pointer": { "type": "string", "format": "starts_with", "pattern": "^\\/.*" },
+                              "value": { "$ref": "#/components/schemas/__shared/$defs/schema0" },
+                              "before": { "$ref": "#/components/schemas/__shared/$defs/schema0" }
+                            },
+                            "required": ["pointer", "value"],
+                            "additionalProperties": false
+                          }
+                        },
+                        { "type": "null" }
+                      ]
+                    }
+                  },
+                  "required": ["kind", "path", "beforeHash", "afterHash", "status", "entries"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "generatedFrom": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "name": { "type": "string" }, "definition": { "type": "string" } },
+              "required": ["name", "definition"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "action",
+          "subject",
+          "status",
+          "startedAt",
+          "endedAt",
+          "undoes",
+          "undoneBy",
+          "planHash",
+          "operations",
+          "generatedFrom"
+        ],
+        "additionalProperties": false
+      },
+      "UndoPreview": {
+        "type": "object",
+        "properties": {
+          "planHash": { "anyOf": [{ "type": "string", "pattern": "^[0-9a-f]{64}$" }, { "type": "null" }] },
+          "plan": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "planHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                  "operations": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "create" },
+                            "path": { "type": "string", "minLength": 1 },
+                            "beforeHash": { "type": "null" },
+                            "afterHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                            "before": { "type": "null" },
+                            "after": { "type": "string" }
+                          },
+                          "required": ["kind", "path", "beforeHash", "afterHash", "before", "after"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "replace" },
+                            "path": { "type": "string", "minLength": 1 },
+                            "beforeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                            "afterHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                            "before": { "type": "string" },
+                            "after": { "type": "string" }
+                          },
+                          "required": ["kind", "path", "beforeHash", "afterHash", "before", "after"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": { "type": "string", "const": "delete" },
+                            "path": { "type": "string", "minLength": 1 },
+                            "beforeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+                            "afterHash": { "type": "null" },
+                            "before": { "type": "string" },
+                            "after": { "type": "null" }
+                          },
+                          "required": ["kind", "path", "beforeHash", "afterHash", "before", "after"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  },
+                  "skipped": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "api.bad-request",
+                            "api.internal",
+                            "api.not-found",
+                            "apply.backup-failed",
+                            "apply.recovered",
+                            "apply.write-mismatch",
+                            "cli.bad-value",
+                            "cli.confirm-required",
+                            "cli.flag-conflict",
+                            "cli.internal",
+                            "cli.missing-argument",
+                            "cli.unknown-command",
+                            "cli.unknown-flag",
+                            "node.version-unsupported",
+                            "plan.file-changed",
+                            "plan.name-too-long",
+                            "plan.not-text",
+                            "plan.path-outside-roots",
+                            "plan.stale",
+                            "plan.symlink",
+                            "plan.text-mismatch",
+                            "project.not-found",
+                            "run.already-undone",
+                            "run.not-found",
+                            "server.open-hint",
+                            "server.port-in-use",
+                            "session.cookie",
+                            "session.csrf",
+                            "session.host",
+                            "session.origin",
+                            "session.token",
+                            "store.locked",
+                            "store.unreadable",
+                            "store.version-unsupported",
+                            "undo.backup-changed",
+                            "undo.backup-missing",
+                            "undo.file-changed",
+                            "undo.replaced",
+                            "undo.result-kept"
+                          ]
+                        },
+                        "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+                        "params": {
+                          "type": "object",
+                          "propertyNames": { "type": "string" },
+                          "additionalProperties": {
+                            "anyOf": [
+                              { "type": "string" },
+                              { "type": "number" },
+                              { "type": "boolean" },
+                              { "type": "null" },
+                              { "type": "array", "items": { "type": "string" } }
+                            ]
+                          }
+                        }
+                      },
+                      "required": ["code", "severity", "params"],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": ["planHash", "operations", "skipped"],
+                "additionalProperties": false
+              },
+              { "type": "null" }
+            ]
+          },
+          "refusals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "api.bad-request",
+                    "api.internal",
+                    "api.not-found",
+                    "apply.backup-failed",
+                    "apply.recovered",
+                    "apply.write-mismatch",
+                    "cli.bad-value",
+                    "cli.confirm-required",
+                    "cli.flag-conflict",
+                    "cli.internal",
+                    "cli.missing-argument",
+                    "cli.unknown-command",
+                    "cli.unknown-flag",
+                    "node.version-unsupported",
+                    "plan.file-changed",
+                    "plan.name-too-long",
+                    "plan.not-text",
+                    "plan.path-outside-roots",
+                    "plan.stale",
+                    "plan.symlink",
+                    "plan.text-mismatch",
+                    "project.not-found",
+                    "run.already-undone",
+                    "run.not-found",
+                    "server.open-hint",
+                    "server.port-in-use",
+                    "session.cookie",
+                    "session.csrf",
+                    "session.host",
+                    "session.origin",
+                    "session.token",
+                    "store.locked",
+                    "store.unreadable",
+                    "store.version-unsupported",
+                    "undo.backup-changed",
+                    "undo.backup-missing",
+                    "undo.file-changed",
+                    "undo.replaced",
+                    "undo.result-kept"
+                  ]
+                },
+                "params": {
+                  "type": "object",
+                  "propertyNames": { "type": "string" },
+                  "additionalProperties": {
+                    "anyOf": [
+                      { "type": "string" },
+                      { "type": "number" },
+                      { "type": "boolean" },
+                      { "type": "null" },
+                      { "type": "array", "items": { "type": "string" } }
+                    ]
+                  }
+                }
+              },
+              "required": ["code", "params"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["planHash", "plan", "refusals"],
+        "additionalProperties": false
+      },
+      "UndoApply": {
+        "type": "object",
+        "properties": { "planHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+        "required": ["planHash"],
+        "additionalProperties": false
+      },
+      "UndoApplied": {
+        "type": "object",
+        "properties": {
+          "run": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+              "kind": { "type": "string", "enum": ["apply", "undo"] },
+              "action": {
+                "type": "string",
+                "enum": ["workflow.new", "workflow.edit", "workflow.generate", "workflow.off", "workflow.on", "undo"]
+              },
+              "subject": { "type": ["string", "null"] },
+              "status": { "type": "string", "enum": ["running", "done", "failed", "interrupted"] },
+              "startedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+              },
+              "endedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{3}(?:Z))$"
+                  },
+                  { "type": "null" }
+                ]
+              },
+              "undoes": {
+                "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+              },
+              "undoneBy": {
+                "anyOf": [{ "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }, { "type": "null" }]
+              }
+            },
+            "required": ["id", "kind", "action", "subject", "status", "startedAt", "endedAt", "undoes", "undoneBy"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["run"],
+        "additionalProperties": false
+      },
+      "Refusal": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "api.bad-request",
+              "api.internal",
+              "api.not-found",
+              "apply.backup-failed",
+              "apply.recovered",
+              "apply.write-mismatch",
+              "cli.bad-value",
+              "cli.confirm-required",
+              "cli.flag-conflict",
+              "cli.internal",
+              "cli.missing-argument",
+              "cli.unknown-command",
+              "cli.unknown-flag",
+              "node.version-unsupported",
+              "plan.file-changed",
+              "plan.name-too-long",
+              "plan.not-text",
+              "plan.path-outside-roots",
+              "plan.stale",
+              "plan.symlink",
+              "plan.text-mismatch",
+              "project.not-found",
+              "run.already-undone",
+              "run.not-found",
+              "server.open-hint",
+              "server.port-in-use",
+              "session.cookie",
+              "session.csrf",
+              "session.host",
+              "session.origin",
+              "session.token",
+              "store.locked",
+              "store.unreadable",
+              "store.version-unsupported",
+              "undo.backup-changed",
+              "undo.backup-missing",
+              "undo.file-changed",
+              "undo.replaced",
+              "undo.result-kept"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": { "type": "string" },
+            "additionalProperties": {
+              "anyOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" },
+                { "type": "array", "items": { "type": "string" } }
+              ]
+            }
+          }
+        },
+        "required": ["code", "params"],
+        "additionalProperties": false
+      },
+      "SessionExchange": {
+        "type": "object",
+        "properties": { "token": { "type": "string" } },
+        "required": ["token"],
+        "additionalProperties": false
+      },
+      "SessionCsrf": {
+        "type": "object",
+        "properties": { "csrf": { "type": "string" } },
+        "required": ["csrf"],
+        "additionalProperties": false
+      },
+      "__shared": {
+        "$defs": {
+          "schema0": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "boolean" },
+              { "type": "null" },
+              { "type": "array", "items": { "$ref": "#/components/schemas/__shared/$defs/schema0" } },
+              {
+                "type": "object",
+                "propertyNames": { "type": "string" },
+                "additionalProperties": { "$ref": "#/components/schemas/__shared/$defs/schema0" }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/session": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionExchangeInput" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionCsrf" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          }
+        }
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SessionCsrf" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          }
+        }
+      }
+    },
+    "/api/doctor": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DoctorResult" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          }
+        }
+      }
+    },
+    "/api/runs": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RunList" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          }
+        }
+      }
+    },
+    "/api/runs/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Run" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          }
+        }
+      }
+    },
+    "/api/runs/{id}/undo": {
+      "get": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UndoPreview" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          }
+        }
+      },
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UndoApplyInput" } } }
+        },
+        "parameters": [
+          {
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UndoApplied" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          }
+        }
+      }
+    }
+  }
+}

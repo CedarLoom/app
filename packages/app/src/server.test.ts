@@ -7,12 +7,21 @@ const HOST = '127.0.0.1:0';
 const CSP =
   "default-src 'self';style-src 'self' 'unsafe-inline';object-src 'none';base-uri 'none';form-action 'none';frame-ancestors 'none'";
 
+// No route of these tests reaches the project.
+const PROJECT = {
+  root: '',
+  storeDir: '',
+  clock: { now: () => new Date(0), newRunId: () => 'r1' },
+  node: '26.13.0',
+  required: '>=26',
+};
+
 // Secrets in order: the URL token secret-0, then the cookie secret-1 and the CSRF value secret-2.
 const server = async () => {
   let now = 0;
   let count = 0;
   const session = new Session({ now: () => now, secret: () => `secret-${count++}` });
-  const app = await buildServer({ session, log: () => undefined });
+  const app = await buildServer({ session, log: () => undefined, project: PROJECT });
   const advance = (ms: number): void => {
     now += ms;
   };
