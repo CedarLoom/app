@@ -2,6 +2,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import type { DoctorReport, Finding } from '@cedarloom/core';
 import { definitionFindings } from './definition-checks.ts';
+import { GENERATOR_TIMEOUT_MS } from './generator-run.ts';
 import { enabledFinding } from './plugin-enabled.ts';
 import { locatePlugin } from './plugin-locator.ts';
 import { type ClaudeDirInputs, claudeConfigDir, pluginsRoot } from './plugins-root.ts';
@@ -17,8 +18,6 @@ export interface DoctorRequest extends ClaudeDirInputs {
 }
 
 type Status = DoctorReport['checks'][number]['status'];
-// A generator run takes well under a second; this ends one that hangs.
-const GENERATOR_TIMEOUT_MS = 30_000;
 
 const SKIPPED_DEFINITIONS = { id: 'definitions', status: 'skipped' } as const;
 const SKIPPED_GENERATED = { id: 'generated', status: 'skipped' } as const;

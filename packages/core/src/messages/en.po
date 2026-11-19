@@ -148,6 +148,14 @@ msgid "generator.output-unknown"
 msgstr "The workflow generator printed output CedarLoom cannot read: {output}"
 
 #. js-lingui-explicit-id
+msgid "definition.not-found"
+msgstr "No {source, select, shipped {shipped} other {project}} workflow definition named {name}."
+
+#. js-lingui-explicit-id
+msgid "workflow.name-invalid"
+msgstr "{name} is not a valid workflow name. Use lowercase letters, digits and single hyphens."
+
+#. js-lingui-explicit-id
 msgid "session.host"
 msgstr "This server answers only at 127.0.0.1."
 

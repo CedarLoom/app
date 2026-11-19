@@ -1,27 +1,32 @@
 import { parseArgs } from 'node:util';
 import type { Refusal } from '@cedarloom/core';
 
-/** The commands of this version, by their words; a change is a command that takes --yes; pluginRoot, one that takes --plugin-root. */
+/** The commands by their words; variadic takes its argument any number of times, the others name the flags taken. */
 const COMMANDS = {
-  doctor: { argument: null, change: false, pluginRoot: true },
-  'runs list': { argument: null, change: false, pluginRoot: false },
-  'runs show': { argument: '<run>', change: false, pluginRoot: false },
-  undo: { argument: '<run>', change: true, pluginRoot: false },
+  doctor: { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false },
+  'runs list': { argument: null, variadic: false, change: false, pluginRoot: false, shipped: false },
+  'runs show': { argument: '<run>', variadic: false, change: false, pluginRoot: false, shipped: false },
+  undo: { argument: '<run>', variadic: false, change: true, pluginRoot: false, shipped: false },
+  'workflows list': { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false },
+  'workflows show': { argument: '<name>', variadic: false, change: false, pluginRoot: true, shipped: true },
+  'workflows validate': { argument: '<name>', variadic: true, change: false, pluginRoot: true, shipped: true },
 } as const;
 type CommandName = keyof typeof COMMANDS;
-const NOUNS = new Set(['runs']);
+const NOUNS = ['runs', 'workflows'] as const;
+type Noun = (typeof NOUNS)[number];
 
 /** What the command line asks for: a command with its argument, its usage, or the version. */
 export type Request =
   | {
       kind: 'command';
       name: CommandName;
-      argument: string | null;
+      args: string[];
       yes: boolean;
+      shipped: boolean;
       json: boolean;
       pluginRoot: string | null;
     }
-  | { kind: 'help'; topic: CommandName | 'runs' | null }
+  | { kind: 'help'; topic: CommandName | Noun | null }
   | { kind: 'version' };
 export type Parsed = { ok: true; value: Request } | { ok: false; refusal: Refusal; json: boolean };
 
@@ -69,31 +74,33 @@ const lineOf = (argv: readonly string[]): Line => {
 };
 
 const isCommand = (words: string): words is CommandName => Object.hasOwn(COMMANDS, words);
+const isNoun = (word: string): word is Noun => (NOUNS as readonly string[]).includes(word);
 
 // The command the first words name and how many words that took, or with --help a usage topic that names none.
 const commandOf = (
   words: string[],
   help: boolean,
-): { name: CommandName; used: number } | { topic: 'runs' | null } | { refusal: Refusal } => {
+): { name: CommandName; used: number } | { topic: Noun | null } | { refusal: Refusal } => {
   const [first, second] = words;
   if (first === undefined) {
     return help ? { topic: null } : usage('cli.missing-argument', { argument: '<command>', command: BIN });
   }
-  if (!NOUNS.has(first)) {
+  if (!isNoun(first)) {
     return isCommand(first) ? { name: first, used: 1 } : usage('cli.unknown-command', { command: first, bin: BIN });
   }
   if (second === undefined) {
-    return help ? { topic: 'runs' } : usage('cli.missing-argument', { argument: '<verb>', command: `${BIN} ${first}` });
+    return help ? { topic: first } : usage('cli.missing-argument', { argument: '<verb>', command: `${BIN} ${first}` });
   }
   const name = `${first} ${second}`;
   return isCommand(name) ? { name, used: 2 } : usage('cli.unknown-command', { command: name, bin: BIN });
 };
 
-const allowedFlags = (name: CommandName | 'runs' | null): Set<string> => {
+const allowedFlags = (name: CommandName | Noun | null): Set<string> => {
   const allowed = new Set(['json', 'help']);
-  if (name === null || name === 'runs') return allowed;
+  if (name === null || isNoun(name)) return allowed;
   if (COMMANDS[name].change) allowed.add('yes');
   if (COMMANDS[name].pluginRoot) allowed.add('plugin-root');
+  if (COMMANDS[name].shipped) allowed.add('shipped');
   return allowed;
 };
 
@@ -107,7 +114,7 @@ const valueRefusal = ({ name, rawName, value, inlineValue }: Flag, command: stri
 };
 
 // A flag the command does not take, a wrong value, or --help with --json, whose document carries no text.
-const flagRefusal = ({ flags, help, json }: Line, name: CommandName | 'runs' | null): Refusal | undefined => {
+const flagRefusal = ({ flags, help, json }: Line, name: CommandName | Noun | null): Refusal | undefined => {
   const allowed = allowedFlags(name);
   const command = name === null ? BIN : `${BIN} ${name}`;
   for (const flag of flags) {
@@ -118,14 +125,15 @@ const flagRefusal = ({ flags, help, json }: Line, name: CommandName | 'runs' | n
   return help && json ? { code: 'cli.flag-conflict', params: { flags: '--help, --json' } } : undefined;
 };
 
-const argumentOf = (name: CommandName, rest: string[]): { argument: string | null } | { refusal: Refusal } => {
-  const wanted = COMMANDS[name].argument;
+const argumentsOf = (name: CommandName, rest: string[]): { args: string[] } | { refusal: Refusal } => {
+  const { argument: wanted, variadic } = COMMANDS[name];
+  if (variadic) return { args: rest };
   const [argument = null, extra] = rest;
   if (wanted !== null && argument === null)
     return usage('cli.missing-argument', { argument: wanted, command: `${BIN} ${name}` });
   const surplus = wanted === null ? argument : extra;
   if (surplus !== null && surplus !== undefined) return usage('cli.unknown-command', { command: surplus, bin: BIN });
-  return { argument };
+  return { args: argument === null ? [] : [argument] };
 };
 
 const isVersion = (argv: readonly string[]): boolean =>
@@ -142,12 +150,20 @@ export const parse = (argv: readonly string[]): Parsed => {
   const stop = flagRefusal(line, named);
   if (stop !== undefined) return refused(stop);
   if (line.help || !('name' in command)) return { ok: true, value: { kind: 'help', topic: named } };
-  const argument = argumentOf(command.name, line.words.slice(command.used));
-  if ('refusal' in argument) return refused(argument.refusal);
-  const yes = line.flags.some(({ name }) => name === 'yes');
+  const taken = argumentsOf(command.name, line.words.slice(command.used));
+  if ('refusal' in taken) return refused(taken.refusal);
+  const has = (flag: string): boolean => line.flags.some(({ name }) => name === flag);
   const pluginRoot = line.flags.findLast(({ name }) => name === 'plugin-root')?.value ?? null;
   return {
     ok: true,
-    value: { kind: 'command', name: command.name, argument: argument.argument, yes, json: line.json, pluginRoot },
+    value: {
+      kind: 'command',
+      name: command.name,
+      args: taken.args,
+      yes: has('yes'),
+      shipped: has('shipped'),
+      json: line.json,
+      pluginRoot,
+    },
   };
 };

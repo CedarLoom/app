@@ -19,6 +19,7 @@ export const MESSAGE_IDS = [
   'cli.unknown-command',
   'cli.unknown-flag',
   'definition.invalid',
+  'definition.not-found',
   'definition.not-json',
   'definition.stale',
   'generator.failed',
@@ -58,6 +59,7 @@ export const MESSAGE_IDS = [
   'undo.file-changed',
   'undo.replaced',
   'undo.result-kept',
+  'workflow.name-invalid',
 ] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
@@ -76,6 +78,7 @@ export interface MessagePlaceholders {
   'cli.unknown-command': 'bin' | 'command';
   'cli.unknown-flag': 'command' | 'flag';
   'definition.invalid': 'count' | 'path';
+  'definition.not-found': 'name' | 'source';
   'definition.not-json': 'path';
   'definition.stale': 'name' | 'paths';
   'generator.failed': 'exitCode' | 'signal' | 'stderr';
@@ -115,4 +118,5 @@ export interface MessagePlaceholders {
   'undo.file-changed': 'path';
   'undo.replaced': 'by' | 'run';
   'undo.result-kept': 'path' | 'run';
+  'workflow.name-invalid': 'name';
 }

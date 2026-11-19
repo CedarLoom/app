@@ -1,7 +1,7 @@
 import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { Finding } from '@cedarloom/core';
+import type { Finding, GeneratorRefusal } from '@cedarloom/core';
 import { z } from 'zod';
 import { filesBelow } from './files-below.ts';
 import { errorCode } from './project-files.ts';
@@ -15,12 +15,11 @@ export interface GeneratorRun {
   env: Readonly<Record<string, string | undefined>>;
 }
 
-/**
- * The generator's files by their path below the output folder, with "/" as separator; or the count of its refusals
- * for each definition, in their order; or why it gave neither.
- */
-export type Generated = { outputs: Map<string, Buffer> } | { refusals: number[] } | { finding: Finding };
+/** The generator's files by "/"-separated path below its output folder; or its refusals per definition; or why neither. */
+export type Generated = { outputs: Map<string, Buffer> } | { refusals: GeneratorRefusal[][] } | { finding: Finding };
 
+/** A generator run takes well under a second; this ends one that hangs. */
+export const GENERATOR_TIMEOUT_MS = 30_000;
 // What the generator prints with --json: one { file, field, rule } per refusal.
 const Refusals = z.array(z.object({ file: z.string(), field: z.string(), rule: z.string() }));
 const LIMIT = 4096;
@@ -54,23 +53,23 @@ export const unknownOutput = (output: string): { finding: Finding } => ({
   finding: { code: 'generator.output-unknown', severity: 'error', params: { output: output.slice(0, LIMIT) } },
 });
 
-// The refusal count of each file, in their order, from the list a run that exited with 0 or 1 printed; or why it gave none.
-const refusalCounts = (run: SpawnSyncReturns<string>, files: string[]): number[] | Generated => {
+// The refusals of each file, in their order, from the list a run that exited with 0 or 1 printed; or why it gave none.
+const refusalsOf = (run: SpawnSyncReturns<string>, files: string[]): GeneratorRefusal[][] | Generated => {
   const { status, stdout } = run;
   const refusals = Refusals.safeParse(jsonOf(stdout));
   // Node.js exits with 1 on an uncaught error too, which leaves its stack trace on stderr; the generator prints its
   // refusal list before it writes, so an error in a write leaves an empty one.
   if (status === 1 && !(refusals.success && refusals.data.length > 0)) return failed(run);
   if (!refusals.success || (status === 0) !== (refusals.data.length === 0)) return unknownOutput(stdout);
-  const counts = files.map((file) => refusals.data.filter((refusal) => refusal.file === file).length);
-  return counts.reduce((sum, count) => sum + count, 0) === refusals.data.length ? counts : unknownOutput(stdout);
+  const own = files.map((file) => refusals.data.filter((refusal) => refusal.file === file));
+  return own.reduce((sum, list) => sum + list.length, 0) === refusals.data.length ? own : unknownOutput(stdout);
 };
 
 const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): Generated => {
   if (run.signal !== null || (run.status !== 0 && run.status !== 1)) return failed(run);
-  const counts = refusalCounts(run, files);
-  if (!Array.isArray(counts)) return counts;
-  if (run.status === 1) return { refusals: counts };
+  const refusals = refusalsOf(run, files);
+  if (!Array.isArray(refusals)) return refusals;
+  if (run.status === 1) return { refusals };
   // A generator that wrote nothing leaves no output folder.
   if (!existsSync(out)) return { outputs: new Map() };
   return { outputs: new Map(filesBelow(out).map((path) => [path, readFileSync(join(out, path))])) };

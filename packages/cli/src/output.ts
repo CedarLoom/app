@@ -7,6 +7,8 @@ export interface Outcome {
   result: unknown;
   findings: Finding[];
   refusals: Refusal[];
+  /** A check failed without an error finding, as when the generator refuses a definition. */
+  failed?: boolean;
   text: string;
 }
 
@@ -22,12 +24,12 @@ const NOT_USAGE = new Set(['cli.confirm-required', 'cli.internal']);
 const isUsage = (code: string): boolean => code.startsWith('cli.') && !NOT_USAGE.has(code);
 
 /** The exit code: 5 for a crash; else 2 for usage, 3 for a refusal, 1 for a failed check, 4 for a plan not applied. */
-export const exitCode = ({ findings, refusals }: Outcome): number => {
+export const exitCode = ({ findings, refusals, failed = false }: Outcome): number => {
   const codes = refusals.map(({ code }) => code);
   if (codes.includes('cli.internal')) return 5;
   if (codes.some(isUsage)) return 2;
   if (codes.some((code) => !NOT_USAGE.has(code))) return 3;
-  if (findings.some(({ severity }) => severity === 'error')) return 1;
+  if (failed || findings.some(({ severity }) => severity === 'error')) return 1;
   return codes.length === 0 ? 0 : 4;
 };
 

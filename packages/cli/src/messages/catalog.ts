@@ -11,9 +11,16 @@ export const MESSAGE_IDS = [
   'help.runs-list',
   'help.runs-show',
   'help.undo',
+  'help.workflows',
+  'help.workflows-list',
+  'help.workflows-show',
+  'help.workflows-validate',
   'output.runs-none',
   'output.undo-applied',
   'output.undo-no-steps',
+  'output.workflow-invalid',
+  'output.workflow-valid',
+  'output.workflows-none',
 ] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
@@ -24,7 +31,14 @@ export interface MessagePlaceholders {
   'help.runs-list': never;
   'help.runs-show': never;
   'help.undo': never;
+  'help.workflows': never;
+  'help.workflows-list': never;
+  'help.workflows-show': never;
+  'help.workflows-validate': never;
   'output.runs-none': never;
   'output.undo-applied': 'run';
   'output.undo-no-steps': 'run';
+  'output.workflow-invalid': 'name' | 'source';
+  'output.workflow-valid': 'name' | 'source';
+  'output.workflows-none': never;
 }
