@@ -541,6 +541,21 @@ describe('undo', () => {
 });
 
 describe('undo refuses', () => {
+  it('undo refuses a file a failed step of the run left changed', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'u1');
+    const race = (boundary: Boundary, position: number): void => {
+      if (boundary === 'set-aside' && position === 1) writeFileSync(join(root, '.claude/b.md'), 'theirs\n');
+    };
+    apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]), race);
+    expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['done', 'failed'] });
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+      code: 'undo.file-changed',
+      params: { path: '.claude/b.md' },
+    });
+    expect(listing(root)).toEqual(['a.md', 'b.md']);
+  });
+
   it.each(['r9', '-r1', '../r1'])('refuses the run id %s as no run', (id) => {
     const { root, state } = project();
     const held = store(state);
@@ -597,23 +612,52 @@ describe('undo of an undo', () => {
   });
 });
 
+describe('undo matches files and runs as apply and the store do', () => {
+  // Linux filesystems tell the two names apart, so apply never chains them as one file there.
+  it.skipIf(process.platform === 'linux')('undoes two steps on one file named in two letter cases', () => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/A.md', 'a\n', 'b\n')]));
+    expect(undo(held, { root, run: 'r1' }).run).toBe('u1');
+    expect(listing(root)).toEqual([]);
+  });
+
+  it('names the newest undo by the order it was recorded in, also when the clock went back', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const starts = new Map([
+      ['r1', '2026-11-18T22:00:10.000Z'],
+      ['u1', '2026-11-18T22:00:20.000Z'],
+      ['u2', '2026-11-18T22:00:30.000Z'],
+      ['u3', '2026-11-18T22:00:15.000Z'],
+    ]);
+    const ids = [...starts.keys()];
+    let last = '';
+    const clock = { now: () => new Date(starts.get(last) ?? 0), newRunId: () => (last = ids.shift() ?? '') };
+    const opening = openStore(state, clock);
+    if (!opening.ok) throw new Error(opening.refusal.code);
+    const held = opening.value;
+    opened.push(held);
+    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
+    expect(['r1', 'u1', 'r1'].map((id) => undo(held, { root, run: id }).run)).toEqual(['u1', 'u2', 'u3']);
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+      code: 'run.already-undone',
+      params: { run: 'r1', by: 'u3' },
+    });
+  });
+});
+
 describe('recovery of an undo', () => {
-  it.each([
-    ['temp-written', null],
-    ['set-aside', null],
-    ['linked', 'u2'],
-    ['written', 'u2'],
-  ] as const)(
+  it.each(['temp-written', 'set-aside', 'linked', 'written'] as const)(
     'settles an undo killed after %s like any run, and its undo leaves the run result',
-    async (boundary, again) => {
+    async (boundary) => {
       const { root, state } = project({ '.claude/b.md': 'old\n' });
       const first = store(state);
       apply(first, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
       release(first);
       await crash(state, { root, run: 'r1' }, boundary, 0);
       const result = undo(store(state, 'u2'), { root, run: 'u1' });
-      expect([result.run, result.refusal, result.findings]).toEqual([again, null, [recovered('.claude/b.md', 'u1')]]);
-      expect(run(state, 'u1')).toEqual({ status: 'interrupted', steps: ['settled'] });
+      expect([result.run, result.refusal, result.findings]).toEqual(['u2', null, [recovered('.claude/b.md', 'u1')]]);
+      expect([run(state, 'u1'), undone(state, 'u1')]).toEqual([{ status: 'interrupted', steps: ['settled'] }, 'u2']);
       expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'new\n']);
     },
     20_000,

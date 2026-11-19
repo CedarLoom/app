@@ -9,10 +9,10 @@ import {
   type Run,
   RunId,
 } from '@cedarloom/core';
-import { type Applied, type ApplyRequest, type At, apply } from './apply.ts';
-import { readFound, sha256 } from './project-files.ts';
+import { type Applied, type ApplyRequest, type At, apply, fileKey } from './apply.ts';
+import { entryAt, readFound, sha256 } from './project-files.ts';
 import { recover } from './recover.ts';
-import type { RunStore } from './store.ts';
+import type { NewRun, RunStore } from './store.ts';
 import { linkOnWay } from './write-roots.ts';
 
 export interface UndoRequest {
@@ -22,8 +22,8 @@ export interface UndoRequest {
   run: string;
 }
 
-/** The undo plan, or the refusal that stops it; findings: apply.recovered for what recovery settled first. */
-export type UndoPlan =
+// The undo plan, or the refusal that stops it; findings: apply.recovered for what recovery settled first.
+type UndoPlan =
   | { plan: PlanPreview; refusal: null; findings: Finding[] }
   | { plan: null; refusal: Refusal; findings: Finding[] };
 
@@ -62,9 +62,9 @@ interface Walk {
   root: string;
   store: RunStore;
   run: string;
-  /** Each path's hash before the run's first started step on it. */
+  /** Each file's hash before the run's first started step on it, by fileKey. */
   original: Map<string, string | null>;
-  /** Each path's text once the undo operations planned so far ran. */
+  /** Each file's text once the undo operations planned so far ran, by fileKey. */
   now: Map<string, string | null>;
   operations: PlanOperation[];
 }
@@ -82,18 +82,19 @@ const textBefore = ({ store, run }: Walk, position: number, step: Operation): st
 
 // Restores a path that hashes as the step left it; one that hashes as before the step, or before the run, needs nothing.
 const visit = (walk: Walk, position: number, step: Operation): Refusal | undefined => {
-  const current = walk.now.has(step.path) ? walk.now.get(step.path) : textAt(walk.root, step.path);
+  const key = fileKey(step.path);
+  const current = walk.now.has(key) ? walk.now.get(key) : textAt(walk.root, step.path);
   if (current === undefined) return refusal('undo.file-changed', step.path);
   const hash = hashOf(current);
   if (hash !== step.afterHash) {
-    return hash === step.beforeHash || hash === walk.original.get(step.path)
+    return hash === step.beforeHash || hash === walk.original.get(key)
       ? undefined
       : refusal('undo.file-changed', step.path);
   }
   const before = textBefore(walk, position, step);
   if (typeof before === 'object' && before !== null) return before;
   walk.operations.push(operation(step.path, current, before));
-  walk.now.set(step.path, before);
+  walk.now.set(key, before);
   return undefined;
 };
 
@@ -110,12 +111,8 @@ const unsettled = (root: string, run: Run): Refusal | undefined => {
   return link === undefined ? undefined : refusal('plan.symlink', link);
 };
 
-/**
- * Plans the undo of a run on the held store, after recovery settled what interrupted runs left: each path the run's
- * started steps changed goes back to its text from before the run, newest step first, where it still hashes as the
- * run left it. A failed or pending step changed nothing to restore.
- */
-export const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoPlan => {
+// Recovery runs first, so an interrupted run is undone from its settled journal.
+const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoPlan => {
   const findings = recover(store, root);
   const refused = (stop: Refusal): UndoPlan => ({ plan: null, refusal: stop, findings });
   const run = RunId.safeParse(id).success ? store.run(id) : undefined;
@@ -123,15 +120,32 @@ export const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoP
   if (!inEffect(store, run)) return refused({ code: 'run.already-undone', params: { run: run.id, by: run.undoneBy } });
   const waiting = unsettled(root, run);
   if (waiting !== undefined) return refused(waiting);
-  const started = [...run.operations.entries()].filter(([, op]) => op.status === 'done' || op.status === 'settled');
+  // A failed step with a backup may have dropped the old file before it stopped.
+  const started = [...run.operations.entries()].filter(
+    ([position, op]) =>
+      op.status === 'done' ||
+      op.status === 'settled' ||
+      (op.status === 'failed' && entryAt(store.backupPath(run.id, position)) !== undefined),
+  );
   const walk: Walk = { root, store, run: run.id, original: new Map(), now: new Map(), operations: [] };
-  for (const [, step] of started) if (!walk.original.has(step.path)) walk.original.set(step.path, step.beforeHash);
+  for (const [, step] of started) {
+    const key = fileKey(step.path);
+    if (!walk.original.has(key)) walk.original.set(key, step.beforeHash);
+  }
   for (const [position, step] of started.toReversed()) {
     const stop = visit(walk, position, step);
     if (stop !== undefined) return refused(stop);
   }
   const { operations } = walk;
   return { plan: { planHash: planHash(operations, sha256), operations, skipped: [] }, refusal: null, findings };
+};
+
+// Every file is already as before the run: the undo is recorded all the same, so the run is no longer in effect.
+const recordDone = (store: RunStore, run: Omit<NewRun, 'operations'>): Omit<Applied, 'findings'> => {
+  const begun = store.begin({ ...run, operations: [] });
+  if (!begun.ok) return { run: null, refusal: begun.refusal };
+  store.finish(begun.value, 'done');
+  return { run: begun.value, refusal: null };
 };
 
 /** Undoes a run as a run of its own: plans the undo, then applies it as any plan, crash-ordered. */
@@ -145,6 +159,10 @@ export const undo = (store: RunStore, request: UndoRequest, at?: At): Undone => 
     undoes: request.run,
     generatedFrom: [],
   };
-  const applied = apply(store, { root: request.root, plan: planned.plan, run }, at);
-  return { ...applied, findings: [...planned.findings, ...applied.findings], plan: planned.plan };
+  const { plan, findings } = planned;
+  if (plan.operations.length === 0) {
+    return { ...recordDone(store, { ...run, planHash: plan.planHash }), findings, plan };
+  }
+  const applied = apply(store, { root: request.root, plan, run }, at);
+  return { ...applied, findings: [...findings, ...applied.findings], plan };
 };

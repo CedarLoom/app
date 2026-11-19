@@ -39,7 +39,7 @@ PRAGMA user_version = ${VERSION};
 `;
 
 const SUMMARY_COLUMNS = `r.id, r.kind, r.action, r.subject, r.status, r.startedAt, r.endedAt, r.undoes,
-  (SELECT u.id FROM runs u WHERE u.undoes = r.id AND u.status = 'done' ORDER BY u.startedAt DESC, u.rowid DESC LIMIT 1)
+  (SELECT u.id FROM runs u WHERE u.undoes = r.id AND u.status = 'done' ORDER BY u.rowid DESC LIMIT 1)
     AS undoneBy`;
 
 /** What a use case gets from the store: the value, or the refusal that stops it. */
