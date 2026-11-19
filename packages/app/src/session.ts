@@ -125,11 +125,9 @@ export const guard =
   };
 
 /** Router errors (a malformed URL) are answered before any hook runs: the Host and Origin rules first, no details. */
-export const frameworkErrors = (error: FastifyError, req: FastifyRequest, reply: FastifyReply): void => {
-  const [status, code] = foreign(req, `127.0.0.1:${portOf(req.server.server)}`) ?? [
-    error.statusCode ?? 400,
-    'api.bad-request',
-  ];
+export const frameworkErrors = (_error: FastifyError, req: FastifyRequest, reply: FastifyReply): void => {
+  // 400, not the router's 414 for a parameter over maxParamLength: an id that long is an invalid id, not a long URI.
+  const [status, code] = foreign(req, `127.0.0.1:${portOf(req.server.server)}`) ?? [400, 'api.bad-request'];
   // These replies skip the hooks, helmet's too, so they get no-store and nosniff here and no CSP (they hold no page).
   void reply
     .code(status)
