@@ -17,6 +17,11 @@
     "licenses": "pnpm licenses list --recursive --json | node scripts/licenses.ts",
     "check": "sh scripts/check.sh"
   },
+  "knip": {
+    "ignoreBinaries": [
+      "icacls"
+    ]
+  },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@types/node": "catalog:",
