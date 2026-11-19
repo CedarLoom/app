@@ -1,16 +1,28 @@
 // Generated from en.po by `pnpm --filter @cedarloom/core run messages`; do not edit.
 
-/** The message ids of namespace core: every finding and refusal code. */
+/**
+ * The message ids of namespace core.
+ * @public a catalog lists every id, whether its package reads the list or not.
+ */
 export const MESSAGE_IDS = [
   'apply.backup-failed',
   'apply.recovered',
   'apply.write-mismatch',
+  'cli.bad-value',
+  'cli.confirm-required',
+  'cli.flag-conflict',
+  'cli.internal',
+  'cli.missing-argument',
+  'cli.unknown-command',
+  'cli.unknown-flag',
+  'node.version-unsupported',
   'plan.file-changed',
   'plan.name-too-long',
   'plan.not-text',
   'plan.path-outside-roots',
   'plan.symlink',
   'plan.text-mismatch',
+  'project.not-found',
   'run.already-undone',
   'run.not-found',
   'store.locked',
@@ -28,12 +40,21 @@ export interface MessagePlaceholders {
   'apply.backup-failed': 'path' | 'run';
   'apply.recovered': 'path' | 'run';
   'apply.write-mismatch': 'path' | 'run';
+  'cli.bad-value': 'flag' | 'value';
+  'cli.confirm-required': never;
+  'cli.flag-conflict': 'flags';
+  'cli.internal': never;
+  'cli.missing-argument': 'argument' | 'command';
+  'cli.unknown-command': 'bin' | 'command';
+  'cli.unknown-flag': 'command' | 'flag';
+  'node.version-unsupported': 'found' | 'required';
   'plan.file-changed': 'path';
   'plan.name-too-long': 'path';
   'plan.not-text': 'path';
   'plan.path-outside-roots': 'path';
   'plan.symlink': 'path';
   'plan.text-mismatch': 'path';
+  'project.not-found': 'cwd';
   'run.already-undone': 'by' | 'run';
   'run.not-found': 'run';
   'store.locked': 'path';

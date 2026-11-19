@@ -1,4 +1,6 @@
 export { type Applied, type ApplyRequest, apply, type Boundary } from './apply.ts';
+export { type DoctorReport, type DoctorRequest, doctor } from './doctor.ts';
+export { projectRoot } from './project-root.ts';
 export { type StateDirInputs, type StoreDirInputs, stateDir, storeDir } from './state-dir.ts';
 export {
   type NewRun,
@@ -9,4 +11,4 @@ export {
   type RunView,
   type StoreClock,
 } from './store.ts';
-export { type Undone, type UndoRequest, undo } from './undo.ts';
+export { planUndo, type Undone, type UndoPlan, type UndoRequest, undo } from './undo.ts';
