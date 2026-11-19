@@ -673,8 +673,8 @@ describe('undo of a replaced undo', () => {
     const { root, held, file } = undos(['r1!', 'r1', 'u2', 'u1']);
     expect(file()).toBe('new\n');
     expect(undo(held, { root, run: 'u3' }).refusal).toEqual({
-      code: 'undo.file-changed',
-      params: { path: '.claude/b.md' },
+      code: 'undo.result-kept',
+      params: { path: '.claude/b.md', run: 'r1' },
     });
     expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'u5', refusal: null });
     expect(file()).toBe('old\n');
@@ -685,6 +685,32 @@ describe('undo of a replaced undo', () => {
     expect(file()).toBe('old\n');
     expect(undo(held, { root, run: 'u3' })).toMatchObject({ run: 'u6', refusal: null });
     expect(file()).toBe('new\n');
+  });
+});
+
+describe('undo of a replaced undo on two files', () => {
+  it('undoes the undo of an undo while a stopped undo of r1 holds the file', () => {
+    const { root, held, file } = undos(['r1', 'u1!', 'u1', 'r1!', 'u3']);
+    expect(file()).toBe('old\n');
+    expect(undo(held, { root, run: 'u5' })).toMatchObject({ run: 'u6', refusal: null });
+    expect(file()).toBe('old\n');
+  });
+
+  // r1 replaces a.md and b.md. b.md is put back first, so the next undo of r1 and the undo of that one write a.md only.
+  it.each([
+    ['an undo of r1 stopped after its first write', true, ['r1', 'u2', 'u3'], 'u4'],
+    ['the user', false, ['r1', 'u1', 'u2'], 'u3'],
+  ] as const)('restores a.md and keeps a later edit of b.md, which %s put back', (_, stopped, ids, last) => {
+    const { root, state } = project({ '.claude/a.md': 'a0\n', '.claude/b.md': 'b0\n' });
+    const held = store(state, 'r1', 'u1', 'u2', 'u3', 'u4');
+    apply(held, request(root, [replace('.claude/a.md', 'a0\n', 'a1\n'), replace('.claude/b.md', 'b0\n', 'b1\n')]));
+    if (stopped) expect(() => undo(held, { root, run: 'r1' }, failAt('linked', 0))).toThrow('disk gone');
+    else writeFileSync(join(root, '.claude/b.md'), 'b0\n');
+    for (const id of ids.slice(0, 2)) expect(undo(held, { root, run: id }).refusal).toBeNull();
+    expect(text(join(root, '.claude/a.md'))).toBe('a1\n');
+    writeFileSync(join(root, '.claude/b.md'), 'mine\n');
+    expect(undo(held, { root, run: ids[2] })).toMatchObject({ run: last, refusal: null });
+    expect([text(join(root, '.claude/a.md')), text(join(root, '.claude/b.md'))]).toEqual(['a0\n', 'mine\n']);
   });
 });
 

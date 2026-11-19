@@ -66,8 +66,10 @@ const operationsOf = (db: DatabaseSync, id: string): unknown[] =>
 
 type Row = Record<string, SQLOutputValue>;
 
+const RUN_COLUMNS = `${SUMMARY_COLUMNS}, r.planHash, r.generatedFrom`;
+
 const runRow = (db: DatabaseSync, id: string): Row | undefined =>
-  db.prepare(`SELECT ${SUMMARY_COLUMNS}, r.planHash, r.generatedFrom FROM runs r WHERE r.id = ?`).get(id);
+  db.prepare(`SELECT ${RUN_COLUMNS} FROM runs r WHERE r.id = ?`).get(id);
 
 const runOf = (db: DatabaseSync, row: Row): Run =>
   Run.parse({
@@ -261,6 +263,14 @@ export class RunStore {
   run(id: string): Run | undefined {
     const row = runRow(this.#db, id);
     return row === undefined ? undefined : runOf(this.#db, row);
+  }
+
+  /** The undo runs of a run that did not finish, oldest first. */
+  unfinishedUndos(id: string): Run[] {
+    return this.#db
+      .prepare(`SELECT ${RUN_COLUMNS} FROM runs r WHERE r.undoes = ? AND r.status <> 'done' ORDER BY r.rowid`)
+      .all(id)
+      .map((row) => runOf(this.#db, row));
   }
 
   /** Where the backup of the file at `position` of a run is kept, for undo. */

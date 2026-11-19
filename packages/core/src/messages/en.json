@@ -64,6 +64,14 @@
       " was undone again later by run ",
       ["by"],
       ", so an older undo of it can no longer be brought back."
+    ],
+    "undo.result-kept": [
+      ["path"],
+      " is still as run ",
+      ["run"],
+      " left it, and this undo would leave run ",
+      ["run"],
+      " counted as undone. Nothing was restored."
     ]
   }
 }

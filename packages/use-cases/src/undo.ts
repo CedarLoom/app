@@ -127,26 +127,35 @@ const startedOf = (store: RunStore, run: Run): [number, Operation][] =>
       (op.status === 'failed' && entryAt(store.backupPath(run.id, position)) !== undefined),
   );
 
-// Each file the run started a step on is as before its first step on it, once the walk's own writes are done.
-const asBefore = (walk: Walk, run: Run): Refusal | undefined => {
-  const seen = new Set<string>();
-  for (const [, step] of startedOf(walk.store, run)) {
+// A file the run's undo `back` did not write still holds a result of the run: it hashes as a started step left it, and
+// not as before the run's first step on it. Any other content is not the run's, and no undo of the chain writes it.
+// A file `back` wrote holds the run's result only through an undo of `back`: the one this walk restores, or one that
+// did not finish and still counts. So does an unfinished undo of the run that `run` itself undid, for the file it wrote.
+const kept = (walk: Walk, run: Run, back: Run): Refusal | undefined => {
+  const { store } = walk;
+  const restored = new Set(startedOf(store, back).map(([, step]) => fileKey(step.path)));
+  const held = (run.undoes === null ? [] : store.unfinishedUndos(run.undoes))
+    .filter((undo) => undo.id !== run.id && inEffect(store, undo))
+    .flatMap((undo) => startedOf(store, undo).map(([, step]) => step));
+  const started = startedOf(store, run).map(([, step]) => step);
+  const left = started.find((step) => {
     const key = fileKey(step.path);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (restored.has(key)) return false;
     const current = walk.now.has(key) ? walk.now.get(key) : textAt(walk.root, step.path);
-    if (current === undefined || hashOf(current) !== step.beforeHash) return refusal('undo.file-changed', step.path);
-  }
-  return undefined;
+    const hash = current === undefined ? undefined : hashOf(current);
+    if (hash !== step.afterHash || hash === started.find((op) => fileKey(op.path) === key)?.beforeHash) return false;
+    return !held.some((op) => fileKey(op.path) === key && op.afterHash === hash);
+  });
+  return left && { code: 'undo.result-kept', params: { path: left.path, run: run.id } };
 };
 
 // Undoing a run brings back the undo it undid, and so every second run down the chain; each one that is done says the run
-// it undid has its files as before it. An undo that restored nothing wrote nothing to show that, so the files are read.
+// it undid left no result. Where it restored nothing it wrote nothing to show that, so those files are read.
 const claimed = (walk: Walk, run: Run): Refusal | undefined => {
   const back = run.undoes === null ? undefined : walk.store.run(run.undoes);
   const undid = back?.status === 'done' && back.undoes !== null ? walk.store.run(back.undoes) : undefined;
-  if (undid === undefined) return undefined;
-  return asBefore(walk, undid) ?? claimed(walk, undid);
+  if (back === undefined || undid === undefined) return undefined;
+  return kept(walk, undid, back) ?? claimed(walk, undid);
 };
 
 // Steps are visited newest first, so each path ends as before the run's first step on it.

@@ -68,6 +68,10 @@ msgid "undo.file-changed"
 msgstr "{path} changed after the run, so undo would lose that change. Nothing was restored."
 
 #. js-lingui-explicit-id
+msgid "undo.result-kept"
+msgstr "{path} is still as run {run} left it, and this undo would leave run {run} counted as undone. Nothing was restored."
+
+#. js-lingui-explicit-id
 msgid "undo.backup-missing"
 msgstr "The backup of {path} is missing, so the run cannot be undone."
 
