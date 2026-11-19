@@ -33,6 +33,8 @@ export const run = (): void => {
   start({
     argv: process.argv.slice(2),
     cwd: process.cwd(),
+    env: process.env,
+    home: homedir(),
     stateDir: stateDir(machine),
     storeDir: (projectRoot) => storeDir({ ...machine, projectRoot, realpath: realpathSync.native }),
     uiDir: fileURLToPath(new URL('../dist/ui', import.meta.url)),

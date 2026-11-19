@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { type Code, type CompiledMessage, messageText, type Params, type Refusal } from '@cedarloom/core';
 import core from '@cedarloom/core/messages/en.json' with { type: 'json' };
@@ -10,6 +11,8 @@ import { portOf, Session, type SessionSource } from './session.ts';
 export interface AppIo extends SessionSource {
   argv: readonly string[];
   cwd: string;
+  env: Readonly<Record<string, string | undefined>>;
+  home: string;
   /** The user's own state folder, which holds the redirect page's folder. */
   stateDir: string;
   /** The store folder of a project root. */
@@ -30,6 +33,7 @@ export interface AppIo extends SessionSource {
 interface Options {
   port: number;
   open: boolean;
+  pluginRoot: string | null;
 }
 
 /** A listening server, or the exit code of a start that stopped. */
@@ -50,6 +54,7 @@ interface Flag {
   name: string;
   rawName: string;
   value: string | undefined;
+  inlineValue: boolean | undefined;
 }
 
 // A flag this command does not take, or a value on a switch: --no-open=false is refused rather than read as on.
@@ -58,27 +63,40 @@ const switchRefusal = ({ name, rawName, value }: Flag): { refusal: Refusal } | u
   return value === undefined ? undefined : refused('cli.bad-value', { flag: rawName, value });
 };
 
+// Sets the option a flag names, or returns the usage refusal of the flag.
+const applied = (options: Options, flag: Flag, cwd: string): { refusal: Refusal } | undefined => {
+  if (flag.name === 'port') {
+    const port = portValue(flag.value);
+    if (typeof port !== 'number') return port;
+    options.port = port;
+    return undefined;
+  }
+  if (flag.name === 'plugin-root') {
+    // A following flag is no folder; --plugin-root=-x names one.
+    if (!flag.value || (flag.inlineValue !== true && flag.value.startsWith('-')))
+      return refused('cli.missing-argument', { argument: '<dir>', command: `${BIN} --plugin-root` });
+    options.pluginRoot = resolve(cwd, flag.value);
+    return undefined;
+  }
+  const refusal = switchRefusal(flag);
+  if (refusal === undefined && flag.name === 'no-open') options.open = false;
+  return refusal;
+};
+
 /** The options of a command line, or the usage refusal of its first wrong word; --json is read before. */
-const parse = (argv: readonly string[]): Options | { refusal: Refusal } => {
-  const options = { port: 0, open: true };
+const parse = (argv: readonly string[], cwd: string): Options | { refusal: Refusal } => {
+  const options: Options = { port: 0, open: true, pluginRoot: null };
   const { tokens } = parseArgs({
     args: [...argv],
     strict: false,
     allowPositionals: true,
     tokens: true,
-    options: { port: { type: 'string' } },
+    options: { port: { type: 'string' }, 'plugin-root': { type: 'string' } },
   });
   for (const token of tokens) {
     if (token.kind === 'positional') return refused('cli.unknown-command', { command: token.value, bin: BIN });
-    if (token.kind === 'option' && token.name === 'port') {
-      const port = portValue(token.value);
-      if (typeof port !== 'number') return port;
-      options.port = port;
-    } else if (token.kind === 'option') {
-      const refusal = switchRefusal(token);
-      if (refusal !== undefined) return refusal;
-      if (token.name === 'no-open') options.open = false;
-    }
+    const refusal = token.kind === 'option' ? applied(options, token, cwd) : undefined;
+    if (refusal !== undefined) return refusal;
   }
   return options;
 };
@@ -113,7 +131,7 @@ export const start = async (io: AppIo): Promise<Started> => {
     else io.stderr(`${messageText(catalog, refusal.code, refusal.params)}\n`);
     return { exitCode };
   };
-  const options = parse(io.argv);
+  const options = parse(io.argv, io.cwd);
   if ('refusal' in options) return stop(options.refusal, 2);
   const root = projectRoot(io.cwd);
   if (root === undefined) return stop({ code: 'project.not-found', params: { cwd: io.cwd } }, 3);
@@ -127,7 +145,9 @@ export const start = async (io: AppIo): Promise<Started> => {
     }
   };
   const session = new Session(io, removePage);
-  const project = { root, storeDir: io.storeDir(root), clock: io.clock, node: io.node, required: io.required };
+  const { node, required, cwd, env, home } = io;
+  const doctorInputs = { node, required, cwd, env, home, pluginRoot: options.pluginRoot };
+  const project = { root, storeDir: io.storeDir(root), clock: io.clock, ...doctorInputs };
   const app = await buildServer({ session, log: io.stderr, project, ui: io.uiDir });
   try {
     await app.listen({ host: '127.0.0.1', port: options.port });

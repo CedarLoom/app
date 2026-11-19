@@ -40,12 +40,15 @@ const served = async () => {
   let count = 0;
   const session = new Session({ now: () => 0, secret: () => `secret-${count++}` });
   const clock = { now: () => new Date('2026-11-19T07:00:00.000Z'), newRunId: () => 'u1' };
-  const project = { root, storeDir, clock, node: '26.13.0', required: '>=26' };
+  const plugins = folder();
+  const env = { CLAUDE_CODE_PLUGIN_CACHE_DIR: plugins, CLAUDE_CONFIG_DIR: folder() };
+  const doctorInputs = { node: '26.13.0', required: '>=26', cwd: root, env, home: '', pluginRoot: null };
+  const project = { root, storeDir, clock, ...doctorInputs };
   const app = await buildServer({ session, log: () => undefined, project, ui: join(root, 'ui') });
   onTestFinished(() => app.close());
   await app.inject({ method: 'POST', url: '/api/session', headers: { host: HOST }, payload: { token: 'secret-0' } });
   const notes = join(root, '.claude', 'notes.md');
-  return { app, notes };
+  return { app, notes, plugins };
 };
 
 type App = Awaited<ReturnType<typeof served>>['app'];
@@ -61,10 +64,18 @@ const answer = (reply: { statusCode: number; json: () => unknown }) => [reply.st
 
 describe('reads', () => {
   it('answers GET /api/doctor with the report and its findings', async () => {
-    const { app } = await served();
+    const { app, plugins } = await served();
     expect(answer(await get(app, '/api/doctor'))).toEqual([
       200,
-      { checks: [{ id: 'node', status: 'pass' }], plugin: null, findings: [] },
+      {
+        checks: [
+          { id: 'node', status: 'pass' },
+          { id: 'project', status: 'pass' },
+          { id: 'plugin', status: 'fail' },
+        ],
+        plugin: null,
+        findings: [{ code: 'plugin.not-found', severity: 'error', params: { pluginsRoot: plugins } }],
+      },
     ]);
   });
 

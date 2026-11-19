@@ -36,6 +36,8 @@ const started = async (argv: string[], open?: (path: string) => void) => {
   const io: AppIo = {
     argv,
     cwd: project(),
+    env: {},
+    home: state,
     stateDir: state,
     storeDir: () => folder(),
     uiDir: join(state, 'ui'),
@@ -176,6 +178,12 @@ describe('start without a server', () => {
       opened: [],
       state: expect.any(String),
     });
+  });
+
+  it('refuses --plugin-root followed by a flag with cli.missing-argument, exit 2', async () => {
+    const { result, document } = await started(['--json', '--plugin-root', '--no-open']);
+    const params = { argument: '<dir>', command: 'cedarloom-app --plugin-root' };
+    expect([result, document.refusals]).toEqual([{ exitCode: 2 }, [{ code: 'cli.missing-argument', params }]]);
   });
 });
 

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { doctorRun } from './doctor.ts';
-import { type CommandName, type Parsed, parse, type Request } from './grammar.ts';
+import { type Parsed, parse, type Request } from './grammar.ts';
 import type { Io } from './io.ts';
 import { message } from './message.ts';
 import { exitCode, type Outcome, refused, write } from './output.ts';
@@ -19,8 +19,10 @@ const HELP = {
   runs: 'help.runs',
 } as const;
 
-const commandOutcome = (io: Io, name: CommandName, argument: string, yes: boolean): Outcome => {
-  if (name === 'doctor') return doctorRun(io);
+const commandOutcome = (io: Io, request: Extract<Request, { kind: 'command' }>): Outcome => {
+  const { name, yes, pluginRoot } = request;
+  const argument = request.argument ?? '';
+  if (name === 'doctor') return doctorRun(io, pluginRoot);
   if (name === 'runs list') return runsList(io);
   if (name === 'runs show') return runsShow(io, argument);
   return undoRun(io, argument, yes);
@@ -35,8 +37,7 @@ const outcomeOf = (parsed: Parsed, io: Io): Outcome => {
   if (!parsed.ok) return refused(parsed.refusal);
   if (parsed.value.kind !== 'command')
     return { result: null, findings: [], refusals: [], text: textOf(parsed.value, io) };
-  const { name, argument, yes } = parsed.value;
-  return commandOutcome(io, name, argument ?? '', yes);
+  return commandOutcome(io, parsed.value);
 };
 
 /** Runs one command line and returns its exit code. */

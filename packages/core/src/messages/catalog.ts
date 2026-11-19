@@ -26,6 +26,14 @@ export const MESSAGE_IDS = [
   'plan.stale',
   'plan.symlink',
   'plan.text-mismatch',
+  'plugin.disabled',
+  'plugin.found',
+  'plugin.marketplace-untrusted',
+  'plugin.not-found',
+  'plugin.record-unknown',
+  'plugin.too-old',
+  'plugin.trust-bypassed',
+  'plugin.untrusted',
   'project.not-found',
   'run.already-undone',
   'run.not-found',
@@ -36,6 +44,7 @@ export const MESSAGE_IDS = [
   'session.host',
   'session.origin',
   'session.token',
+  'settings.unreadable',
   'store.locked',
   'store.unreadable',
   'store.version-unsupported',
@@ -69,6 +78,14 @@ export interface MessagePlaceholders {
   'plan.stale': never;
   'plan.symlink': 'path';
   'plan.text-mismatch': 'path';
+  'plugin.disabled': 'path';
+  'plugin.found': 'id' | 'root' | 'scope' | 'version';
+  'plugin.marketplace-untrusted': 'marketplace' | 'source';
+  'plugin.not-found': 'pluginsRoot';
+  'plugin.record-unknown': 'file';
+  'plugin.too-old': 'root' | 'version';
+  'plugin.trust-bypassed': 'root';
+  'plugin.untrusted': 'id';
   'project.not-found': 'cwd';
   'run.already-undone': 'by' | 'run';
   'run.not-found': 'run';
@@ -79,6 +96,7 @@ export interface MessagePlaceholders {
   'session.host': never;
   'session.origin': never;
   'session.token': never;
+  'settings.unreadable': 'path';
   'store.locked': 'path';
   'store.unreadable': 'path';
   'store.version-unsupported': 'found' | 'supported';

@@ -17,6 +17,10 @@ const PROJECT = {
   clock: { now: () => new Date(0), newRunId: () => 'r1' },
   node: '26.13.0',
   required: '>=26',
+  cwd: '',
+  env: {},
+  home: '',
+  pluginRoot: null,
 };
 
 // A built UI in base/ui, a file beside it, and base/ui/assets/out linking to a folder outside it.

@@ -20,7 +20,8 @@
     "build": "tsc --noEmit false --rootDir src --outDir dist"
   },
   "dependencies": {
-    "@cedarloom/core": "workspace:*"
+    "@cedarloom/core": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
