@@ -13,8 +13,8 @@ export interface UndoRequest {
   run: string;
 }
 
-// The undo plan, or the refusal that stops it; findings: apply.recovered for what recovery settled first.
-type UndoPlan =
+/** The undo plan, or the refusal that stops it; findings: apply.recovered for what recovery settled first. */
+export type UndoPlan =
   | { plan: PlanPreview; refusal: null; findings: Finding[] }
   | { plan: null; refusal: Refusal; findings: Finding[] };
 
@@ -167,8 +167,8 @@ const walked = (walk: Walk, run: Run): Refusal | undefined => {
   return claimed(walk, run);
 };
 
-// Recovery runs first, so an interrupted run is undone from its settled journal.
-const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoPlan => {
+/** Plans the undo of a run without applying it. Recovery runs first, so an interrupted run is undone from its settled journal. */
+export const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoPlan => {
   const findings = recover(store, root);
   const refused = (stop: Refusal): UndoPlan => ({ plan: null, refusal: stop, findings });
   const run = store.run(id);

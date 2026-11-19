@@ -78,3 +78,39 @@ msgstr "The backup of {path} is missing, so the run cannot be undone."
 #. js-lingui-explicit-id
 msgid "undo.backup-changed"
 msgstr "The backup of {path} no longer matches its recorded hash, so the run cannot be undone."
+
+#. js-lingui-explicit-id
+msgid "node.version-unsupported"
+msgstr "Node.js {found} is running; CedarLoom needs Node.js {required}."
+
+#. js-lingui-explicit-id
+msgid "project.not-found"
+msgstr "{cwd} is not inside a Git repository. Run CedarLoom from your project folder."
+
+#. js-lingui-explicit-id
+msgid "cli.unknown-command"
+msgstr "Unknown command: {command}. Run {bin} --help for usage."
+
+#. js-lingui-explicit-id
+msgid "cli.unknown-flag"
+msgstr "{command} has no option {flag}."
+
+#. js-lingui-explicit-id
+msgid "cli.missing-argument"
+msgstr "{command} needs {argument}."
+
+#. js-lingui-explicit-id
+msgid "cli.bad-value"
+msgstr "{value} is not a valid value for {flag}."
+
+#. js-lingui-explicit-id
+msgid "cli.flag-conflict"
+msgstr "These options cannot be used together: {flags}."
+
+#. js-lingui-explicit-id
+msgid "cli.confirm-required"
+msgstr "This plan was not applied. Run the command again with --yes to apply it."
+
+#. js-lingui-explicit-id
+msgid "cli.internal"
+msgstr "CedarLoom stopped on an unexpected error. Please report it with the output above."

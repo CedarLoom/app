@@ -27,15 +27,17 @@ forbidden_characters() {
   if [ "$rc" -ne 1 ]; then echo "check: git grep failed ($rc)" >&2; return 1; fi
 }
 
-# The compiled catalog and its generated types match en.po; the compile refuses a message id without a text.
+# Each compiled catalog and its generated types match en.po; the compile refuses a message id without a text.
 messages_fresh() {
-  generated="packages/core/src/messages/en.json packages/core/src/messages/catalog.ts"
-  before=$(cat $generated | cksum)
-  pnpm --filter @cedarloom/core run messages
-  if [ "$(cat $generated | cksum)" != "$before" ]; then
-    echo "check: core messages were stale; run pnpm --filter @cedarloom/core run messages and commit the result" >&2
-    return 1
-  fi
+  for package in core cli; do
+    generated="packages/$package/src/messages/en.json packages/$package/src/messages/catalog.ts"
+    before=$(cat $generated | cksum)
+    pnpm --filter "@cedarloom/$package" run messages
+    if [ "$(cat $generated | cksum)" != "$before" ]; then
+      echo "check: $package messages were stale; run pnpm --filter @cedarloom/$package run messages and commit the result" >&2
+      return 1
+    fi
+  done
 }
 
 step characters forbidden_characters
@@ -44,6 +46,7 @@ step typecheck pnpm run typecheck
 step lint pnpm run lint
 step format pnpm run format:check
 step test pnpm run test
+step packed sh scripts/packed.sh
 step knip pnpm run knip
 step jscpd pnpm run jscpd
 step licenses pnpm run licenses

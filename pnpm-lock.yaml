@@ -82,7 +82,17 @@ importers:
         version: 7.0.2
 
   packages/cli:
+    dependencies:
+      '@cedarloom/core':
+        specifier: workspace:*
+        version: link:../core
+      '@cedarloom/use-cases':
+        specifier: workspace:*
+        version: link:../use-cases
     devDependencies:
+      '@biomejs/biome':
+        specifier: 'catalog:'
+        version: 2.6.7
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6

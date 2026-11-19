@@ -16,6 +16,14 @@
       ["run"],
       " to see which steps were written."
     ],
+    "cli.bad-value": [["value"], " is not a valid value for ", ["flag"], "."],
+    "cli.confirm-required": ["This plan was not applied. Run the command again with --yes to apply it."],
+    "cli.flag-conflict": ["These options cannot be used together: ", ["flags"], "."],
+    "cli.internal": ["CedarLoom stopped on an unexpected error. Please report it with the output above."],
+    "cli.missing-argument": [["command"], " needs ", ["argument"], "."],
+    "cli.unknown-command": ["Unknown command: ", ["command"], ". Run ", ["bin"], " --help for usage."],
+    "cli.unknown-flag": [["command"], " has no option ", ["flag"], "."],
+    "node.version-unsupported": ["Node.js ", ["found"], " is running; CedarLoom needs Node.js ", ["required"], "."],
     "plan.file-changed": [
       ["path"],
       " changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
@@ -36,6 +44,7 @@
       ["path"],
       " does not match the plan's hash. Nothing was changed. Make the plan again."
     ],
+    "project.not-found": [["cwd"], " is not inside a Git repository. Run CedarLoom from your project folder."],
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],
     "store.locked": [

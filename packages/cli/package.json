@@ -1,16 +1,36 @@
 {
   "name": "@cedarloom/cli",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "license": "ISC",
   "engines": {
     "node": ">=26"
   },
+  "bin": {
+    "cedarloom": "bin/cedarloom.js",
+    "cloom": "bin/cedarloom.js"
+  },
   "exports": "./src/index.ts",
+  "publishConfig": {
+    "exports": "./dist/index.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "!dist/**/*.test.js"
+  ],
   "scripts": {
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "build": "tsc --noEmit false --rootDir src --outDir dist",
+    "messages": "node ../core/scripts/compile-messages.ts && biome format --write src/messages"
+  },
+  "dependencies": {
+    "@cedarloom/core": "workspace:*",
+    "@cedarloom/use-cases": "workspace:*"
   },
   "devDependencies": {
+    "@biomejs/biome": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:"
   }

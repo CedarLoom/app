@@ -1,14 +1,30 @@
 {
   "name": "@cedarloom/core",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "license": "ISC",
   "engines": {
     "node": ">=26"
   },
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./messages/en.json": "./src/messages/en.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": "./dist/index.js",
+      "./messages/en.json": "./src/messages/en.json"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.js",
+    "src/messages/en.json"
+  ],
   "scripts": {
     "typecheck": "tsc && tsc --project tsconfig.node.json",
+    "build": "tsc --noEmit false --rootDir src --outDir dist",
     "messages": "node scripts/compile-messages.ts && biome format --write src/messages"
   },
   "dependencies": {

@@ -4,7 +4,7 @@
 
 Node.js 26, pnpm 12 and uv. Install with `pnpm install --frozen-lockfile --ignore-scripts`.
 
-- `pnpm run check`: every gate ([scripts/check.sh](scripts/check.sh)), the one to run before a push.
+- `pnpm run check`: every gate ([scripts/check.sh](scripts/check.sh)), the one to run before a push. Its step `packed` ([scripts/packed.sh](scripts/packed.sh)) builds `core`, `use-cases` and `cli` into their `dist` folders, packs them, installs the three tarballs together in an empty folder and runs `cedarloom --version` and `cloom --version` from there.
 - Single gates, each as `pnpm run <name>`: `typecheck`, `lint`, `format:check` (`format` writes), `test`, `knip`, `jscpd`, `licenses`. Keep `run`: `pnpm licenses` alone is pnpm's built-in command.
 - The Python-packaged gate tools (typos, reuse, actionlint, zizmor) run through `uvx` with the versions of [tools/requirements.txt](tools/requirements.txt). In CI the zizmor action runs zizmor with its online audits instead.
 - CI ([.github/workflows](.github/workflows)) runs `pnpm run check` on Linux, and `typecheck` and `test` on macOS and Windows, for every pull request and push to main. It installs pnpm from [.github/pnpm/package-lock.json](.github/pnpm/package-lock.json) and uv from [tools/uv-requirements.txt](tools/uv-requirements.txt). The required checks are `checks`, `conventional` (the pull request title) and `dependency-review`; keep their names.
@@ -22,7 +22,7 @@ Node.js 26, pnpm 12 and uv. Install with `pnpm install --frozen-lockfile --ignor
 - Validate where data enters (user input, files, the network, another process) and where a wrong value loses data or breaks security. Inside, trust the types, the framework and your own code: no guard or fallback for a case that cannot happen. An error you cannot handle propagates; never swallow it or hide it behind a default.
 - One job per function, module and file, named after it; never `utils`, `helpers`, `common`, `misc` or `shared`. A unit that wants such a name has two jobs: split it.
 - Keep the layers below: imports point down, never up. Code that gets a test takes the time, randomness and I/O it uses as parameters.
-- Typed findings, refusals and API errors carry a code and parameters, never text; their messages live in the message catalogs. A code is the id of its message in [packages/core/src/messages/en.po](packages/core/src/messages/en.po): after editing it, run `pnpm --filter @cedarloom/core run messages` and commit the generated `en.json` and `catalog.ts`; the check fails while they are stale.
+- Typed findings, refusals and API errors carry a code and parameters, never text; their messages live in the message catalogs. A code is the id of its message in [packages/core/src/messages/en.po](packages/core/src/messages/en.po): after editing it, run `pnpm --filter @cedarloom/core run messages` and commit the generated `en.json` and `catalog.ts`; the check fails while they are stale. The CLI's own text (usage, result lines) lives in [packages/cli/src/messages/en.po](packages/cli/src/messages/en.po), compiled with `pnpm --filter @cedarloom/cli run messages` in the same way.
 - Remove what your change made unused. Leave other code, comments and formatting as they are; name unrelated dead code in the report.
 - Comments only where the code cannot say it: one line, the why, not the how.
 

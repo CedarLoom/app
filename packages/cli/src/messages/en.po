@@ -1,0 +1,58 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=utf-8\n"
+"Language: en\n"
+
+#. js-lingui-explicit-id
+msgid "help.cedarloom"
+msgstr ""
+"Usage: cedarloom <command> [options]\n"
+"cloom is a short name for cedarloom.\n"
+"\n"
+"Commands:\n"
+"  doctor           Check that this computer can run CedarLoom.\n"
+"  runs list        List the runs recorded for this project.\n"
+"  runs show <run>  Show a run and its steps.\n"
+"  undo <run>       Undo a run, as a run of its own.\n"
+"\n"
+"Options:\n"
+"  --json           Print one JSON document instead of text.\n"
+"  --help, -h       Show the usage of a command.\n"
+"  --version, -V    Print the version of CedarLoom."
+
+#. js-lingui-explicit-id
+msgid "help.runs"
+msgstr ""
+"Usage: cedarloom runs <verb> [options]\n"
+"\n"
+"Verbs:\n"
+"  list        List the runs recorded for this project, newest first.\n"
+"  show <run>  Show a run and its steps."
+
+#. js-lingui-explicit-id
+msgid "help.doctor"
+msgstr "Usage: cedarloom doctor [--json]\n\nChecks that this computer can run CedarLoom: the Node.js version."
+
+#. js-lingui-explicit-id
+msgid "help.runs-list"
+msgstr "Usage: cedarloom runs list [--json]\n\nLists the runs recorded for this project, newest first."
+
+#. js-lingui-explicit-id
+msgid "help.runs-show"
+msgstr "Usage: cedarloom runs show <run> [--json]\n\nShows the run <run> and its steps."
+
+#. js-lingui-explicit-id
+msgid "help.undo"
+msgstr "Usage: cedarloom undo <run> [--yes] [--json]\n\nUndoes the run <run> as a run of its own. Without --yes it shows the plan and does not apply it."
+
+#. js-lingui-explicit-id
+msgid "output.runs-none"
+msgstr "No runs are recorded for this project."
+
+#. js-lingui-explicit-id
+msgid "output.undo-no-steps"
+msgstr "Every file is already as before run {run}."
+
+#. js-lingui-explicit-id
+msgid "output.undo-applied"
+msgstr "Undone as run {run}."

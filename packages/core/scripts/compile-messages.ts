@@ -1,9 +1,16 @@
-// Compiles src/messages/en.po into en.json, as `lingui compile --namespace json` writes it, and catalog.ts.
+// Compiles src/messages/en.po of the package it runs in into en.json, as `lingui compile --namespace json` writes it, and catalog.ts.
 import { readFile, writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import { parsePoFile } from '@lingui/format-po';
 import { type CompiledMessage, compileMessageOrThrow } from '@lingui/message-utils/compileMessage';
+import { z } from 'zod';
 
-const folder = new URL('../src/messages/', import.meta.url);
+const packageFolder = pathToFileURL(`${process.cwd()}/`);
+const manifest = z
+  .object({ name: z.string() })
+  .parse(JSON.parse(await readFile(new URL('package.json', packageFolder), 'utf8')));
+const namespace = manifest.name.replace(/^@cedarloom\//, '');
+const folder = new URL('src/messages/', packageFolder);
 
 const argumentsOf = (message: CompiledMessage, found: Set<string>): Set<string> => {
   for (const token of message) {
@@ -40,9 +47,12 @@ const placeholders = sorted.map(([id, message]) => {
 await writeFile(new URL('en.json', folder), JSON.stringify({ messages: Object.fromEntries(sorted) }));
 await writeFile(
   new URL('catalog.ts', folder),
-  `// Generated from en.po by \`pnpm --filter @cedarloom/core run messages\`; do not edit.
+  `// Generated from en.po by \`pnpm --filter ${manifest.name} run messages\`; do not edit.
 
-/** The message ids of namespace core: every finding and refusal code. */
+/**
+ * The message ids of namespace ${namespace}.
+ * @public a catalog lists every id, whether its package reads the list or not.
+ */
 export const MESSAGE_IDS = [${ids.map((id) => JSON.stringify(id)).join(', ')}] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
