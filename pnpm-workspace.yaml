@@ -3,7 +3,7 @@ packages:
 
 # One version per dependency across the workspace; packages refer to it as "catalog:".
 catalog:
-  "@biomejs/biome": 2.6.7
+  "@biomejs/biome": 2.6.8
   "@fastify/helmet": 13.2.0
   "@fastify/swagger": 9.9.4
   "@lingui/format-po": 6.12.0
