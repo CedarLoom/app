@@ -1,19 +1,26 @@
 import { parseArgs } from 'node:util';
 import type { Refusal } from '@cedarloom/core';
 
-/** The commands of this version, by their words; a change is a command that takes --yes. */
+/** The commands of this version, by their words; a change is a command that takes --yes; pluginRoot, one that takes --plugin-root. */
 const COMMANDS = {
-  doctor: { argument: null, change: false },
-  'runs list': { argument: null, change: false },
-  'runs show': { argument: '<run>', change: false },
-  undo: { argument: '<run>', change: true },
+  doctor: { argument: null, change: false, pluginRoot: true },
+  'runs list': { argument: null, change: false, pluginRoot: false },
+  'runs show': { argument: '<run>', change: false, pluginRoot: false },
+  undo: { argument: '<run>', change: true, pluginRoot: false },
 } as const;
-export type CommandName = keyof typeof COMMANDS;
+type CommandName = keyof typeof COMMANDS;
 const NOUNS = new Set(['runs']);
 
 /** What the command line asks for: a command with its argument, its usage, or the version. */
 export type Request =
-  | { kind: 'command'; name: CommandName; argument: string | null; yes: boolean; json: boolean }
+  | {
+      kind: 'command';
+      name: CommandName;
+      argument: string | null;
+      yes: boolean;
+      json: boolean;
+      pluginRoot: string | null;
+    }
   | { kind: 'help'; topic: CommandName | 'runs' | null }
   | { kind: 'version' };
 export type Parsed = { ok: true; value: Request } | { ok: false; refusal: Refusal; json: boolean };
@@ -44,7 +51,11 @@ const lineOf = (argv: readonly string[]): Line => {
     strict: false,
     allowPositionals: true,
     tokens: true,
-    options: { help: { type: 'boolean', short: 'h' }, version: { type: 'boolean', short: 'V' } },
+    options: {
+      help: { type: 'boolean', short: 'h' },
+      version: { type: 'boolean', short: 'V' },
+      'plugin-root': { type: 'string' },
+    },
   });
   const words = tokens.flatMap((token) => (token.kind === 'positional' ? [token.value] : []));
   const flags = tokens.flatMap((token) => (token.kind === 'option' ? [token] : []));
@@ -77,15 +88,31 @@ const commandOf = (
   return isCommand(name) ? { name, used: 2 } : usage('cli.unknown-command', { command: name, bin: BIN });
 };
 
-// A flag the command does not take, a value on a switch, or --help with --json, whose document carries no text.
-const flagRefusal = ({ flags, help, json }: Line, name: CommandName | 'runs' | null): Refusal | undefined => {
+const allowedFlags = (name: CommandName | 'runs' | null): Set<string> => {
   const allowed = new Set(['json', 'help']);
-  if (name !== null && name !== 'runs' && COMMANDS[name].change) allowed.add('yes');
+  if (name === null || name === 'runs') return allowed;
+  if (COMMANDS[name].change) allowed.add('yes');
+  if (COMMANDS[name].pluginRoot) allowed.add('plugin-root');
+  return allowed;
+};
+
+// --plugin-root needs its folder; every other flag is a switch, so --json=false is refused rather than read as on.
+const valueRefusal = ({ name, rawName, value }: Flag, command: string): Refusal | undefined => {
+  if (name === 'plugin-root')
+    return value
+      ? undefined
+      : { code: 'cli.missing-argument', params: { argument: '<dir>', command: `${command} --plugin-root` } };
+  return value === undefined ? undefined : { code: 'cli.bad-value', params: { flag: rawName, value } };
+};
+
+// A flag the command does not take, a wrong value, or --help with --json, whose document carries no text.
+const flagRefusal = ({ flags, help, json }: Line, name: CommandName | 'runs' | null): Refusal | undefined => {
+  const allowed = allowedFlags(name);
+  const command = name === null ? BIN : `${BIN} ${name}`;
   for (const flag of flags) {
-    const command = name === null ? BIN : `${BIN} ${name}`;
     if (!allowed.has(flag.name)) return { code: 'cli.unknown-flag', params: { flag: flag.rawName, command } };
-    // Every flag of this version is a switch, so --json=false is refused rather than read as on.
-    if (flag.value !== undefined) return { code: 'cli.bad-value', params: { flag: flag.rawName, value: flag.value } };
+    const refusal = valueRefusal(flag, command);
+    if (refusal !== undefined) return refusal;
   }
   return help && json ? { code: 'cli.flag-conflict', params: { flags: '--help, --json' } } : undefined;
 };
@@ -117,8 +144,9 @@ export const parse = (argv: readonly string[]): Parsed => {
   const argument = argumentOf(command.name, line.words.slice(command.used));
   if ('refusal' in argument) return refused(argument.refusal);
   const yes = line.flags.some(({ name }) => name === 'yes');
+  const pluginRoot = line.flags.findLast(({ name }) => name === 'plugin-root')?.value ?? null;
   return {
     ok: true,
-    value: { kind: 'command', name: command.name, argument: argument.argument, yes, json: line.json },
+    value: { kind: 'command', name: command.name, argument: argument.argument, yes, json: line.json, pluginRoot },
   };
 };

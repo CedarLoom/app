@@ -87,6 +87,12 @@ it.each([
   [['doctor', '--yes'], 'cli.unknown-flag', { flag: '--yes', command: 'cedarloom doctor' }],
   [['runs', 'list', '--json=no'], 'cli.bad-value', { flag: '--json', value: 'no' }],
   [['doctor', '--help'], 'cli.flag-conflict', { flags: '--help, --json' }],
+  [
+    ['doctor', '--plugin-root='],
+    'cli.missing-argument',
+    { argument: '<dir>', command: 'cedarloom doctor --plugin-root' },
+  ],
+  [['runs', 'list', '--plugin-root=x'], 'cli.unknown-flag', { flag: '--plugin-root', command: 'cedarloom runs list' }],
 ])('refuses %j as a usage error, exit 2', (argv, code, params) => {
   const { root } = project();
   expect(ran([...argv, '--json'], root)).toEqual({
@@ -152,10 +158,20 @@ it('fails doctor on an old Node.js with node.version-unsupported, exit 1', () =>
     severity: 'error',
     params: { found: '24.11.1', required: '>=26' },
   };
-  expect(ran(['doctor', '--json'], root, { node: '24.11.1' })).toMatchObject({
-    code: 1,
-    document: { result: { checks: [{ id: 'node', status: 'fail' }] }, findings: [failed] },
-  });
+  const result = ran(['doctor', '--json'], root, { node: '24.11.1' });
+  expect([result.code, result.document.result.checks[0], result.document.findings[0]]).toEqual([
+    1,
+    { id: 'node', status: 'fail' },
+    failed,
+  ]);
+});
+
+it('looks for the plugin in .claude/plugins of the home folder without CLAUDE_CONFIG_DIR', () => {
+  const { root } = project();
+  const home = fresh();
+  expect(ran(['doctor', '--json'], root, { home }).document.findings).toEqual([
+    { code: 'plugin.not-found', severity: 'error', params: { pluginsRoot: join(home, '.claude', 'plugins') } },
+  ]);
 });
 
 it('reports a crash as cli.internal with the stack on standard error, exit 5', () => {

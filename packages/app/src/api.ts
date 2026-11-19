@@ -10,6 +10,7 @@ import {
   UndoPreview,
 } from '@cedarloom/core';
 import {
+  type DoctorRequest,
   doctor,
   type Opened,
   openRunView,
@@ -24,14 +25,11 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 
-/** What the API routes act on: the project the server started in, its store, and the inputs of the Node.js check. */
-export interface Project {
+/** What the API routes act on: the project the server started in, its store, and the inputs of the doctor checks. */
+export interface Project extends DoctorRequest {
   root: string;
   storeDir: string;
   clock: StoreClock;
-  /** The running Node.js version and the package's engines.node range. */
-  node: string;
-  required: string;
 }
 
 // Named components of the OpenAPI document, so the client generated from it names its types.

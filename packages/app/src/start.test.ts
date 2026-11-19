@@ -36,6 +36,8 @@ const started = async (argv: string[], open?: (path: string) => void) => {
   const io: AppIo = {
     argv,
     cwd: project(),
+    env: {},
+    home: state,
     stateDir: state,
     storeDir: () => folder(),
     uiDir: join(state, 'ui'),

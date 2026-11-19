@@ -5,8 +5,21 @@ import { RunSummary } from './run.ts';
 
 /** The checks of this installation; the findings carry the details of each failed check. */
 export const DoctorReport = z.strictObject({
-  checks: z.array(z.strictObject({ id: z.literal('node'), status: z.enum(['pass', 'fail']) })),
-  plugin: z.null(),
+  checks: z.array(
+    z.strictObject({
+      id: z.enum(['node', 'project', 'plugin']),
+      status: z.enum(['pass', 'warn', 'fail', 'skipped']),
+    }),
+  ),
+  /** The cl-workflow plugin in use: its install record's version, or the --plugin-root folder as scope override. */
+  plugin: z
+    .strictObject({
+      id: z.string(),
+      version: z.string().nullable(),
+      scope: z.enum(['local', 'project', 'user', 'override']),
+      root: z.string(),
+    })
+    .nullable(),
 });
 export type DoctorReport = z.infer<typeof DoctorReport>;
 

@@ -15,6 +15,30 @@ const argument = (id: string, params: Params, name: unknown): string => {
   return printable(Array.isArray(value) ? value.join(', ') : String(value));
 };
 
+// A select argument picks the branch named by its value, "null" for null, else its "other" branch.
+const selected = (id: string, params: Params, [name, , choices]: readonly unknown[]): CompiledMessage => {
+  const value = params[String(name)];
+  if (value === undefined) throw new Error(`${id} has no parameter ${String(name)}`);
+  const branches = new Map<string, unknown>(
+    typeof choices === 'object' && choices !== null ? Object.entries(choices) : [],
+  );
+  const branch = branches.get(value === null ? 'null' : String(value)) ?? branches.get('other');
+  if (typeof branch === 'string' || Array.isArray(branch)) return branch;
+  throw new Error(`${id} has no branch for ${String(value)}`);
+};
+
+const rendered = (id: string, compiled: CompiledMessage, params: Params): string => {
+  if (typeof compiled === 'string') return compiled;
+  return compiled
+    .map((token) => {
+      if (typeof token === 'string') return token;
+      if (token.length === 1) return argument(id, params, token[0]);
+      if (token[1] === 'select') return rendered(id, selected(id, params, token), params);
+      throw new Error(`${id} uses a format this renderer does not know`);
+    })
+    .join('');
+};
+
 /** The text of message id in a compiled catalog, with its parameters filled in. */
 export const messageText = (
   catalog: Readonly<Record<string, CompiledMessage>>,
@@ -23,13 +47,5 @@ export const messageText = (
 ): string => {
   const compiled = catalog[id];
   if (compiled === undefined) throw new Error(`no message ${id}`);
-  if (typeof compiled === 'string') return compiled;
-  return compiled
-    .map((token) => {
-      if (typeof token === 'string') return token;
-      // Only plain arguments so far; a select or plural message needs its format here first.
-      if (token.length > 1) throw new Error(`${id} uses a format this renderer does not know`);
-      return argument(id, params, token[0]);
-    })
-    .join('');
+  return rendered(id, compiled, params);
 };

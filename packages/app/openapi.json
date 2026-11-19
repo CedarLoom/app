@@ -11,14 +11,29 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string", "const": "node" },
-                "status": { "type": "string", "enum": ["pass", "fail"] }
+                "id": { "type": "string", "enum": ["node", "project", "plugin"] },
+                "status": { "type": "string", "enum": ["pass", "warn", "fail", "skipped"] }
               },
               "required": ["id", "status"],
               "additionalProperties": false
             }
           },
-          "plugin": { "type": "null" },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "version": { "type": ["string", "null"] },
+                  "scope": { "type": "string", "enum": ["local", "project", "user", "override"] },
+                  "root": { "type": "string" }
+                },
+                "required": ["id", "version", "scope", "root"],
+                "additionalProperties": false
+              },
+              { "type": "null" }
+            ]
+          },
           "findings": {
             "type": "array",
             "items": {
@@ -48,6 +63,14 @@
                     "plan.stale",
                     "plan.symlink",
                     "plan.text-mismatch",
+                    "plugin.disabled",
+                    "plugin.found",
+                    "plugin.marketplace-untrusted",
+                    "plugin.not-found",
+                    "plugin.record-unknown",
+                    "plugin.too-old",
+                    "plugin.trust-bypassed",
+                    "plugin.untrusted",
                     "project.not-found",
                     "run.already-undone",
                     "run.not-found",
@@ -58,6 +81,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
                     "store.version-unsupported",
@@ -378,6 +402,14 @@
                             "plan.stale",
                             "plan.symlink",
                             "plan.text-mismatch",
+                            "plugin.disabled",
+                            "plugin.found",
+                            "plugin.marketplace-untrusted",
+                            "plugin.not-found",
+                            "plugin.record-unknown",
+                            "plugin.too-old",
+                            "plugin.trust-bypassed",
+                            "plugin.untrusted",
                             "project.not-found",
                             "run.already-undone",
                             "run.not-found",
@@ -388,6 +420,7 @@
                             "session.host",
                             "session.origin",
                             "session.token",
+                            "settings.unreadable",
                             "store.locked",
                             "store.unreadable",
                             "store.version-unsupported",
@@ -453,6 +486,14 @@
                     "plan.stale",
                     "plan.symlink",
                     "plan.text-mismatch",
+                    "plugin.disabled",
+                    "plugin.found",
+                    "plugin.marketplace-untrusted",
+                    "plugin.not-found",
+                    "plugin.record-unknown",
+                    "plugin.too-old",
+                    "plugin.trust-bypassed",
+                    "plugin.untrusted",
                     "project.not-found",
                     "run.already-undone",
                     "run.not-found",
@@ -463,6 +504,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
                     "store.version-unsupported",
@@ -571,6 +613,14 @@
               "plan.stale",
               "plan.symlink",
               "plan.text-mismatch",
+              "plugin.disabled",
+              "plugin.found",
+              "plugin.marketplace-untrusted",
+              "plugin.not-found",
+              "plugin.record-unknown",
+              "plugin.too-old",
+              "plugin.trust-bypassed",
+              "plugin.untrusted",
               "project.not-found",
               "run.already-undone",
               "run.not-found",
@@ -581,6 +631,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.unreadable",
               "store.locked",
               "store.unreadable",
               "store.version-unsupported",
@@ -628,14 +679,29 @@
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string", "const": "node" },
-                "status": { "type": "string", "enum": ["pass", "fail"] }
+                "id": { "type": "string", "enum": ["node", "project", "plugin"] },
+                "status": { "type": "string", "enum": ["pass", "warn", "fail", "skipped"] }
               },
               "required": ["id", "status"],
               "additionalProperties": false
             }
           },
-          "plugin": { "type": "null" },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "version": { "type": ["string", "null"] },
+                  "scope": { "type": "string", "enum": ["local", "project", "user", "override"] },
+                  "root": { "type": "string" }
+                },
+                "required": ["id", "version", "scope", "root"],
+                "additionalProperties": false
+              },
+              { "type": "null" }
+            ]
+          },
           "findings": {
             "type": "array",
             "items": {
@@ -665,6 +731,14 @@
                     "plan.stale",
                     "plan.symlink",
                     "plan.text-mismatch",
+                    "plugin.disabled",
+                    "plugin.found",
+                    "plugin.marketplace-untrusted",
+                    "plugin.not-found",
+                    "plugin.record-unknown",
+                    "plugin.too-old",
+                    "plugin.trust-bypassed",
+                    "plugin.untrusted",
                     "project.not-found",
                     "run.already-undone",
                     "run.not-found",
@@ -675,6 +749,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
                     "store.version-unsupported",
@@ -995,6 +1070,14 @@
                             "plan.stale",
                             "plan.symlink",
                             "plan.text-mismatch",
+                            "plugin.disabled",
+                            "plugin.found",
+                            "plugin.marketplace-untrusted",
+                            "plugin.not-found",
+                            "plugin.record-unknown",
+                            "plugin.too-old",
+                            "plugin.trust-bypassed",
+                            "plugin.untrusted",
                             "project.not-found",
                             "run.already-undone",
                             "run.not-found",
@@ -1005,6 +1088,7 @@
                             "session.host",
                             "session.origin",
                             "session.token",
+                            "settings.unreadable",
                             "store.locked",
                             "store.unreadable",
                             "store.version-unsupported",
@@ -1070,6 +1154,14 @@
                     "plan.stale",
                     "plan.symlink",
                     "plan.text-mismatch",
+                    "plugin.disabled",
+                    "plugin.found",
+                    "plugin.marketplace-untrusted",
+                    "plugin.not-found",
+                    "plugin.record-unknown",
+                    "plugin.too-old",
+                    "plugin.trust-bypassed",
+                    "plugin.untrusted",
                     "project.not-found",
                     "run.already-undone",
                     "run.not-found",
@@ -1080,6 +1172,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
                     "store.version-unsupported",
@@ -1188,6 +1281,14 @@
               "plan.stale",
               "plan.symlink",
               "plan.text-mismatch",
+              "plugin.disabled",
+              "plugin.found",
+              "plugin.marketplace-untrusted",
+              "plugin.not-found",
+              "plugin.record-unknown",
+              "plugin.too-old",
+              "plugin.trust-bypassed",
+              "plugin.untrusted",
               "project.not-found",
               "run.already-undone",
               "run.not-found",
@@ -1198,6 +1299,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.unreadable",
               "store.locked",
               "store.unreadable",
               "store.version-unsupported",

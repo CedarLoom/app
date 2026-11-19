@@ -48,6 +48,56 @@
       ["path"],
       " does not match the plan's hash. Nothing was changed. Make the plan again."
     ],
+    "plugin.disabled": [
+      [
+        "path",
+        "select",
+        {
+          "null": ["No settings file enables cl-workflow@cedarloom"],
+          "other": ["cl-workflow@cedarloom is switched off in ", ["path"]]
+        }
+      ],
+      ", so the workflows generated for this project will not run."
+    ],
+    "plugin.found": [
+      "Found ",
+      ["id"],
+      " ",
+      ["version", "select", { "null": ["with no recorded version"], "other": ["version ", ["version"]] }],
+      " (",
+      ["scope"],
+      " scope) at ",
+      ["root"],
+      "."
+    ],
+    "plugin.marketplace-untrusted": [
+      "The marketplace ",
+      ["marketplace"],
+      " comes from ",
+      ["source"],
+      ", not from the CedarLoom/cedarloom repository, so CedarLoom will not run its plugins. Name a plugin folder you trust with --plugin-root."
+    ],
+    "plugin.not-found": [
+      "The cl-workflow plugin from the CedarLoom marketplace is not installed for this project in ",
+      ["pluginsRoot"],
+      ". Install it with claude plugin marketplace add CedarLoom/cedarloom and then claude plugin install cl-workflow@cedarloom, or name a plugin folder with --plugin-root."
+    ],
+    "plugin.record-unknown": [
+      ["file"],
+      " has a shape CedarLoom does not know, so the plugin cannot be located. Name the plugin folder with --plugin-root."
+    ],
+    "plugin.too-old": [
+      "The cl-workflow plugin at ",
+      ["root"],
+      " (",
+      ["version", "select", { "null": ["no recorded version"], "other": ["version ", ["version"]] }],
+      ") has no workflow generator. Update the plugin."
+    ],
+    "plugin.trust-bypassed": ["Using the plugin folder ", ["root"], " from --plugin-root. Its origin was not checked."],
+    "plugin.untrusted": [
+      ["id"],
+      " is not cl-workflow from the CedarLoom marketplace, so CedarLoom will not run its generator."
+    ],
     "project.not-found": [["cwd"], " is not inside a Git repository. Run CedarLoom from your project folder."],
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],
@@ -64,6 +114,10 @@
     "session.host": ["This server answers only at 127.0.0.1."],
     "session.origin": ["Requests from other sites are refused."],
     "session.token": ["This link was already used or has expired. Run cedarloom-app again for a new one."],
+    "settings.unreadable": [
+      ["path"],
+      " is not a JSON object, so CedarLoom will not read or change it. Fix the file first."
+    ],
     "store.locked": [
       "The CedarLoom state store ",
       ["path"],
