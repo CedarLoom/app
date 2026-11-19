@@ -7,6 +7,7 @@
       ["run"],
       " stopped and the file was not changed."
     ],
+    "apply.recovered": [["path"], " was left from the interrupted run ", ["run"], " and was settled."],
     "apply.write-mismatch": [
       ["path"],
       " does not match the plan after the write. Run ",
@@ -25,12 +26,17 @@
       " is outside the folders CedarLoom writes to (.claude/ and .cedarloom/workflows/)."
     ],
     "plan.symlink": [["path"], " is a symbolic link. CedarLoom does not write through links."],
+    "plan.text-mismatch": [
+      "The new text of ",
+      ["path"],
+      " does not match the plan's hash. Nothing was changed. Make the plan again."
+    ],
     "store.locked": [
       "The CedarLoom state store ",
       ["path"],
       " is in use by another CedarLoom process, for example a running cedarloom-app. Stop it, or make the change from the UI."
     ],
-    "store.unreadable": ["The CedarLoom state store ", ["path"], " cannot be read. Nothing was changed."],
+    "store.unreadable": ["The CedarLoom state store ", ["path"], " cannot be read or written. Nothing was changed."],
     "store.version-unsupported": [
       "The CedarLoom state store has version ",
       ["found"],

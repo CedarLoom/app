@@ -1,3 +1,4 @@
+export { type Applied, type ApplyRequest, apply, type Boundary } from './apply.ts';
 export { type StateDirInputs, type StoreDirInputs, stateDir, storeDir } from './state-dir.ts';
 export {
   type NewRun,

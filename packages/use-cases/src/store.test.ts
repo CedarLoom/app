@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import {
@@ -222,7 +222,6 @@ describe('the store files', () => {
     const modes = Object.fromEntries(readdirSync(dir).map((name) => [name, statSync(join(dir, name)).mode & 0o777]));
     expect(modes).toEqual({
       'lock.sqlite': 0o600,
-      'lock.sqlite-journal': 0o600,
       'runs.sqlite': 0o600,
       'runs.sqlite-shm': 0o600,
       'runs.sqlite-wal': 0o600,
@@ -279,6 +278,24 @@ describe('the store refusals', () => {
   });
 });
 
+describe('the store ACLs', () => {
+  // An ACL that denies everyone the write, which the file's read-only flag does not show; reads and opens stay allowed.
+  it.runIf(process.platform === 'win32')('refuses a lock or store file an ACL keeps it from writing', () => {
+    const dir = fresh();
+    store(dir).close();
+    opened.length = 0;
+    for (const name of ['lock.sqlite', 'runs.sqlite']) {
+      const path = join(dir, name);
+      execFileSync('icacls', [path, '/deny', '*S-1-1-0:(WD,AD,WEA,WA)'], { stdio: 'ignore' });
+      try {
+        expect(openStore(dir, clock)).toEqual(unreadable(path));
+      } finally {
+        execFileSync('icacls', [path, '/remove:d', '*S-1-1-0'], { stdio: 'ignore' });
+      }
+    }
+  });
+});
+
 describe('the read-only view', () => {
   it('reads a missing store as no runs and creates nothing', () => {
     const dir = join(fresh(), 'state');
@@ -300,6 +317,14 @@ describe('the read-only view', () => {
     store(dir).begin(newRun);
     for (const item of opened.splice(0)) item.close();
     chmodSync(dir, 0o500);
+    expect(openRunView(dir)).toEqual(unreadable(join(dir, 'runs.sqlite')));
+  });
+
+  posixIt('refuses a store folder it cannot enter, as a missing store is the only one read as no runs', () => {
+    const dir = fresh();
+    store(dir).begin(newRun);
+    for (const item of opened.splice(0)) item.close();
+    chmodSync(dir, 0o600);
     expect(openRunView(dir)).toEqual(unreadable(join(dir, 'runs.sqlite')));
   });
 
