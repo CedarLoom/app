@@ -90,15 +90,19 @@ const SAFE_METHODS = new Set(['GET', 'HEAD']);
 const api = (req: FastifyRequest): boolean =>
   req.url.startsWith('/api/') || (req.routeOptions.url?.startsWith('/api/') ?? false);
 
+// Without a session: the exchange, and outside /api/ only GET and HEAD (the UI's files).
+const open = (req: FastifyRequest): boolean =>
+  (req.method === 'POST' && req.routeOptions.url === '/api/session') || (!api(req) && SAFE_METHODS.has(req.method));
+
 const outside = (req: FastifyRequest, session: Session, port: number): Denial | null => {
-  if (!api(req) || (req.method === 'POST' && req.routeOptions.url === '/api/session')) return null;
+  if (open(req)) return null;
   const grant = session.grantFor(cookieValues(req.headers.cookie, cookieName(port)));
   if (grant === null) return [401, 'session.cookie'];
   if (SAFE_METHODS.has(req.method) || same(req.headers[CSRF_HEADER], grant.csrf)) return null;
   return [403, 'session.csrf'];
 };
 
-/** Checks every request, unknown paths too: the Host and Origin rules, then on /api/ the session cookie and the CSRF header. */
+/** Checks every request, unknown paths too: the Host and Origin rules, then the session cookie and the CSRF header. */
 export const guard =
   (session: Session) =>
   async (req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | undefined> => {

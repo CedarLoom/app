@@ -55,6 +55,13 @@ describe('session exchange', () => {
     const reply = await app.inject({ method: 'POST', url: '/api/session', headers: { host: HOST }, payload: {} });
     expect([reply.statusCode, reply.json()]).toEqual([400, { code: 'api.bad-request', params: { issues: ['token'] } }]);
   });
+
+  it('refuses an unknown key with 400 api.bad-request naming no field', async () => {
+    const { app } = await server();
+    const payload = { token: 'secret-0', extra: 1 };
+    const reply = await app.inject({ method: 'POST', url: '/api/session', headers: { host: HOST }, payload });
+    expect([reply.statusCode, reply.json()]).toEqual([400, { code: 'api.bad-request', params: { issues: [] } }]);
+  });
 });
 
 describe('request guard', () => {
@@ -70,17 +77,43 @@ describe('request guard', () => {
     expect([reply.statusCode, reply.json()]).toEqual([403, { code: 'session.origin', params: {} }]);
   });
 
+  it('refuses Sec-Fetch-Site same-site with 403 session.origin', async () => {
+    const { app } = await server();
+    await exchange(app, 'secret-0');
+    const reply = await app.inject({
+      method: 'GET',
+      url: '/api/session',
+      headers: { ...withCookie, 'sec-fetch-site': 'same-site' },
+    });
+    expect([reply.statusCode, reply.json()]).toEqual([403, { code: 'session.origin', params: {} }]);
+  });
+
   it.each([
-    ['a missing cookie', undefined],
-    ['two same-named cookies with differing values', 'cedarloom_session_0=other; cedarloom_session_0=secret-1'],
-  ])('refuses %s with 401 session.cookie', async (_case, cookie) => {
+    ['a missing cookie', 'GET', '/api/session', undefined],
+    ['a missing cookie on an unknown API path', 'GET', '/api/nope', undefined],
+    ['a missing cookie on a POST outside /api/', 'POST', '/nope', undefined],
+    [
+      'two same-named cookies with differing values',
+      'GET',
+      '/api/session',
+      'cedarloom_session_0=other; cedarloom_session_0=secret-1',
+    ],
+    [
+      'the same two cookies in the other order',
+      'GET',
+      '/api/session',
+      'cedarloom_session_0=secret-1; cedarloom_session_0=other',
+    ],
+  ] as const)('refuses %s with 401 session.cookie', async (_case, method, url, cookie) => {
     const { app } = await server();
     await exchange(app, 'secret-0');
     const headers = cookie === undefined ? { host: HOST } : { host: HOST, cookie };
-    const reply = await app.inject({ method: 'GET', url: '/api/session', headers });
+    const reply = await app.inject({ method, url, headers });
     expect([reply.statusCode, reply.json()]).toEqual([401, { code: 'session.cookie', params: {} }]);
   });
+});
 
+describe('request guard, CSRF and headers', () => {
   it('returns the CSRF value again for the cookie', async () => {
     const { app } = await server();
     await exchange(app, 'secret-0');
@@ -92,6 +125,14 @@ describe('request guard', () => {
     const { app } = await server();
     await exchange(app, 'secret-0');
     const reply = await app.inject({ method, url: '/api/runs', headers: withCookie });
+    expect([reply.statusCode, reply.json()]).toEqual([403, { code: 'session.csrf', params: {} }]);
+  });
+
+  it('refuses a wrong CSRF value with 403 session.csrf', async () => {
+    const { app } = await server();
+    await exchange(app, 'secret-0');
+    const headers = { ...withCookie, 'x-cedarloom-csrf': 'secret-1' };
+    const reply = await app.inject({ method: 'POST', url: '/api/runs', headers });
     expect([reply.statusCode, reply.json()]).toEqual([403, { code: 'session.csrf', params: {} }]);
   });
 
@@ -121,6 +162,12 @@ describe('errors', () => {
     await exchange(app, 'secret-0');
     const reply = await app.inject({ method: 'GET', url, headers });
     expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
+  });
+
+  it('refuses a malformed URL with a wrong Host with 421 session.host', async () => {
+    const { app } = await server();
+    const reply = await app.inject({ method: 'GET', url: '/%zz', headers: { host: 'localhost:0' } });
+    expect([reply.statusCode, reply.json()]).toEqual([421, { code: 'session.host', params: {} }]);
   });
 
   it('answers a body over the limit with 413 api.bad-request', async () => {

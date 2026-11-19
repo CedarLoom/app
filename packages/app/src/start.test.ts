@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { connect } from 'node:net';
+import { connect, Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type AppIo, type Started, start } from './start.ts';
 
 const folders: string[] = [];
@@ -22,8 +22,9 @@ const project = (): string => {
   return root;
 };
 
-const started = async (argv: string[]) => {
+const started = async (argv: string[], open?: (url: string) => void) => {
   const out: string[] = [];
+  const errors: string[] = [];
   const opened: string[] = [];
   let count = 0;
   const io: AppIo = {
@@ -31,13 +32,13 @@ const started = async (argv: string[]) => {
     cwd: project(),
     now: () => 0,
     secret: () => `secret-${count++}`,
-    open: (url) => opened.push(url),
+    open: open ?? ((url) => opened.push(url)),
     stdout: (text) => out.push(text),
-    stderr: (text) => out.push(text),
+    stderr: (text) => errors.push(text),
   };
   const result: Started = await start(io);
   if ('close' in result) servers.push(result.close);
-  return { result, document: JSON.parse(out.join('')), opened };
+  return { result, document: JSON.parse(out.join('')), errors, opened };
 };
 
 // One raw HTTP/1.1 request, so no client adds a Host header.
@@ -80,6 +81,43 @@ describe('start', () => {
     expect(second).toEqual({
       result: { exitCode: 3 },
       document: { result: null, findings: [], refusals: [{ code: 'server.port-in-use', params: { port } }] },
+      errors: [],
+      opened: [],
+    });
+  });
+
+  it('reports an opener that throws on stderr and keeps serving', async () => {
+    const { result, document, errors } = await started(['--json'], () => {
+      throw new Error('no browser');
+    });
+    expect(['close' in result, document.refusals, errors]).toEqual([true, [], ['no browser\n']]);
+  });
+});
+
+describe('start without a server', () => {
+  it('binds 127.0.0.1 only', async () => {
+    // Each bind fails as a port in use, so start stops without listening.
+    const listen = vi.spyOn(Server.prototype, 'listen').mockImplementation(function (this: Server) {
+      process.nextTick(() => this.emit('error', Object.assign(new Error('in use'), { code: 'EADDRINUSE' })));
+      return this;
+    });
+    try {
+      await started(['--no-open', '--json']);
+      expect(listen.mock.calls.map(([options]) => options)).toEqual([expect.objectContaining({ host: '127.0.0.1' })]);
+    } finally {
+      listen.mockRestore();
+    }
+  });
+
+  it.each(['--port 80', '--port=80'])('refuses %s with cli.bad-value, exit 2', async (words) => {
+    expect(await started(['--json', ...words.split(' ')])).toEqual({
+      result: { exitCode: 2 },
+      document: {
+        result: null,
+        findings: [],
+        refusals: [{ code: 'cli.bad-value', params: { flag: '--port', value: '80' } }],
+      },
+      errors: [],
       opened: [],
     });
   });
@@ -103,6 +141,20 @@ describe('bin/cedarloom-app.js', () => {
       1,
       { result: null, findings: [failed], refusals: [] },
       '',
+    ]);
+  });
+
+  it('reports a throw inside run as cli.internal, exit 5', () => {
+    const root = project();
+    writeFileSync(join(root, 'gone.mjs'), "process.cwd = () => { throw new Error('no working directory'); };");
+    const bin = fileURLToPath(new URL('../bin/cedarloom-app.js', import.meta.url));
+    const child = spawnSync(process.execPath, ['--import', './gone.mjs', bin, '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    expect([child.status, JSON.parse(child.stdout)]).toEqual([
+      5,
+      { result: null, findings: [], refusals: [{ code: 'cli.internal', params: {} }] },
     ]);
   });
 });

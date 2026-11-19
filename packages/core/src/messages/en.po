@@ -113,7 +113,7 @@ msgstr "Port {port} is in use. Choose another with --port, or leave it out to us
 
 #. js-lingui-explicit-id
 msgid "api.bad-request"
-msgstr "The request is not valid."
+msgstr "The request is not valid. Fields with issues: {issues}"
 
 #. js-lingui-explicit-id
 msgid "api.not-found"

@@ -46,7 +46,7 @@ export const MESSAGE_IDS = [
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
 export interface MessagePlaceholders {
-  'api.bad-request': never;
+  'api.bad-request': 'issues';
   'api.internal': never;
   'api.not-found': never;
   'apply.backup-failed': 'path' | 'run';

@@ -30,7 +30,11 @@ const Exchange = z.strictObject({ token: z.string() });
 const sessionRoutes = (app: FastifyInstance, session: Session): void => {
   app.post('/api/session', async (req, reply) => {
     const body = Exchange.safeParse(req.body);
-    if (!body.success) return reply.code(400).send(badRequest(body.error.issues.map(({ path }) => path.join('.'))));
+    if (!body.success) {
+      // A root issue (not an object, an unknown key) names no field.
+      const fields = body.error.issues.flatMap(({ path }) => (path.length > 0 ? [path.join('.')] : []));
+      return reply.code(400).send(badRequest(fields));
+    }
     const grant = session.exchange(body.data.token);
     if (grant === null) return reply.code(401).send(refusal('session.token'));
     const name = cookieName(portOf(app.server));

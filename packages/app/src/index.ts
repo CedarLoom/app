@@ -1,11 +1,13 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { join } from 'node:path';
 import { start } from './start.ts';
 
 // The platform's own opener; cmd's start takes its first quoted word as a window title, hence the empty one.
+// cmd by its full path: Windows looks for a bare name in the working directory, the project, before PATH.
 const OPENERS: Partial<Record<NodeJS.Platform, readonly string[]>> = {
   darwin: ['open'],
-  win32: ['cmd', '/c', 'start', '""'],
+  win32: [join(process.env['SystemRoot'] || 'C:\\Windows', 'System32', 'cmd.exe'), '/c', 'start', '""'],
 };
 
 const openBrowser = (url: string): void => {
