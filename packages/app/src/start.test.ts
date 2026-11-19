@@ -38,6 +38,7 @@ const started = async (argv: string[], open?: (path: string) => void) => {
     cwd: project(),
     stateDir: state,
     storeDir: () => folder(),
+    uiDir: join(state, 'ui'),
     clock: { now: () => new Date(0), newRunId: () => 'r1' },
     node: '26.13.0',
     required: '>=26',

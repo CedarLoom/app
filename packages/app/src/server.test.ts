@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, describe, expect, it } from 'vitest';
 import { buildServer } from './server.ts';
 import { Session } from './session.ts';
 
@@ -17,11 +20,25 @@ const PROJECT = {
 };
 
 // Secrets in order: the URL token secret-0, then the cookie secret-1 and the CSRF value secret-2.
-const server = async () => {
+// A built UI in base/ui, a file beside it, and base/ui/assets/out linking to a folder outside it.
+const base = mkdtempSync(join(tmpdir(), 'cedarloom-ui-'));
+afterAll(() => rmSync(base, { recursive: true, force: true }));
+const built = join(base, 'ui');
+mkdirSync(join(built, 'assets'), { recursive: true });
+mkdirSync(join(base, 'outside'));
+writeFileSync(join(built, 'index.html'), '<!doctype html><title>ui</title>');
+writeFileSync(join(built, 'assets', 'app.js'), 'export {};');
+writeFileSync(join(base, 'package.json'), '{"secret":true}');
+writeFileSync(join(base, 'outside', 'secret.txt'), 'secret');
+// A junction needs no privilege on Windows; other platforms ignore the type.
+symlinkSync(join(base, 'outside'), join(built, 'assets', 'out'), 'junction');
+
+// Most tests have no UI built: the folder does not exist.
+const server = async (ui = join(base, 'missing')) => {
   let now = 0;
   let count = 0;
   const session = new Session({ now: () => now, secret: () => `secret-${count++}` });
-  const app = await buildServer({ session, log: () => undefined, project: PROJECT });
+  const app = await buildServer({ session, log: () => undefined, project: PROJECT, ui });
   const advance = (ms: number): void => {
     now += ms;
   };
@@ -130,7 +147,7 @@ describe('request guard, navigation from the redirect page', () => {
     'sec-fetch-dest': 'document',
   };
 
-  // No UI is served yet, so a passing request reaches the 404 of an unknown path.
+  // No UI is built here, so a passing request reaches the 404 of a missing file.
   it('lets a cross-site GET navigation to a document outside /api/ pass', async () => {
     const { app } = await server();
     const reply = await app.inject({ method: 'GET', url: '/', headers: navigation });
@@ -240,5 +257,60 @@ describe('errors', () => {
       payload: '{"token":"secret-0"}',
     });
     expect([reply.statusCode, reply.json()]).toEqual([415, { code: 'api.bad-request', params: { issues: [] } }]);
+  });
+});
+
+describe('UI files', () => {
+  it('serves index.html for /', async () => {
+    const { app } = await server(built);
+    const reply = await app.inject({ method: 'GET', url: '/', headers: { host: HOST } });
+    expect([reply.statusCode, reply.headers['content-type'], reply.body]).toEqual([
+      200,
+      'text/html; charset=utf-8',
+      '<!doctype html><title>ui</title>',
+    ]);
+    expect(reply.headers['content-security-policy']).toBe(CSP);
+  });
+
+  it('serves an asset with its content type', async () => {
+    const { app } = await server(built);
+    const reply = await app.inject({ method: 'GET', url: '/assets/app.js', headers: { host: HOST } });
+    expect([reply.statusCode, reply.headers['content-type'], reply.body]).toEqual([
+      200,
+      'text/javascript; charset=utf-8',
+      'export {};',
+    ]);
+  });
+
+  it.each([
+    ['an encoded parent path', '/assets/..%2f..%2fpackage.json'],
+    ['a parent path with backslashes', '/assets/..%5c..%5cpackage.json'],
+    ['a NUL byte', '/assets/app.js%00'],
+    ['a link out of the folder', '/assets/out/secret.txt'],
+    ['a folder', '/assets/'],
+    ['a missing file', '/assets/nope.js'],
+    ['a name longer than a file system allows', `/assets/${'a'.repeat(300)}.js`],
+  ])('answers %s with 404 api.not-found', async (_case, url) => {
+    const { app } = await server(built);
+    const reply = await app.inject({ method: 'GET', url, headers: { host: HOST } });
+    expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
+  });
+
+  it('answers / with 404 api.not-found when no UI is built', async () => {
+    const { app } = await server();
+    const reply = await app.inject({ method: 'GET', url: '/', headers: { host: HOST } });
+    expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
+  });
+
+  it('refuses POST / without a session with 401 session.cookie', async () => {
+    const { app } = await server(built);
+    const reply = await app.inject({ method: 'POST', url: '/', headers: { host: HOST } });
+    expect([reply.statusCode, reply.json()]).toEqual([401, { code: 'session.cookie', params: {} }]);
+  });
+
+  it('refuses a cross-site Origin with 403 session.origin', async () => {
+    const { app } = await server(built);
+    const reply = await app.inject({ method: 'GET', url: '/', headers: { host: HOST, origin: 'http://evil.test' } });
+    expect([reply.statusCode, reply.json()]).toEqual([403, { code: 'session.origin', params: {} }]);
   });
 });

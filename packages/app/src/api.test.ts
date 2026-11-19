@@ -41,7 +41,7 @@ const served = async () => {
   const session = new Session({ now: () => 0, secret: () => `secret-${count++}` });
   const clock = { now: () => new Date('2026-11-19T07:00:00.000Z'), newRunId: () => 'u1' };
   const project = { root, storeDir, clock, node: '26.13.0', required: '>=26' };
-  const app = await buildServer({ session, log: () => undefined, project });
+  const app = await buildServer({ session, log: () => undefined, project, ui: join(root, 'ui') });
   onTestFinished(() => app.close());
   await app.inject({ method: 'POST', url: '/api/session', headers: { host: HOST }, payload: { token: 'secret-0' } });
   const notes = join(root, '.claude', 'notes.md');

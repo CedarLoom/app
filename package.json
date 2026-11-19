@@ -7,6 +7,7 @@
     "node": ">=26"
   },
   "scripts": {
+    "build": "pnpm --recursive --filter !@cedarloom/app run build && pnpm --filter @cedarloom/app run build",
     "typecheck": "pnpm --recursive --parallel run typecheck && tsc --project tsconfig.json",
     "lint": "oxlint",
     "format": "biome check --write .",

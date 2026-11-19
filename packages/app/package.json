@@ -1,5 +1,6 @@
 {
   "name": "@cedarloom/app",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "license": "ISC",
@@ -10,7 +11,14 @@
     "cedarloom-app": "bin/cedarloom-app.js"
   },
   "exports": "./src/index.ts",
+  "files": [
+    "bin",
+    "src",
+    "!src/**/*.test.ts",
+    "dist/ui"
+  ],
   "scripts": {
+    "build": "node scripts/copy-ui.ts",
     "typecheck": "tsc",
     "openapi": "node scripts/openapi.ts && biome format --write openapi.json"
   },

@@ -6,7 +6,7 @@ import { Session } from '../src/session.ts';
 const session = new Session({ now: () => 0, secret: () => '' });
 const clock = { now: () => new Date(0), newRunId: () => '' };
 const project = { root: '', storeDir: '', clock, node: '', required: '' };
-const app = await buildServer({ session, log: () => undefined, project });
+const app = await buildServer({ session, log: () => undefined, project, ui: '' });
 await app.ready();
 // fastify-type-provider-zod refers into __shared with a second '#', which no JSON Pointer resolves.
 const document = JSON.stringify(app.swagger()).replaceAll('/__shared#/$defs/', '/__shared/$defs/');
