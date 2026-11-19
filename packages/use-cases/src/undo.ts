@@ -1,19 +1,10 @@
 import { isUtf8 } from 'node:buffer';
 import { join } from 'node:path';
-import {
-  type Finding,
-  PlanOperation,
-  type PlanPreview,
-  planHash,
-  type Refusal,
-  type Run,
-  RunId,
-} from '@cedarloom/core';
-import { type Applied, type ApplyRequest, type At, apply, fileKey } from './apply.ts';
+import { type Finding, PlanOperation, type PlanPreview, planHash, type Refusal, type Run } from '@cedarloom/core';
+import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
 import { entryAt, readFound, sha256 } from './project-files.ts';
-import { recover } from './recover.ts';
+import { type Operation, recover } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
-import { linkOnWay } from './write-roots.ts';
 
 export interface UndoRequest {
   /** The project root, absolute; the run's paths are relative to it. */
@@ -28,10 +19,6 @@ type UndoPlan =
   | { plan: null; refusal: Refusal; findings: Finding[] };
 
 export type Undone = Applied & { plan: PlanPreview | null };
-
-type Operation = Run['operations'][number];
-
-const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
 
 const hashOf = (text: string | null): string | null => (text === null ? null : sha256(Buffer.from(text)));
 
@@ -62,8 +49,8 @@ interface Walk {
   root: string;
   store: RunStore;
   run: string;
-  /** Each file's hash before the run's first started step on it, by fileKey. */
-  original: Map<string, string | null>;
+  /** The run's started steps by position, oldest first. */
+  started: [number, Operation][];
   /** Each file's text once the undo operations planned so far ran, by fileKey. */
   now: Map<string, string | null>;
   operations: PlanOperation[];
@@ -80,17 +67,21 @@ const textBefore = ({ store, run }: Walk, position: number, step: Operation): st
   return found.bytes.toString('utf8');
 };
 
-// Restores a path that hashes as the step left it; one that hashes as before the step, or before the run, needs nothing.
+// Restores a path that hashes as the step left it. One that hashes as before this step or an earlier one on it needs
+// nothing, and so does one still as before the run that no planned operation changes.
 const visit = (walk: Walk, position: number, step: Operation): Refusal | undefined => {
+  const link = linkRefusal(walk.root, step.path);
+  if (link !== undefined) return link;
   const key = fileKey(step.path);
-  const current = walk.now.has(key) ? walk.now.get(key) : textAt(walk.root, step.path);
+  const planned = walk.now.has(key);
+  const current = planned ? walk.now.get(key) : textAt(walk.root, step.path);
   if (current === undefined) return refusal('undo.file-changed', step.path);
   const hash = hashOf(current);
-  if (hash !== step.afterHash) {
-    return hash === step.beforeHash || hash === walk.original.get(key)
-      ? undefined
-      : refusal('undo.file-changed', step.path);
-  }
+  const states = walk.started
+    .filter(([at, op]) => at <= position && fileKey(op.path) === key)
+    .map(([, op]) => op.beforeHash);
+  if (!planned && hash === states[0]) return undefined;
+  if (hash !== step.afterHash) return states.includes(hash) ? undefined : refusal('undo.file-changed', step.path);
   const before = textBefore(walk, position, step);
   if (typeof before === 'object' && before !== null) return before;
   walk.operations.push(operation(step.path, current, before));
@@ -104,22 +95,32 @@ const inEffect = (store: RunStore, run: Run): boolean => {
   return by === undefined || !inEffect(store, by);
 };
 
+// Each run down an undo's chain still names that undo as its newest done one, or names none in effect where the undo did
+// not finish; otherwise a newer undo replaced it, and undoing it would leave the chain's state at odds with its files.
+const replaced = (store: RunStore, run: Run): Refusal | undefined => {
+  const target = run.undoes === null ? undefined : store.run(run.undoes);
+  if (target === undefined) return undefined;
+  const by = target.undoneBy === null ? undefined : store.run(target.undoneBy);
+  const current = run.status === 'done' ? target.undoneBy === run.id : by === undefined || !inEffect(store, by);
+  if (!current) return { code: 'run.already-undone', params: { run: target.id, by: target.undoneBy } };
+  return replaced(store, target);
+};
+
 // Recovery leaves a run running while a link is on the way of its step; undo waits until that step is settled.
 const unsettled = (root: string, run: Run): Refusal | undefined => {
   const step = run.status === 'running' ? run.operations.find((op) => op.status === 'pending') : undefined;
-  const link = step === undefined ? undefined : linkOnWay(root, step.path);
-  return link === undefined ? undefined : refusal('plan.symlink', link);
+  return step === undefined ? undefined : linkRefusal(root, step.path);
 };
 
 // Recovery runs first, so an interrupted run is undone from its settled journal.
 const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoPlan => {
   const findings = recover(store, root);
   const refused = (stop: Refusal): UndoPlan => ({ plan: null, refusal: stop, findings });
-  const run = RunId.safeParse(id).success ? store.run(id) : undefined;
+  const run = store.run(id);
   if (run === undefined) return refused({ code: 'run.not-found', params: { run: id } });
   if (!inEffect(store, run)) return refused({ code: 'run.already-undone', params: { run: run.id, by: run.undoneBy } });
-  const waiting = unsettled(root, run);
-  if (waiting !== undefined) return refused(waiting);
+  const blocked = replaced(store, run) ?? unsettled(root, run);
+  if (blocked !== undefined) return refused(blocked);
   // A failed step with a backup may have dropped the old file before it stopped.
   const started = [...run.operations.entries()].filter(
     ([position, op]) =>
@@ -127,11 +128,7 @@ const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoPlan => 
       op.status === 'settled' ||
       (op.status === 'failed' && entryAt(store.backupPath(run.id, position)) !== undefined),
   );
-  const walk: Walk = { root, store, run: run.id, original: new Map(), now: new Map(), operations: [] };
-  for (const [, step] of started) {
-    const key = fileKey(step.path);
-    if (!walk.original.has(key)) walk.original.set(key, step.beforeHash);
-  }
+  const walk: Walk = { root, store, run: run.id, started, now: new Map(), operations: [] };
   for (const [position, step] of started.toReversed()) {
     const stop = visit(walk, position, step);
     if (stop !== undefined) return refused(stop);

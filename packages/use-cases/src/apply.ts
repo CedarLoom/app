@@ -54,9 +54,9 @@ interface Step {
   at: At;
 }
 
-const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
+export const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
 
-const linkRefusal = (root: string, path: string): Refusal | undefined => {
+export const linkRefusal = (root: string, path: string): Refusal | undefined => {
   const link = linkOnWay(root, path);
   return link === undefined ? undefined : refusal('plan.symlink', link);
 };

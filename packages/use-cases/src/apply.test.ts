@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -489,6 +490,12 @@ const release = (held: RunStore): void => {
   held.close();
 };
 
+// Undo of r1 refuses a folder link put at .claude/skills.
+const refusesLinkedSkills = (held: RunStore, root: string): void => {
+  symlinkSync(fresh(), join(root, '.claude/skills'), 'junction');
+  expect(undo(held, { root, run: 'r1' }).refusal).toEqual({ code: 'plan.symlink', params: { path: '.claude/skills' } });
+};
+
 describe('undo', () => {
   it('restores each file to its text from before the run, newest step first, as a run of its own', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n', '.claude/c.md': 'gone\n' });
@@ -556,11 +563,19 @@ describe('undo refuses', () => {
     expect(listing(root)).toEqual(['a.md', 'b.md']);
   });
 
-  it.each(['r9', '-r1', '../r1'])('refuses the run id %s as no run', (id) => {
+  it('refuses a run id the store does not have as no run', () => {
     const { root, state } = project();
     const held = store(state);
     apply(held, request(root, [create('.claude/a.md', 'a\n')]));
-    expect(undo(held, { root, run: id }).refusal).toEqual({ code: 'run.not-found', params: { run: id } });
+    expect(undo(held, { root, run: 'r9' }).refusal).toEqual({ code: 'run.not-found', params: { run: 'r9' } });
+  });
+
+  it('refuses a link on the way of a file the run wrote, also when nothing is left to restore', () => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/skills/a.md', 'a\n')]));
+    renameSync(join(root, '.claude/skills'), join(root, '.claude/moved'));
+    refusesLinkedSkills(held, root);
   });
 });
 
@@ -604,11 +619,45 @@ describe('undo of an undo', () => {
     const { root, state } = project();
     const held = store(state);
     begin(held, root, '.claude/skills/a.md');
-    symlinkSync(fresh(), join(root, '.claude/skills'), 'junction');
-    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
-      code: 'plan.symlink',
-      params: { path: '.claude/skills' },
+    refusesLinkedSkills(held, root);
+  });
+});
+
+// A step hook that throws at `boundary` of the operation at `position`, as a disk failing there.
+const failAt =
+  (boundary: Boundary, position: number) =>
+  (at: Boundary, index: number): void => {
+    if (at === boundary && index === position) throw new Error('disk gone');
+  };
+
+describe('undo of a replaced undo', () => {
+  // Each undo before the last one runs; the last one would leave r1 counted as in effect, or not, against its file.
+  it.each([
+    [['r1', 'u1', 'r1'], 'old\n'],
+    [['r1', 'u1', 'r1', 'u3'], 'new\n'],
+  ])('refuses to undo u2 after the undos of %j: u3 replaced u1 as the undo of r1', (before, left) => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'u1', 'u2', 'u3', 'u4', 'u5');
+    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
+    for (const id of before) expect(undo(held, { root, run: id }).refusal).toBeNull();
+    expect(undo(held, { root, run: 'u2' }).refusal).toEqual({
+      code: 'run.already-undone',
+      params: { run: 'r1', by: 'u3' },
     });
+    expect(text(join(root, '.claude/b.md'))).toBe(left);
+  });
+
+  it('refuses to undo an interrupted undo once a newer undo of the run is recorded', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'u1', 'u2', 'u3');
+    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
+    expect(() => undo(held, { root, run: 'r1' }, failAt('linked', 0))).toThrow('disk gone');
+    expect(undo(held, { root, run: 'r1' }).run).toBe('u2');
+    expect(undo(held, { root, run: 'u1' }).refusal).toEqual({
+      code: 'run.already-undone',
+      params: { run: 'r1', by: 'u2' },
+    });
+    expect(text(join(root, '.claude/b.md'))).toBe('old\n');
   });
 });
 
@@ -643,6 +692,32 @@ describe('undo matches files and runs as apply and the store do', () => {
       code: 'run.already-undone',
       params: { run: 'r1', by: 'u3' },
     });
+  });
+});
+
+describe('undo of a chain on one file', () => {
+  it('undoes a run again after its undo stopped between two steps on one file', () => {
+    const { root, state } = project({ '.claude/b.md': 'A\n' });
+    const held = store(state, 'r1', 'u1', 'u2');
+    const plan = [
+      replace('.claude/b.md', 'A\n', 'B\n'),
+      replace('.claude/b.md', 'B\n', 'C\n'),
+      replace('.claude/b.md', 'C\n', 'D\n'),
+    ];
+    apply(held, request(root, plan));
+    expect(() => undo(held, { root, run: 'r1' }, failAt('written', 1))).toThrow('disk gone');
+    expect(text(join(root, '.claude/b.md'))).toBe('B\n');
+    expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'u2', refusal: null });
+    expect(text(join(root, '.claude/b.md'))).toBe('A\n');
+  });
+
+  it('restores nothing for a file the run created and deleted, also without its backup', () => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/a.md', 'a\n'), remove('.claude/a.md', 'a\n')]));
+    rmSync(join(state, 'backups/r1/1'));
+    expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'u1', refusal: null });
+    expect(listing(root)).toEqual([]);
   });
 });
 
