@@ -128,6 +128,26 @@ msgid "settings.unreadable"
 msgstr "{path} cannot be read, is not a JSON object, or its enabledPlugins is not an object, so CedarLoom will not use or change it. Fix the file first."
 
 #. js-lingui-explicit-id
+msgid "definition.invalid"
+msgstr "The workflow definition {name} has {count, plural, one {# problem} other {# problems}}. Run cedarloom workflows validate {name} for details."
+
+#. js-lingui-explicit-id
+msgid "definition.stale"
+msgstr "The files generated from {name} differ from what the plugin generates now: {paths}. Run cedarloom workflows generate {name}."
+
+#. js-lingui-explicit-id
+msgid "definition.not-json"
+msgstr "{path} cannot be read, or is not valid JSON."
+
+#. js-lingui-explicit-id
+msgid "generator.failed"
+msgstr "The workflow generator stopped with {signal, select, null {exit code {exitCode}} other {signal {signal}}}: {stderr}"
+
+#. js-lingui-explicit-id
+msgid "generator.output-unknown"
+msgstr "The workflow generator printed output CedarLoom cannot read: {output}"
+
+#. js-lingui-explicit-id
 msgid "session.host"
 msgstr "This server answers only at 127.0.0.1."
 

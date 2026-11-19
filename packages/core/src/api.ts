@@ -7,8 +7,9 @@ import { RunSummary } from './run.ts';
 export const DoctorReport = z.strictObject({
   checks: z.array(
     z.strictObject({
-      id: z.enum(['node', 'project', 'plugin']),
-      status: z.enum(['pass', 'warn', 'fail']),
+      id: z.enum(['node', 'project', 'plugin', 'definitions', 'generated']),
+      /** skipped: a check this one needs failed, or there is no project to check. */
+      status: z.enum(['pass', 'warn', 'fail', 'skipped']),
     }),
   ),
   /** The cl-workflow plugin in use: its install record's version, or the --plugin-root folder as scope override. */

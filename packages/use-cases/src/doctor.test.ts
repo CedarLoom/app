@@ -82,6 +82,8 @@ it('takes the local-scope install over project scope and project over user, and 
         { id: 'node', status: 'pass' },
         { id: 'project', status: 'pass' },
         { id: 'plugin', status: 'pass' },
+        { id: 'definitions', status: 'pass' },
+        { id: 'generated', status: 'pass' },
       ],
       plugin: { id: 'cl-workflow@cedarloom', version: '0.3.0', scope: 'local', root },
     },
@@ -426,6 +428,21 @@ it('uses the folder relative to cwd and reports plugin.trust-bypassed, whatever 
   ]);
 });
 
+it('runs the --plugin-root generator on the definitions and skips the generated files when they fail', () => {
+  const { project, run } = setup();
+  const root = join(project, 'plugin');
+  current(root);
+  json(join(project, '.cedarloom', 'workflows', 'dev.json'), { name: 'dev' });
+  const result = run('plugin');
+  expect([result.report.checks.slice(3), result.findings.at(-1)]).toEqual([
+    [
+      { id: 'definitions', status: 'fail' },
+      { id: 'generated', status: 'skipped' },
+    ],
+    { code: 'generator.output-unknown', severity: 'error', params: { output: '' } },
+  ]);
+});
+
 it('reports plugin.too-old with no version for a folder without the generator', () => {
   const { project, run } = setup();
   expect(pluginFindings(run(project))).toEqual([
@@ -475,13 +492,18 @@ it('reports no plugin.disabled for a managed install that no settings file names
 it.each([
   ['no JSON object', (path: string) => json(path, [])],
   ['a folder', (path: string) => mkdirSync(path, { recursive: true })],
-])('reports settings.unreadable for project settings that are %s', (_, write) => {
+])('reports settings.unreadable for project settings that are %s, and skips the definitions', (_, write) => {
   const { project, run } = located();
   const path = join(project, '.claude', 'settings.json');
   write(path);
+  json(join(project, '.cedarloom', 'workflows', 'dev.json'), { name: 'dev' });
   const result = run();
-  expect([result.report.checks[2], pluginFindings(result).at(-1)]).toEqual([
-    { id: 'plugin', status: 'fail' },
+  expect([result.report.checks.slice(2), result.findings.at(-1)]).toEqual([
+    [
+      { id: 'plugin', status: 'fail' },
+      { id: 'definitions', status: 'skipped' },
+      { id: 'generated', status: 'skipped' },
+    ],
     { code: 'settings.unreadable', severity: 'error', params: { path } },
   ]);
 });

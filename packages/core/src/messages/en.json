@@ -26,6 +26,32 @@
     "cli.missing-argument": [["command"], " needs ", ["argument"], "."],
     "cli.unknown-command": ["Unknown command: ", ["command"], ". Run ", ["bin"], " --help for usage."],
     "cli.unknown-flag": [["command"], " has no option ", ["flag"], "."],
+    "definition.invalid": [
+      "The workflow definition ",
+      ["name"],
+      " has ",
+      ["count", "plural", { "one": ["#", " problem"], "other": ["#", " problems"] }],
+      ". Run cedarloom workflows validate ",
+      ["name"],
+      " for details."
+    ],
+    "definition.not-json": [["path"], " cannot be read, or is not valid JSON."],
+    "definition.stale": [
+      "The files generated from ",
+      ["name"],
+      " differ from what the plugin generates now: ",
+      ["paths"],
+      ". Run cedarloom workflows generate ",
+      ["name"],
+      "."
+    ],
+    "generator.failed": [
+      "The workflow generator stopped with ",
+      ["signal", "select", { "null": ["exit code ", ["exitCode"]], "other": ["signal ", ["signal"]] }],
+      ": ",
+      ["stderr"]
+    ],
+    "generator.output-unknown": ["The workflow generator printed output CedarLoom cannot read: ", ["output"]],
     "node.version-unsupported": ["Node.js ", ["found"], " is running; CedarLoom needs Node.js ", ["required"], "."],
     "plan.file-changed": [
       ["path"],

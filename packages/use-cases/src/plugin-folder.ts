@@ -5,12 +5,15 @@ import { errorCode } from './project-files.ts';
 
 // What the app cannot reach counts as absent: a missing path, a link loop, a folder it may not read, a name too long to exist.
 const UNREACHABLE = new Set<unknown>(['ENOENT', 'ENOTDIR', 'ELOOP', 'EACCES', 'EPERM', 'ENAMETOOLONG']);
+/** Whether an error of a file system call says the app cannot reach its path. */
+export const isUnreachable = (error: unknown): boolean => UNREACHABLE.has(errorCode(error));
+
 /** What read returns; undefined when the app cannot reach the path it reads. */
 export const reached = <T>(read: () => T): T | undefined => {
   try {
     return read();
   } catch (error) {
-    if (UNREACHABLE.has(errorCode(error))) return undefined;
+    if (isUnreachable(error)) return undefined;
     throw error;
   }
 };

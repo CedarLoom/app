@@ -15,15 +15,24 @@ const argument = (id: string, params: Params, name: unknown): string => {
   return printable(Array.isArray(value) ? value.join(', ') : String(value));
 };
 
-// A select argument picks the branch named by its value, "null" for null, else its "other" branch.
-const selected = (id: string, params: Params, [name, , choices]: readonly unknown[]): CompiledMessage => {
+const ENGLISH_PLURAL = new Intl.PluralRules('en');
+
+// A select argument picks the branch named by its value, "null" for null; a plural argument its "=n" branch, else
+// its English plural category, with # in the branch as the number. Both fall back to their "other" branch.
+const branchOf = (id: string, params: Params, [name, format, choices]: readonly unknown[]): CompiledMessage => {
   const value = params[String(name)];
   if (value === undefined) throw new Error(`${id} has no parameter ${String(name)}`);
   const branches = new Map<string, unknown>(
     typeof choices === 'object' && choices !== null ? Object.entries(choices) : [],
   );
-  const branch = branches.get(value === null ? 'null' : String(value)) ?? branches.get('other');
-  if (typeof branch === 'string' || Array.isArray(branch)) return branch;
+  const keys =
+    format === 'plural' && typeof value === 'number'
+      ? [`=${value}`, ENGLISH_PLURAL.select(value)]
+      : [value === null ? 'null' : String(value)];
+  const branch = [...keys, 'other'].map((key) => branches.get(key)).find((found) => found !== undefined);
+  if (typeof branch === 'string') return branch;
+  if (Array.isArray(branch))
+    return format === 'plural' ? branch.map((token) => (token === '#' ? String(value) : token)) : branch;
   throw new Error(`${id} has no branch for ${String(value)}`);
 };
 
@@ -33,7 +42,7 @@ const rendered = (id: string, compiled: CompiledMessage, params: Params): string
     .map((token) => {
       if (typeof token === 'string') return token;
       if (token.length === 1) return argument(id, params, token[0]);
-      if (token[1] === 'select') return rendered(id, selected(id, params, token), params);
+      if (token[1] === 'select' || token[1] === 'plural') return rendered(id, branchOf(id, params, token), params);
       throw new Error(`${id} uses a format this renderer does not know`);
     })
     .join('');
