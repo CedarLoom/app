@@ -44,7 +44,8 @@ export interface Applied {
   findings: Finding[];
 }
 
-type At = (boundary: Boundary, position: number) => void;
+/** Runs at each boundary of each step. */
+export type At = (boundary: Boundary, position: number) => void;
 
 interface Step {
   store: RunStore;
@@ -53,9 +54,9 @@ interface Step {
   at: At;
 }
 
-const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
+export const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
 
-const linkRefusal = (root: string, path: string): Refusal | undefined => {
+export const linkRefusal = (root: string, path: string): Refusal | undefined => {
   const link = linkOnWay(root, path);
   return link === undefined ? undefined : refusal('plan.symlink', link);
 };
@@ -80,7 +81,7 @@ const chainProblem = (op: PlanOperation, left: string | null | undefined): Refus
   op.beforeHash === left ? undefined : refusal('plan.file-changed', op.path);
 
 // Paths macOS and Windows may read as one file chain as one; elsewhere two such paths are refused, never half written.
-const fileKey = (path: string): string => path.normalize('NFC').toLowerCase();
+export const fileKey = (path: string): string => path.normalize('NFC').toLowerCase();
 
 // The text a step writes is the one its hash names, so the check after the write cannot fail once the old file went.
 const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined =>

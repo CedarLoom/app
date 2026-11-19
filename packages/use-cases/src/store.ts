@@ -39,7 +39,7 @@ PRAGMA user_version = ${VERSION};
 `;
 
 const SUMMARY_COLUMNS = `r.id, r.kind, r.action, r.subject, r.status, r.startedAt, r.endedAt, r.undoes,
-  (SELECT u.id FROM runs u WHERE u.undoes = r.id AND u.status = 'done' ORDER BY u.startedAt DESC, u.rowid DESC LIMIT 1)
+  (SELECT u.id FROM runs u WHERE u.undoes = r.id AND u.status = 'done' ORDER BY u.rowid DESC LIMIT 1)
     AS undoneBy`;
 
 /** What a use case gets from the store: the value, or the refusal that stops it. */
@@ -63,6 +63,20 @@ const operationsOf = (db: DatabaseSync, id: string): unknown[] =>
     )
     .all(id)
     .map((operation) => Object.assign(operation, { entries: parsedJson(operation['entries']) }));
+
+type Row = Record<string, SQLOutputValue>;
+
+const RUN_COLUMNS = `${SUMMARY_COLUMNS}, r.planHash, r.generatedFrom`;
+
+const runRow = (db: DatabaseSync, id: string): Row | undefined =>
+  db.prepare(`SELECT ${RUN_COLUMNS} FROM runs r WHERE r.id = ?`).get(id);
+
+const runOf = (db: DatabaseSync, row: Row): Run =>
+  Run.parse({
+    ...row,
+    generatedFrom: parsedJson(row['generatedFrom']),
+    operations: operationsOf(db, String(row['id'])),
+  });
 
 /** The time and the run ids a store uses. */
 export interface StoreClock {
@@ -245,6 +259,20 @@ export class RunStore {
     });
   }
 
+  /** The run with this id and its operations, or undefined when the store has none. */
+  run(id: string): Run | undefined {
+    const row = runRow(this.#db, id);
+    return row === undefined ? undefined : runOf(this.#db, row);
+  }
+
+  /** The undo runs of a run that did not finish, oldest first. */
+  unfinishedUndos(id: string): Run[] {
+    return this.#db
+      .prepare(`SELECT ${RUN_COLUMNS} FROM runs r WHERE r.undoes = ? AND r.status <> 'done' ORDER BY r.rowid`)
+      .all(id)
+      .map((row) => runOf(this.#db, row));
+  }
+
   /** Where the backup of the file at `position` of a run is kept, for undo. */
   backupPath(runId: string, position: number): string {
     return join(this.#dir, 'backups', runId, String(position));
@@ -324,8 +352,6 @@ export const openStore = (dir: string, clock: StoreClock): Opened<RunStore> => {
   }
 };
 
-type Row = Record<string, SQLOutputValue>;
-
 // One read transaction, so a run and its operations come from the same commit.
 const snapshot = <T>(db: DatabaseSync, read: () => T): T => {
   db.exec('BEGIN');
@@ -375,12 +401,8 @@ export class RunView {
     const db = this.#db;
     if (db === null) return { ok: true, value: undefined };
     return this.#probe(db, (held) => {
-      const row = db
-        .prepare(`SELECT ${SUMMARY_COLUMNS}, r.planHash, r.generatedFrom FROM runs r WHERE r.id = ?`)
-        .get(id);
-      if (row === undefined) return undefined;
-      const operations = operationsOf(db, id);
-      return Run.parse({ ...this.#current(row, held), generatedFrom: parsedJson(row['generatedFrom']), operations });
+      const row = runRow(db, id);
+      return row === undefined ? undefined : runOf(db, this.#current(row, held));
     });
   }
 

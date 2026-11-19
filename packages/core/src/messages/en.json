@@ -36,6 +36,8 @@
       ["path"],
       " does not match the plan's hash. Nothing was changed. Make the plan again."
     ],
+    "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
+    "run.not-found": ["No run with the id ", ["run"], "."],
     "store.locked": [
       "The CedarLoom state store ",
       ["path"],
@@ -48,6 +50,28 @@
       ", and this version of CedarLoom reads only version ",
       ["supported"],
       "."
+    ],
+    "undo.backup-changed": [
+      "The backup of ",
+      ["path"],
+      " no longer matches its recorded hash, so the run cannot be undone."
+    ],
+    "undo.backup-missing": ["The backup of ", ["path"], " is missing, so the run cannot be undone."],
+    "undo.file-changed": [["path"], " changed after the run, so undo would lose that change. Nothing was restored."],
+    "undo.replaced": [
+      "Run ",
+      ["run"],
+      " was undone again later by run ",
+      ["by"],
+      ", so an older undo of it can no longer be brought back."
+    ],
+    "undo.result-kept": [
+      ["path"],
+      " is still as run ",
+      ["run"],
+      " left it, and this undo would leave run ",
+      ["run"],
+      " counted as undone. Nothing was restored."
     ]
   }
 }

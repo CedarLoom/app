@@ -9,3 +9,4 @@ export {
   type RunView,
   type StoreClock,
 } from './store.ts';
+export { type Undone, type UndoRequest, undo } from './undo.ts';

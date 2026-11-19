@@ -5,7 +5,7 @@ import { asidePath, entryAt, hashAt, putBack, tempPath } from './project-files.t
 import type { RunStore } from './store.ts';
 import { linkOnWay } from './write-roots.ts';
 
-type Operation = Run['operations'][number];
+export type Operation = Run['operations'][number];
 
 // Back when the path is empty; gone when the path is the aside itself or the aside is the old file, which the step
 // backed up first; else both stay, as the aside is another process's file.
