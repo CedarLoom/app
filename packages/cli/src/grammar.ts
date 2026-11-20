@@ -29,9 +29,9 @@ const COMMANDS = {
   'workflows remove': { args: ['<name>', '<pointer>'], flags: EDIT },
   // set takes <value> or --unset; which one is the command's own check.
   'workflows set': { args: ['<name>', '<pointer>', '<value>'], optional: 1, flags: [...EDIT, 'unset'] },
-  // The switches check their own arguments, as <id> and --plugin rule each other out.
-  'workflows off': { args: ['<id>'], variadic: true, flags: [...EDIT, 'plugin', 'script-only'] },
-  'workflows on': { args: ['<id>'], variadic: true, flags: ['yes', 'plugin'] },
+  // The switches take <id> or --plugin; which one is the command's own check.
+  'workflows off': { args: ['<id>'], optional: 1, flags: [...EDIT, 'plugin', 'script-only'] },
+  'workflows on': { args: ['<id>'], optional: 1, flags: ['yes', 'plugin'] },
 } satisfies Record<string, Command>;
 type CommandName = keyof typeof COMMANDS;
 const NOUNS = ['runs', 'workflows'] as const;

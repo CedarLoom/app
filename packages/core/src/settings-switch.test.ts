@@ -28,6 +28,14 @@ describe('switchedOff', () => {
     );
   });
 
+  it('scans past an escaped quote in a rule, and on gives the text back', () => {
+    const text = '{"permissions": {"deny": ["Bash(printf \\"]\\")"]}, "model": "opus"}';
+    const edited = '{"permissions": {"deny": ["Bash(printf \\"]\\")", "Skill(dev)"]}, "model": "opus"}';
+    const target = { rules: ['Skill(dev)'] };
+    expect(switchedOff({ text, path }, [], target)?.text).toBe(edited);
+    expect(switchedOn({ text: edited, path }, [off(deny('Skill(dev)'))], target)?.text).toBe(text);
+  });
+
   it('leaves a rule it owns at any position, and reports one a newer workflow.on gave up', () => {
     const text = '{"permissions": {"deny": ["Workflow(dev-run)", "Skill(dev)"]}}';
     expect(switchedOff({ text, path }, OWNED, RULES)).toEqual({ text: null, entries: [], skipped: [] });
@@ -91,8 +99,38 @@ describe('a settings file it does not change', () => {
     expect(switchedOn({ text, path }, OWNED, RULES)).toBeUndefined();
   });
 
-  it('refuses an edit that would not read back as the change, such as under a duplicate key', () => {
-    const text = `{"enabledPlugins": {"${PLUGIN}": false, "${PLUGIN}": false}}`;
-    expect(switchedOn({ text, path }, [OFF], { plugin: PLUGIN })).toBeUndefined();
+  it.each([
+    [
+      'two permissions',
+      () =>
+        switchedOff({ text: '{"permissions": {"deny": ["A"]}, "permissions": {"allow": ["B"]}}', path }, [], {
+          rules: ['Skill(dev)'],
+        }),
+    ],
+    [
+      'the plugin key twice',
+      () =>
+        switchedOff({ text: `{"enabledPlugins": {"${PLUGIN}": true, "${PLUGIN}": true}}`, path }, [], {
+          plugin: PLUGIN,
+        }),
+    ],
+    [
+      'two deny',
+      () =>
+        switchedOn(
+          { text: '{"permissions": {"deny": ["Skill(dev)", "X"], "deny": ["Y", "Skill(dev)"]}}', path },
+          OWNED,
+          { rules: ['Skill(dev)'] },
+        ),
+    ],
+    [
+      'the plugin key twice with false',
+      () =>
+        switchedOn({ text: `{"enabledPlugins": {"${PLUGIN}": false, "${PLUGIN}": false}}`, path }, [OFF], {
+          plugin: PLUGIN,
+        }),
+    ],
+  ])('refuses a key on the edited path that occurs twice: %s', (_, call) => {
+    expect(call()).toBeUndefined();
   });
 });

@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fresh, project, store, text } from './test-fixtures.ts';
+import { type ApplyRequest, apply } from './apply.ts';
+import { failAt, fresh, project, store, text } from './test-fixtures.ts';
 import { undo } from './undo.ts';
 import { workflowsOff, workflowsOn } from './workflow-switch.ts';
 
@@ -79,7 +80,12 @@ describe('workflows off for a workflow', () => {
     edit(withDeny('["Read(.env)", "Bash(rm)", "Skill(dev)", "Workflow(dev-run)"]'));
     expect(on('dev')).toMatchObject({ run: 'r2', plan: { skipped: [] } });
     expect(read()).toBe(withDeny('["Read(.env)", "Bash(rm)"]'));
-    expect(entries('r2')).toEqual(entries('r1'));
+    expect(entries('r2')).toEqual([
+      [
+        { pointer: '/permissions/deny', value: 'Skill(dev)' },
+        { pointer: '/permissions/deny', value: 'Workflow(dev-run)' },
+      ],
+    ]);
     expect(on('dev')).toMatchObject({ run: null, plan: { operations: [], skipped: [] } });
   });
 });
@@ -122,6 +128,45 @@ describe('workflows on for a workflow', () => {
     expect(read()).toBe('{"permissions": {"deny":["Skill(cl-workflow:full)", "Workflow(cl-workflow:full-run)"]}}\n');
     on('cl-workflow:full');
     expect(read()).toBe('{"permissions": {"deny":[]}}\n');
+  });
+});
+
+// The owner writes Skill(dev) by hand; on leaves it and reports it.
+const ownerRuleStays = ({ on, read, edit }: ReturnType<typeof setup>): void => {
+  const owned = withDeny('["Read(.env)", "Skill(dev)"]');
+  edit(owned);
+  expect(on('dev')).toMatchObject({ run: null, plan: { operations: [], skipped: [ownerEntry('Skill(dev)')] } });
+  expect(read()).toBe(owned);
+};
+
+describe('workflows on after an off run that is not in effect', () => {
+  it('on leaves and reports a rule the owner wrote after the off run was undone', () => {
+    const context = setup(OWNER);
+    context.off('dev');
+    expect(undo(context.held, { root: context.root, run: 'r1' }).refusal).toBeNull();
+    ownerRuleStays(context);
+  });
+
+  it('an off run stopped before its write owns nothing', () => {
+    const context = setup(OWNER);
+    const { root, held, off } = context;
+    const { plan } = off('dev', { yes: false });
+    if (plan === null) throw new Error('no plan');
+    const run = {
+      kind: 'apply',
+      action: 'workflow.off',
+      subject: 'dev',
+      undoes: null,
+      generatedFrom: [],
+    } satisfies ApplyRequest['run'];
+    const written = [
+      { pointer: '/permissions/deny', value: 'Skill(dev)' },
+      { pointer: '/permissions/deny', value: 'Workflow(dev-run)' },
+    ];
+    expect(() => apply(held, { root, plan, run, entries: new Map([[0, written]]) }, failAt('temp-written', 0))).toThrow(
+      'disk gone',
+    );
+    ownerRuleStays(context);
   });
 });
 
@@ -176,6 +221,19 @@ describe('a settings file workflows off and on do not change', () => {
       });
     expect(readFileSync(join(root, SETTINGS))).toEqual(settings);
   });
+
+  it.each(['cl-workflow:', 'cl-workflow:cl-workflow:a'])(
+    'refuses the id %s with workflow.name-invalid as typed',
+    (id) => {
+      const { off, on, read } = setup(OWNER);
+      for (const result of [off(id), on(id)])
+        expect(result).toMatchObject({
+          plan: null,
+          refusals: [{ code: 'workflow.name-invalid', params: { name: id } }],
+        });
+      expect(read()).toBe(OWNER);
+    },
+  );
 
   it.skipIf(process.platform === 'win32')('refuses a settings file that is a link with plan.symlink', () => {
     const { root, off } = setup();

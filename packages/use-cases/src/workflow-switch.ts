@@ -25,7 +25,7 @@ import { PLUGIN_ID } from './plugin-locator.ts';
 import { sha256 } from './project-files.ts';
 import type { RunStore } from './store.ts';
 import { inEffect } from './undo.ts';
-import { type Place, projectPlace, type WorkflowsRequest } from './workflows.ts';
+import { invalidName, type Place, projectPlace, type WorkflowsRequest } from './workflows.ts';
 
 const SETTINGS = '.claude/settings.json';
 const SHIPPED = 'cl-workflow:';
@@ -55,6 +55,12 @@ interface Switch {
 const unreadable = (): Refusal => ({ code: 'settings.unreadable', params: { path: SETTINGS } });
 
 const nameOf = (id: string): string => (id.startsWith(SHIPPED) ? id.slice(SHIPPED.length) : id);
+
+// Recovery first, as start does; an id whose name is not valid is refused as typed.
+const started = (store: RunStore, root: string, id: string | null): ReturnType<typeof start> =>
+  id !== null && invalidName([nameOf(id)]) !== undefined
+    ? { recovered: [], stop: { code: 'workflow.name-invalid', params: { name: id } } }
+    : start(store, root, []);
 
 // The settings file's bytes and text, null when it does not exist.
 const settingsFile = (root: string): { bytes: Buffer; text: string } | null | Refusal => {
@@ -129,7 +135,7 @@ const rulesOf = (id: string, script: boolean, scriptOnly: boolean): string[] | R
  */
 export const workflowsOff = (store: RunStore, request: SwitchOffRequest, yes: boolean): Generation => {
   const { root, id, scriptOnly } = request;
-  const { recovered, stop } = start(store, root, id === null ? [] : [nameOf(id)]);
+  const { recovered, stop } = started(store, root, id);
   if (stop !== undefined) return stoppedBy([stop], recovered);
   const run = { change: switchedOff, action: 'workflow.off', subject: id } as const;
   if (id === null)
@@ -147,7 +153,7 @@ export const workflowsOff = (store: RunStore, request: SwitchOffRequest, yes: bo
  * `yes` it applies the plan as a run. Recovery runs first.
  */
 export const workflowsOn = (store: RunStore, { root, id }: SwitchOnRequest, yes: boolean): Generation => {
-  const { recovered, stop } = start(store, root, id === null ? [] : [nameOf(id)]);
+  const { recovered, stop } = started(store, root, id);
   if (stop !== undefined) return stoppedBy([stop], recovered);
   const target = id === null ? { plugin: PLUGIN_ID } : { rules: [`Skill(${id})`, `Workflow(${id}-run)`] };
   return switchedRun(

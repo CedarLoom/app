@@ -10,8 +10,7 @@ type Command = Extract<Request, { kind: 'command' }>;
 
 // One <id> or --plugin; --script-only and --plugin-root belong to <id>.
 const usageRefusal = ({ name, args, plugin, scriptOnly, pluginRoot }: Command): Refusal | undefined => {
-  const [id, surplus] = args;
-  if (surplus !== undefined) return { code: 'cli.unknown-command', params: { command: surplus, bin: 'cedarloom' } };
+  const [id] = args;
   if (!plugin)
     return id === undefined
       ? { code: 'cli.missing-argument', params: { argument: '<id>', command: `cedarloom ${name}` } }

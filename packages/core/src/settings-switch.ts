@@ -24,7 +24,10 @@ export interface SwitchRecord {
 /** The deny rules to switch, or the enabledPlugins key. */
 export type SwitchTarget = { rules: readonly string[] } | { plugin: string };
 
-/** A settings file's new text, null when it stays as it is; the entries the run records; the entries it left. */
+/**
+ * A settings file's new text, null when it stays as it is; the entries the run records; the entries it left, and
+ * warnings on owner entries it changes.
+ */
 export interface Switched {
   text: string | null;
   entries: SettingsEntry[];
@@ -66,7 +69,7 @@ const pointerOf = (plugin: string): string => `/${PLUGINS}/${plugin}`;
 
 // The text with `value` added at the end of the container the keys name, made with the containers missing on the way.
 const appended = (text: string, keys: readonly string[], key: string | null, value: string | boolean): string => {
-  let open = openAt(text, []) ?? 0;
+  let open = text.indexOf('{');
   for (const [depth, name] of keys.entries()) {
     const next = openAt(text, keys.slice(0, depth + 1));
     if (next === undefined) {
@@ -185,14 +188,22 @@ const finished = (draft: Draft, created: boolean): Switched | undefined => {
   return { text: created ? `${JSON.stringify(draft.json, null, 2)}\n` : draft.text, entries, skipped };
 };
 
+// Whether each key on the path occurs once in its object, so no reader can take another occurrence than the edit.
+const unique = (text: string, keys: readonly string[]): boolean =>
+  keys.every((key, depth) => {
+    const open = openAt(text, keys.slice(0, depth));
+    return open === undefined || membersOf(text, open).filter((each) => each.key === key).length < 2;
+  });
+
 const switched = (
   { text, path }: SettingsText,
   records: readonly SwitchRecord[],
+  target: SwitchTarget,
   change: (draft: Draft) => void,
 ): Switched | undefined => {
   const source = text ?? '{}';
   const json = parsed(source);
-  if (!isSettings(json)) return undefined;
+  if (!isSettings(json) || !unique(source, 'rules' in target ? DENY : [PLUGINS, target.plugin])) return undefined;
   const draft: Draft = { text: source, json, entries: [], skipped: [], path, records };
   change(draft);
   return finished(draft, text === null);
@@ -201,14 +212,15 @@ const switched = (
 /**
  * Switches off in a settings file: appends each deny rule that is missing, or sets the plugin entry to false. Records
  * come newest first. Undefined when the file is not a JSON object, its permissions, deny or enabledPlugins has
- * another type, or the edited text would not read back as the change (a duplicate key under the edit).
+ * another type, a key on the edited path occurs twice in its object, or the edited text would not read back as the
+ * change.
  */
 export const switchedOff = (
   settings: SettingsText,
   records: readonly SwitchRecord[],
   target: SwitchTarget,
 ): Switched | undefined =>
-  switched(settings, records, (draft) =>
+  switched(settings, records, target, (draft) =>
     'rules' in target ? rulesOff(draft, target.rules) : pluginOff(draft, target.plugin),
   );
 
@@ -218,6 +230,6 @@ export const switchedOn = (
   records: readonly SwitchRecord[],
   target: SwitchTarget,
 ): Switched | undefined =>
-  switched(settings, records, (draft) =>
+  switched(settings, records, target, (draft) =>
     'rules' in target ? rulesOn(draft, target.rules) : pluginOn(draft, target.plugin),
   );
