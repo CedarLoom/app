@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { inspect } from 'node:util';
-import { printableLines } from '@cedarloom/core';
+import { printableStack, type Refusal } from '@cedarloom/core';
 import { doctorRun } from './doctor.ts';
 import { type EditVerb, workflowsEdit } from './edit-workflow.ts';
 import { workflowsGenerate } from './generate.ts';
@@ -62,9 +61,22 @@ const OUTCOMES: Record<Command['name'], (io: Io, command: Command, argument: str
   'workflows on': workflowsSwitch,
 };
 
+// Every command reads the working folder, which the process cannot read once it was removed. The shell's PWD may name
+// another folder when a program started the process, so the refusal names the folder ".".
+const withFolder = (io: Io): Io | Refusal => {
+  try {
+    // The copy reads the cwd getter once and holds its value.
+    return { ...io };
+  } catch {
+    return { code: 'project.not-found', params: { cwd: '.' } };
+  }
+};
+
 const commandOutcome = (io: Io, command: Command): Outcome => {
+  const folder = withFolder(io);
+  if ('code' in folder) return refused(folder);
   const [argument = ''] = command.args;
-  return OUTCOMES[command.name](io, command, argument);
+  return OUTCOMES[command.name](folder, command, argument);
 };
 
 const textOf = (request: Exclude<Request, { kind: 'command' }>, io: Io): string => {
@@ -88,8 +100,7 @@ export const main = (io: Io): number => {
     write(outcome, json, io);
     return exitCode(outcome);
   } catch (error) {
-    // inspect, unlike stack, also prints the cause, such as a step's own error inside StepFailed.
-    io.stderr(`${printableLines(inspect(error))}\n`);
+    io.stderr(`${printableStack(error)}\n`);
     const crashed = refused({ code: 'cli.internal', params: {} });
     write(crashed, json, io);
     return exitCode(crashed);
