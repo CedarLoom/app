@@ -288,6 +288,22 @@ it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
 );
 
 it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+  'refuses a planned path below a folder the app may not enter with plan.folder-denied',
+  () => {
+    const { define, generated, project } = setup({ name: 'dev', skill: 'Run dev.\n' });
+    generated();
+    const skills = join(project, '.claude', 'skills');
+    chmodSync(skills, 0o600);
+    onTestFinished(() => chmodSync(skills, 0o700));
+    define({ name: 'dev', skill: 'Run dev twice.\n' });
+    expect(generated()).toMatchObject({
+      plan: null,
+      refusals: [{ code: 'plan.folder-denied', params: { path: SKILL } }],
+    });
+  },
+);
+
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
   'refuses with apply.unsettled while a run recovery could not settle is left',
   () => {
     const { store, request, project } = setup({ name: 'dev', skill: 'Run dev.\n' });

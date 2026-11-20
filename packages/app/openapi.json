@@ -67,10 +67,12 @@
                     "edit.result-over-limits",
                     "edit.target-invalid",
                     "generate.delete-skipped",
+                    "generated.folder-unreadable",
                     "generator.failed",
                     "generator.output-unknown",
                     "node.version-unsupported",
                     "plan.file-changed",
+                    "plan.folder-denied",
                     "plan.name-too-long",
                     "plan.not-text",
                     "plan.path-nested",
@@ -100,6 +102,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.owner-entry",
                     "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
@@ -110,7 +113,8 @@
                     "undo.replaced",
                     "undo.result-kept",
                     "workflow.name-invalid",
-                    "workflow.name-taken"
+                    "workflow.name-taken",
+                    "workflow.no-script"
                   ]
                 },
                 "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -433,10 +437,12 @@
                             "edit.result-over-limits",
                             "edit.target-invalid",
                             "generate.delete-skipped",
+                            "generated.folder-unreadable",
                             "generator.failed",
                             "generator.output-unknown",
                             "node.version-unsupported",
                             "plan.file-changed",
+                            "plan.folder-denied",
                             "plan.name-too-long",
                             "plan.not-text",
                             "plan.path-nested",
@@ -466,6 +472,7 @@
                             "session.host",
                             "session.origin",
                             "session.token",
+                            "settings.owner-entry",
                             "settings.unreadable",
                             "store.locked",
                             "store.unreadable",
@@ -476,7 +483,8 @@
                             "undo.replaced",
                             "undo.result-kept",
                             "workflow.name-invalid",
-                            "workflow.name-taken"
+                            "workflow.name-taken",
+                            "workflow.no-script"
                           ]
                         },
                         "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -538,10 +546,12 @@
                     "edit.result-over-limits",
                     "edit.target-invalid",
                     "generate.delete-skipped",
+                    "generated.folder-unreadable",
                     "generator.failed",
                     "generator.output-unknown",
                     "node.version-unsupported",
                     "plan.file-changed",
+                    "plan.folder-denied",
                     "plan.name-too-long",
                     "plan.not-text",
                     "plan.path-nested",
@@ -571,6 +581,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.owner-entry",
                     "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
@@ -581,7 +592,8 @@
                     "undo.replaced",
                     "undo.result-kept",
                     "workflow.name-invalid",
-                    "workflow.name-taken"
+                    "workflow.name-taken",
+                    "workflow.no-script"
                   ]
                 },
                 "params": {
@@ -686,10 +698,12 @@
               "edit.result-over-limits",
               "edit.target-invalid",
               "generate.delete-skipped",
+              "generated.folder-unreadable",
               "generator.failed",
               "generator.output-unknown",
               "node.version-unsupported",
               "plan.file-changed",
+              "plan.folder-denied",
               "plan.name-too-long",
               "plan.not-text",
               "plan.path-nested",
@@ -719,6 +733,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.owner-entry",
               "settings.unreadable",
               "store.locked",
               "store.unreadable",
@@ -729,7 +744,8 @@
               "undo.replaced",
               "undo.result-kept",
               "workflow.name-invalid",
-              "workflow.name-taken"
+              "workflow.name-taken",
+              "workflow.no-script"
             ]
           },
           "params": {
@@ -780,10 +796,12 @@
               "edit.result-over-limits",
               "edit.target-invalid",
               "generate.delete-skipped",
+              "generated.folder-unreadable",
               "generator.failed",
               "generator.output-unknown",
               "node.version-unsupported",
               "plan.file-changed",
+              "plan.folder-denied",
               "plan.name-too-long",
               "plan.not-text",
               "plan.path-nested",
@@ -813,6 +831,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.owner-entry",
               "settings.unreadable",
               "store.locked",
               "store.unreadable",
@@ -823,7 +842,8 @@
               "undo.replaced",
               "undo.result-kept",
               "workflow.name-invalid",
-              "workflow.name-taken"
+              "workflow.name-taken",
+              "workflow.no-script"
             ]
           },
           "params": {
@@ -920,10 +940,12 @@
                     "edit.result-over-limits",
                     "edit.target-invalid",
                     "generate.delete-skipped",
+                    "generated.folder-unreadable",
                     "generator.failed",
                     "generator.output-unknown",
                     "node.version-unsupported",
                     "plan.file-changed",
+                    "plan.folder-denied",
                     "plan.name-too-long",
                     "plan.not-text",
                     "plan.path-nested",
@@ -953,6 +975,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.owner-entry",
                     "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
@@ -963,7 +986,8 @@
                     "undo.replaced",
                     "undo.result-kept",
                     "workflow.name-invalid",
-                    "workflow.name-taken"
+                    "workflow.name-taken",
+                    "workflow.no-script"
                   ]
                 },
                 "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -1286,10 +1310,12 @@
                             "edit.result-over-limits",
                             "edit.target-invalid",
                             "generate.delete-skipped",
+                            "generated.folder-unreadable",
                             "generator.failed",
                             "generator.output-unknown",
                             "node.version-unsupported",
                             "plan.file-changed",
+                            "plan.folder-denied",
                             "plan.name-too-long",
                             "plan.not-text",
                             "plan.path-nested",
@@ -1319,6 +1345,7 @@
                             "session.host",
                             "session.origin",
                             "session.token",
+                            "settings.owner-entry",
                             "settings.unreadable",
                             "store.locked",
                             "store.unreadable",
@@ -1329,7 +1356,8 @@
                             "undo.replaced",
                             "undo.result-kept",
                             "workflow.name-invalid",
-                            "workflow.name-taken"
+                            "workflow.name-taken",
+                            "workflow.no-script"
                           ]
                         },
                         "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -1391,10 +1419,12 @@
                     "edit.result-over-limits",
                     "edit.target-invalid",
                     "generate.delete-skipped",
+                    "generated.folder-unreadable",
                     "generator.failed",
                     "generator.output-unknown",
                     "node.version-unsupported",
                     "plan.file-changed",
+                    "plan.folder-denied",
                     "plan.name-too-long",
                     "plan.not-text",
                     "plan.path-nested",
@@ -1424,6 +1454,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.owner-entry",
                     "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
@@ -1434,7 +1465,8 @@
                     "undo.replaced",
                     "undo.result-kept",
                     "workflow.name-invalid",
-                    "workflow.name-taken"
+                    "workflow.name-taken",
+                    "workflow.no-script"
                   ]
                 },
                 "params": {
@@ -1539,10 +1571,12 @@
               "edit.result-over-limits",
               "edit.target-invalid",
               "generate.delete-skipped",
+              "generated.folder-unreadable",
               "generator.failed",
               "generator.output-unknown",
               "node.version-unsupported",
               "plan.file-changed",
+              "plan.folder-denied",
               "plan.name-too-long",
               "plan.not-text",
               "plan.path-nested",
@@ -1572,6 +1606,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.owner-entry",
               "settings.unreadable",
               "store.locked",
               "store.unreadable",
@@ -1582,7 +1617,8 @@
               "undo.replaced",
               "undo.result-kept",
               "workflow.name-invalid",
-              "workflow.name-taken"
+              "workflow.name-taken",
+              "workflow.no-script"
             ]
           },
           "params": {
@@ -1633,10 +1669,12 @@
               "edit.result-over-limits",
               "edit.target-invalid",
               "generate.delete-skipped",
+              "generated.folder-unreadable",
               "generator.failed",
               "generator.output-unknown",
               "node.version-unsupported",
               "plan.file-changed",
+              "plan.folder-denied",
               "plan.name-too-long",
               "plan.not-text",
               "plan.path-nested",
@@ -1666,6 +1704,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.owner-entry",
               "settings.unreadable",
               "store.locked",
               "store.unreadable",
@@ -1676,7 +1715,8 @@
               "undo.replaced",
               "undo.result-kept",
               "workflow.name-invalid",
-              "workflow.name-taken"
+              "workflow.name-taken",
+              "workflow.no-script"
             ]
           },
           "params": {

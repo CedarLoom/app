@@ -1,9 +1,9 @@
 import { type Dirent, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { filesBelow } from './files-below.ts';
 import { headerName, MARK } from './generated-header.ts';
-import { reached } from './plugin-folder.ts';
-import { readFound } from './project-files.ts';
+import { isUnreachable, reached } from './plugin-folder.ts';
+import { errorCode, readFound } from './project-files.ts';
 import { linkOnWay } from './write-roots.ts';
 
 const SKILLS = '.claude/skills';
@@ -11,6 +11,7 @@ const WORKFLOWS = '.claude/workflows';
 
 // The mark sits in the header, which follows only the front matter of a few definition fields.
 const HEAD = 1024 * 1024;
+const DENIED = new Set<unknown>(['EACCES', 'EPERM']);
 
 // A project file's first limit bytes; undefined for anything but a regular file reached without a link, as a write
 // would refuse it.
@@ -24,37 +25,56 @@ const bytesAt = (project: string, path: string, limit: number): Buffer | undefin
 export const withLf = (bytes: Buffer): Buffer =>
   Buffer.from(bytes.toString('latin1').replaceAll('\r\n', '\n'), 'latin1');
 
-// A folder's entries; none when the app cannot read it.
-const readableEntries = (folder: string): Dirent[] => reached(() => readdirSync(folder, { withFileTypes: true })) ?? [];
-
-// A project folder's entries; none when a link is on the way, as it may lead outside the project, or the app cannot read it.
-const entriesOf = (project: string, folder: string) =>
-  reached(() => linkOnWay(project, folder) ?? null) === null ? readableEntries(join(project, folder)) : [];
-
 // Whether path is where a generator run for name writes: its skill folder or its workflow script.
 export const isOwnPath = (path: string, name: string): boolean =>
   path.startsWith(`${SKILLS}/${name}/`) || path === `${WORKFLOWS}/${name}.js`;
 
 /**
  * The project's files a generator run wrote before, by their head: those below a skill folder and the workflow scripts
- * that carry the mark.
+ * that carry the mark; and the project-relative folders among them the app may not read.
  */
-export const generatedFiles = (project: string): Map<string, Buffer> => {
-  const skills = entriesOf(project, SKILLS)
+export const generatedFiles = (project: string): { files: Map<string, Buffer>; unreadable: string[] } => {
+  const unreadable = new Set<string>();
+  // No entries for an error that says the app cannot reach folder, noting folder when the app may not read it.
+  const unreached = (error: unknown, folder: string): Dirent[] => {
+    if (!isUnreachable(error)) throw error;
+    if (DENIED.has(errorCode(error))) unreadable.add(relative(project, folder).split(sep).join('/'));
+    return [];
+  };
+  // A folder's entries; none when the app cannot reach it.
+  const listed = (folder: string): Dirent[] => {
+    try {
+      return readdirSync(folder, { withFileTypes: true });
+    } catch (error) {
+      return unreached(error, folder);
+    }
+  };
+  // A project folder's entries; none when a link is on the way, as it may lead outside the project.
+  const entriesOf = (folder: string): Dirent[] => {
+    try {
+      if (linkOnWay(project, folder) !== undefined) return [];
+    } catch (error) {
+      // The project folder was searched for the definitions, so the folder the way could not pass is the parent.
+      return unreached(error, join(project, dirname(folder)));
+    }
+    return listed(join(project, folder));
+  };
+  const skills = entriesOf(SKILLS)
     .filter((entry) => entry.isDirectory())
     .flatMap(({ name }) =>
       // Folder by folder, so one the app cannot read hides only its own files.
-      filesBelow(join(project, SKILLS, name), readableEntries).map((path) => `${SKILLS}/${name}/${path}`),
+      filesBelow(join(project, SKILLS, name), listed).map((path) => `${SKILLS}/${name}/${path}`),
     );
-  const scripts = entriesOf(project, WORKFLOWS)
+  const scripts = entriesOf(WORKFLOWS)
     .filter(({ name }) => name.endsWith('.js'))
     .map(({ name }) => `${WORKFLOWS}/${name}`);
-  return new Map(
+  const files = new Map(
     [...skills, ...scripts].flatMap((path): [string, Buffer][] => {
       const head = bytesAt(project, path, HEAD);
       return head?.includes(MARK) ? [[path, head]] : [];
     }),
   );
+  return { files, unreadable: [...unreadable] };
 };
 
 /**

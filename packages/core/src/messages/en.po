@@ -52,6 +52,10 @@ msgid "plan.path-through-file"
 msgstr "A folder on the way to {path} is a file, so CedarLoom cannot write {path}. Nothing was changed."
 
 #. js-lingui-explicit-id
+msgid "plan.folder-denied"
+msgstr "CedarLoom may not enter a folder on the way to {path}, so it does not read or write {path}. Check the permissions of the folders on the way, then try again."
+
+#. js-lingui-explicit-id
 msgid "apply.no-hard-links"
 msgstr "{path} is on a volume without hard links, such as exFAT, FAT or some network shares. CedarLoom needs them to replace a file, or put one back, without leaving it half written. Nothing was changed. Move the project to a volume with hard links, such as APFS, NTFS or ext4."
 
@@ -149,7 +153,15 @@ msgstr "{path, select, null {No settings file enables cl-workflow@cedarloom} oth
 
 #. js-lingui-explicit-id
 msgid "settings.unreadable"
-msgstr "{path} cannot be read, is not a JSON object, or its enabledPlugins is not an object, so CedarLoom will not use or change it. Fix the file first."
+msgstr "{path} cannot be read, is not a JSON object, has a duplicate key CedarLoom would change, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
+
+#. js-lingui-explicit-id
+msgid "settings.owner-entry"
+msgstr "{kept, select, false {{key} in {path} was set outside CedarLoom, and this plan changes it from true to false. Undo the run to set it back.} other {{key} in {path} was set, changed or removed outside CedarLoom, so CedarLoom did not touch it. Change it yourself if needed.}}"
+
+#. js-lingui-explicit-id
+msgid "workflow.no-script"
+msgstr "{name} has no workflow script to switch off."
 
 #. js-lingui-explicit-id
 msgid "definition.invalid"
@@ -157,7 +169,11 @@ msgstr "The workflow definition {path} has {count, plural, one {# problem} other
 
 #. js-lingui-explicit-id
 msgid "definition.stale"
-msgstr "The files generated from the workflow definition {name} differ from what the plugin's generator writes now: {paths}. Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete any other file of a definition that no longer exists yourself."
+msgstr "The files generated from the workflow definition {name} differ from what the plugin's generator writes now: {paths}. Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete yourself any other listed file the generator does not write."
+
+#. js-lingui-explicit-id
+msgid "generated.folder-unreadable"
+msgstr "{path} cannot be read, so the generated files in it were not checked."
 
 #. js-lingui-explicit-id
 msgid "definition.not-json"
@@ -169,7 +185,7 @@ msgstr "The workflow definition {file} has the name {name}, which is not its fil
 
 #. js-lingui-explicit-id
 msgid "generator.failed"
-msgstr "The workflow generator stopped with {signal, select, null {exit code {exitCode}} other {signal {signal}}}: {stderr}"
+msgstr "The workflow generator {reason, select, timeout {did not end within its time limit and was stopped} outputLimit {printed more than its output limit and was stopped} signal {stopped with signal {signal}} other {stopped with exit code {exitCode}}}: {stderr}"
 
 #. js-lingui-explicit-id
 msgid "generator.output-unknown"

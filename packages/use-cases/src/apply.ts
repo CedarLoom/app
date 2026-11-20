@@ -1,7 +1,7 @@
 import { isUtf8 } from 'node:buffer';
 import { lstatSync, rmSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import type { Finding, PlanOperation, PlanPreview, Refusal } from '@cedarloom/core';
+import type { Finding, PlanOperation, PlanPreview, Refusal, SettingsEntry } from '@cedarloom/core';
 import {
   asidePath,
   Changed,
@@ -22,6 +22,7 @@ import {
   tempPath,
   writeNew,
 } from './project-files.ts';
+import { reached } from './plugin-folder.ts';
 import { recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
 import { inWriteRoots, linkOnWay } from './write-roots.ts';
@@ -41,6 +42,8 @@ export interface ApplyRequest {
   earlier?: Finding[];
   /** The permission bits of the file each create writes, by its position in the plan; a new file's default otherwise. */
   modes?: ReadonlyMap<number, number>;
+  /** The settings entries each operation writes or removes, by its position in the plan; none otherwise. */
+  entries?: ReadonlyMap<number, SettingsEntry[]>;
 }
 
 export interface Applied {
@@ -75,9 +78,11 @@ class Dropped extends Changed {}
 
 export const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
 
+// A folder on the way that the app may not enter hides whether a link is below it.
 export const linkRefusal = (root: string, path: string): Refusal | undefined => {
-  const link = linkOnWay(root, path);
-  return link === undefined ? undefined : refusal('plan.symlink', link);
+  const link = reached(() => linkOnWay(root, path) ?? null);
+  if (link === undefined) return refusal('plan.folder-denied', path);
+  return link === null ? undefined : refusal('plan.symlink', link);
 };
 
 // The file a step replaces or deletes, when it is the text file the plan expects.
@@ -323,10 +328,10 @@ const afterRecovery = (store: RunStore, root: string, error: unknown): { finding
   }
 };
 
-const journal = ({ before: _before, after: _after, ...hashes }: PlanOperation): NewRun['operations'][number] => ({
-  ...hashes,
-  entries: null,
-});
+const journal = (
+  { before: _before, after: _after, ...hashes }: PlanOperation,
+  entries: SettingsEntry[] | undefined,
+): NewRun['operations'][number] => ({ ...hashes, entries: entries ?? null });
 
 // Writes each step in order and ends the run with its last one: null when every step is done, else the step's refusal.
 const steps = (context: Step, operations: readonly PlanOperation[]): Refusal | null => {
@@ -357,7 +362,8 @@ export const apply = (store: RunStore, request: ApplyRequest, at: At = () => und
   if (operations.length === 0) return { run: null, refusal: null, findings };
   const problem = unsettledBy(findings) ?? precheck(root, operations) ?? linksProblem(root, operations);
   if (problem !== undefined) return { run: null, refusal: problem, findings };
-  const begun = store.begin({ ...run, planHash: plan.planHash, operations: operations.map(journal) });
+  const journaled = operations.map((op, position) => journal(op, request.entries?.get(position)));
+  const begun = store.begin({ ...run, planHash: plan.planHash, operations: journaled });
   if (!begun.ok) return { run: null, refusal: begun.refusal, findings };
   try {
     return { run: begun.value, refusal: steps({ store, run: begun.value, root, at, modes }, operations), findings };

@@ -30,10 +30,12 @@ export const MESSAGE_IDS = [
   'edit.result-over-limits',
   'edit.target-invalid',
   'generate.delete-skipped',
+  'generated.folder-unreadable',
   'generator.failed',
   'generator.output-unknown',
   'node.version-unsupported',
   'plan.file-changed',
+  'plan.folder-denied',
   'plan.name-too-long',
   'plan.not-text',
   'plan.path-nested',
@@ -63,6 +65,7 @@ export const MESSAGE_IDS = [
   'session.host',
   'session.origin',
   'session.token',
+  'settings.owner-entry',
   'settings.unreadable',
   'store.locked',
   'store.unreadable',
@@ -74,6 +77,7 @@ export const MESSAGE_IDS = [
   'undo.result-kept',
   'workflow.name-invalid',
   'workflow.name-taken',
+  'workflow.no-script',
 ] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
@@ -103,10 +107,12 @@ export interface MessagePlaceholders {
   'edit.result-over-limits': never;
   'edit.target-invalid': 'operation' | 'pointer';
   'generate.delete-skipped': 'path';
-  'generator.failed': 'exitCode' | 'signal' | 'stderr';
+  'generated.folder-unreadable': 'path';
+  'generator.failed': 'exitCode' | 'reason' | 'signal' | 'stderr';
   'generator.output-unknown': 'output';
   'node.version-unsupported': 'found' | 'required';
   'plan.file-changed': 'path';
+  'plan.folder-denied': 'path';
   'plan.name-too-long': 'path';
   'plan.not-text': 'path';
   'plan.path-nested': 'path';
@@ -136,6 +142,7 @@ export interface MessagePlaceholders {
   'session.host': never;
   'session.origin': never;
   'session.token': never;
+  'settings.owner-entry': 'kept' | 'key' | 'path';
   'settings.unreadable': 'path';
   'store.locked': 'path';
   'store.unreadable': 'path';
@@ -147,4 +154,5 @@ export interface MessagePlaceholders {
   'undo.result-kept': 'path' | 'run';
   'workflow.name-invalid': 'name';
   'workflow.name-taken': 'name' | 'path';
+  'workflow.no-script': 'name';
 }

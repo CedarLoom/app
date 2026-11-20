@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   mkdirSync,
@@ -77,6 +77,11 @@ const staleFinding = (name: string, paths: string[]) => ({
   code: 'definition.stale',
   severity: 'warning',
   params: { name, paths },
+});
+const unreadableFolder = (path: string) => ({
+  code: 'generated.folder-unreadable',
+  severity: 'warning',
+  params: { path },
 });
 const stale = (paths: string[]) => ({ definitions: [], generated: [staleFinding('dev', paths)] });
 const notJson = (path: string) => ({
@@ -191,6 +196,13 @@ describe('names each generated file that differs with definition.stale', () => {
   });
 });
 
+// A folder at path the app may not read.
+const locked = (path: string): void => {
+  mkdirSync(path, { recursive: true });
+  chmodSync(path, 0o000);
+  onTestFinished(() => chmodSync(path, 0o700));
+};
+
 describe('names the generated files of a definition that is gone with definition.stale', () => {
   it('removed, also when none is left', () => {
     const { project, check } = setup();
@@ -214,11 +226,37 @@ describe('names the generated files of a definition that is gone with definition
   it.skipIf(isWindows || isRoot)('beside a folder the app may not read', () => {
     const { project, check } = setup();
     rmSync(join(project, '.cedarloom', 'workflows', 'dev.json'));
-    const locked = join(project, '.claude', 'skills', 'dev', 'locked');
-    mkdirSync(locked);
-    chmodSync(locked, 0o000);
-    onTestFinished(() => chmodSync(locked, 0o700));
-    expect(check()).toEqual(stale(['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']));
+    locked(join(project, '.claude', 'skills', 'dev', 'locked'));
+    expect(check().generated).toEqual([
+      staleFinding('dev', ['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']),
+      unreadableFolder('.claude/skills/dev/locked'),
+    ]);
+  });
+});
+
+describe.skipIf(isWindows || isRoot)('names a folder the app may not read with generated.folder-unreadable', () => {
+  it('below a skill folder', () => {
+    const { project, check } = setup();
+    locked(join(project, '.claude', 'skills', 'own', 'assets'));
+    expect(check()).toEqual({ definitions: [], generated: [unreadableFolder('.claude/skills/own/assets')] });
+  });
+
+  it('the workflow scripts folder', () => {
+    const { project, check } = setup();
+    locked(join(project, '.claude', 'workflows'));
+    expect(check().generated).toEqual([
+      staleFinding('dev', ['.claude/workflows/dev.js']),
+      unreadableFolder('.claude/workflows'),
+    ]);
+  });
+
+  it('the .claude folder, once', () => {
+    const { project, check } = setup();
+    locked(join(project, '.claude'));
+    expect(check().generated).toEqual([
+      staleFinding('dev', ['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']),
+      unreadableFolder('.claude'),
+    ]);
   });
 });
 
@@ -403,38 +441,53 @@ describe('reports a definition no reader can take with definition.not-json', () 
   });
 });
 
+const failedWith = (params: Record<string, unknown>) => [{ code: 'generator.failed', severity: 'error', params }];
+
 describe('reports a generator that fails with generator.failed', () => {
   it('with the exit code and the error output, once for all definitions', () => {
     const { project, check } = setup("process.stderr.write('broken');\nprocess.exit(3);\n");
     write(join(project, '.cedarloom', 'workflows', 'other.json'), JSON.stringify({ name: 'other' }));
-    expect(check().definitions).toEqual([
-      { code: 'generator.failed', severity: 'error', params: { exitCode: 3, signal: null, stderr: 'broken' } },
-    ]);
+    expect(check().definitions).toEqual(failedWith({ reason: 'exit', exitCode: 3, signal: null, stderr: 'broken' }));
   });
 
   it('with exit code 1 and the stack trace for a generator that throws', () => {
     const { check } = setup("throw new Error('runner.js missing');\n");
-    expect(check().definitions).toEqual([
-      {
-        code: 'generator.failed',
-        severity: 'error',
-        params: { exitCode: 1, signal: null, stderr: expect.stringContaining('Error: runner.js missing') },
-      },
-    ]);
+    expect(check().definitions).toEqual(
+      failedWith({
+        reason: 'exit',
+        exitCode: 1,
+        signal: null,
+        stderr: expect.stringContaining('Error: runner.js missing'),
+      }),
+    );
   });
 
-  it('with SIGKILL for a generator that does not end in time', () => {
+  it('with the reason timeout for a generator that does not end in time', () => {
     const { check } = setup('setInterval(() => {}, 1000);\n');
-    expect(check(500).definitions).toEqual([
-      { code: 'generator.failed', severity: 'error', params: { exitCode: null, signal: 'SIGKILL', stderr: '' } },
-    ]);
+    expect(check(500).definitions).toEqual(
+      failedWith({ reason: 'timeout', exitCode: null, signal: 'SIGKILL', stderr: '' }),
+    );
+  });
+
+  it('with the reason outputLimit for a generator that prints more than 64 MiB', () => {
+    const { check } = setup("process.stdout.write('x'.repeat(65 * 1024 * 1024));\n");
+    expect(check().definitions).toEqual(
+      failedWith({ reason: 'outputLimit', exitCode: null, signal: 'SIGKILL', stderr: '' }),
+    );
+  });
+
+  it.skipIf(isWindows)('with the reason signal for a generator ended by a signal', () => {
+    const { check } = setup("process.kill(process.pid, 'SIGTERM');\n");
+    expect(check().definitions).toEqual(
+      failedWith({ reason: 'signal', exitCode: null, signal: 'SIGTERM', stderr: '' }),
+    );
   });
 
   it('with the error output for an exit code of 1 with an empty refusal list', () => {
     const { check } = setup("console.log('[]');\nprocess.stderr.write('ENAMETOOLONG');\nprocess.exit(1);\n");
-    expect(check().definitions).toEqual([
-      { code: 'generator.failed', severity: 'error', params: { exitCode: 1, signal: null, stderr: 'ENAMETOOLONG' } },
-    ]);
+    expect(check().definitions).toEqual(
+      failedWith({ reason: 'exit', exitCode: 1, signal: null, stderr: 'ENAMETOOLONG' }),
+    );
   });
 });
 
@@ -474,4 +527,80 @@ it('removes its temporary folder and writes nothing into the project', () => {
   const before = tree(project);
   expect(check().generated).toHaveLength(1);
   expect([tree(project), readdirSync(temp)]).toEqual([before, []]);
+});
+
+// Runs script in a process of its own with input on its stdin, where check() runs the doctor's check with a generator
+// that sends that process SIGTERM, and check(root) with the generator below root.
+const doctorEnded = (script: string, input = '') => {
+  const { project, root, temp } = setup("process.kill(process.ppid, 'SIGTERM');\nsetTimeout(() => {}, 500);\n");
+  const doctor = `import { definitionFindings } from ${JSON.stringify(join(import.meta.dirname, 'definition-checks.ts'))};
+const check = (root = ${JSON.stringify(root)}) =>
+  definitionFindings({ ...${JSON.stringify({ project, temp, timeoutMs: 20_000, env: {} })}, root });
+${script}
+setInterval(() => {}, 1000);
+`;
+  const ended = spawnSync(process.execPath, ['--input-type=module', '-e', doctor], {
+    input,
+    encoding: 'utf8',
+    timeout: 10_000,
+    killSignal: 'SIGKILL',
+  });
+  return [ended.signal, ended.status, ended.stdout, readdirSync(temp)];
+};
+
+describe.skipIf(isWindows)('removes its temporary folder on SIGTERM', () => {
+  it('then ends with it', () => {
+    expect(doctorEnded('check();')).toEqual(['SIGTERM', null, '', []]);
+  });
+
+  it('then ends with it, also when called from an I/O callback', () => {
+    expect(doctorEnded("await (await import('node:fs/promises')).stat('.');\ncheck();")).toEqual([
+      'SIGTERM',
+      null,
+      '',
+      [],
+    ]);
+  });
+
+  it('then ends with it, also while the hold of an earlier call has not ended', () => {
+    const quiet = folder();
+    write(join(quiet, 'generator', 'generate.mjs'), GENERATOR);
+    // The stdin read starts after the earlier call's first check phase and ends in the poll phase before its second.
+    expect(
+      doctorEnded(
+        `check(${JSON.stringify(quiet)});\nsetImmediate(() => process.stdin.once('data', () => check()));`,
+        'go',
+      ),
+    ).toEqual(['SIGTERM', null, '', []]);
+  });
+
+  it('then ends with it, also after a listener of the caller took the signal of an earlier call', () => {
+    expect(doctorEnded("process.once('SIGTERM', () => {});\ncheck();\nsetImmediate(() => check());")).toEqual([
+      'SIGTERM',
+      null,
+      '',
+      [],
+    ]);
+  });
+
+  it('then leaves it to a listener of the caller', () => {
+    expect(doctorEnded("process.once('SIGTERM', () => setTimeout(() => process.exit(7), 100));\ncheck();")).toEqual([
+      null,
+      7,
+      '',
+      [],
+    ]);
+  });
+
+  it('then leaves it to a listener the caller adds after the call, which gets it once', () => {
+    const listen = "process.on('SIGTERM', (signal) => console.log(signal));";
+    // A signal sent again during the poll phase is read in the next one, before the exit two check phases later.
+    const exit = 'setImmediate(() => setImmediate(() => process.exit(7)))';
+    expect(doctorEnded(`check();\n${listen}\nprocess.on('SIGTERM', () => ${exit});`)).toEqual([
+      null,
+      7,
+      'SIGTERM\n',
+      [],
+    ]);
+  });
 });

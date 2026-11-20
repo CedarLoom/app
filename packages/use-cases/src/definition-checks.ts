@@ -55,7 +55,7 @@ const compared = (
   const ownerOf = (bytes: Buffer) => names.find((name) => name === headerName(bytes));
   const unowned = [...outputs].filter(([, bytes]) => ownerOf(bytes) === undefined).map(([path]) => path);
   if (unowned.length > 0) return { definitions: [unknownOutput(unowned.join('\n')).finding], generated: [] };
-  const generated = generatedFiles(project);
+  const { files: generated, unreadable } = generatedFiles(project);
   const orphans = orphanedPaths(generated, names);
   const present = names.flatMap((name) => {
     const own = new Map([...outputs].filter(([, bytes]) => ownerOf(bytes) === name));
@@ -64,7 +64,10 @@ const compared = (
   const gone = allRead
     ? [...orphans].filter(([name]) => !names.includes(name)).flatMap(([name, paths]) => stale(name, paths))
     : [];
-  return { definitions: [], generated: [...present, ...gone] };
+  const folders = unreadable.map(
+    (path): Finding => ({ code: 'generated.folder-unreadable', severity: 'warning', params: { path } }),
+  );
+  return { definitions: [], generated: [...present, ...gone, ...folders] };
 };
 
 /**
