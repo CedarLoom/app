@@ -64,6 +64,7 @@ export const SettingsEntry = z.strictObject({
   value: JsonValue,
   before: z.exactOptional(JsonValue),
 });
+export type SettingsEntry = z.infer<typeof SettingsEntry>;
 
 // An operation as the journal records it: the plan's hashes without the texts, its step status, its settings entries,
 // and what its undo needs.

@@ -286,10 +286,19 @@ export class RunStore {
    * steps.
    */
   generations(): Run[] {
+    return this.#newestFirst(
+      `r.status <> 'running' AND r.action IN ('workflow.generate', 'workflow.new', 'workflow.edit')`,
+    );
+  }
+
+  /** The done runs that switched off or on, newest first. */
+  switches(): Run[] {
+    return this.#newestFirst(`r.status = 'done' AND r.action IN ('workflow.off', 'workflow.on')`);
+  }
+
+  #newestFirst(where: string): Run[] {
     return this.#db
-      .prepare(
-        `SELECT ${RUN_COLUMNS} FROM runs r WHERE r.status <> 'running' AND r.action IN ('workflow.generate', 'workflow.new', 'workflow.edit') ORDER BY r.rowid DESC`,
-      )
+      .prepare(`SELECT ${RUN_COLUMNS} FROM runs r WHERE ${where} ORDER BY r.rowid DESC`)
       .all()
       .map((row) => runOf(this.#db, row));
   }

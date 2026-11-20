@@ -12,6 +12,7 @@ import type { Io } from './io.ts';
 import { message } from './message.ts';
 import { exitCode, type Outcome, refused, write } from './output.ts';
 import { runsList, runsShow } from './runs.ts';
+import { workflowsSwitch } from './switch.ts';
 import { undoRun } from './undo.ts';
 import { workflowsList, workflowsShow, workflowsValidate } from './workflows.ts';
 
@@ -31,6 +32,8 @@ const HELP = {
   'workflows move': 'help.workflows-move',
   'workflows remove': 'help.workflows-remove',
   'workflows set': 'help.workflows-set',
+  'workflows off': 'help.workflows-off',
+  'workflows on': 'help.workflows-on',
   runs: 'help.runs',
   workflows: 'help.workflows',
 } as const;
@@ -55,6 +58,8 @@ const OUTCOMES: Record<Command['name'], (io: Io, command: Command, argument: str
   'workflows move': (io, command) => edit(io, 'move', command),
   'workflows remove': (io, command) => edit(io, 'remove', command),
   'workflows set': (io, command) => edit(io, 'set', command),
+  'workflows off': workflowsSwitch,
+  'workflows on': workflowsSwitch,
 };
 
 const commandOutcome = (io: Io, command: Command): Outcome => {

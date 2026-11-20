@@ -38,7 +38,10 @@ export const DeleteFile = z.strictObject({
 export const PlanOperation = z.discriminatedUnion('kind', [CreateFile, ReplaceFile, DeleteFile]);
 export type PlanOperation = z.infer<typeof PlanOperation>;
 
-/** A plan as shown before it applies; `skipped` holds the changes left out, such as files the owner edited. */
+/**
+ * A plan as shown before it applies; `skipped` holds the changes left out, such as files the owner edited, and
+ * warnings on owner entries the plan changes.
+ */
 export const PlanPreview = z.strictObject({
   planHash: Hash,
   operations: z.array(PlanOperation),

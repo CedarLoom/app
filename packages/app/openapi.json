@@ -101,6 +101,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.owner-entry",
                     "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
@@ -111,7 +112,8 @@
                     "undo.replaced",
                     "undo.result-kept",
                     "workflow.name-invalid",
-                    "workflow.name-taken"
+                    "workflow.name-taken",
+                    "workflow.no-script"
                   ]
                 },
                 "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -468,6 +470,7 @@
                             "session.host",
                             "session.origin",
                             "session.token",
+                            "settings.owner-entry",
                             "settings.unreadable",
                             "store.locked",
                             "store.unreadable",
@@ -478,7 +481,8 @@
                             "undo.replaced",
                             "undo.result-kept",
                             "workflow.name-invalid",
-                            "workflow.name-taken"
+                            "workflow.name-taken",
+                            "workflow.no-script"
                           ]
                         },
                         "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -574,6 +578,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.owner-entry",
                     "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
@@ -584,7 +589,8 @@
                     "undo.replaced",
                     "undo.result-kept",
                     "workflow.name-invalid",
-                    "workflow.name-taken"
+                    "workflow.name-taken",
+                    "workflow.no-script"
                   ]
                 },
                 "params": {
@@ -723,6 +729,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.owner-entry",
               "settings.unreadable",
               "store.locked",
               "store.unreadable",
@@ -733,7 +740,8 @@
               "undo.replaced",
               "undo.result-kept",
               "workflow.name-invalid",
-              "workflow.name-taken"
+              "workflow.name-taken",
+              "workflow.no-script"
             ]
           },
           "params": {
@@ -818,6 +826,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.owner-entry",
               "settings.unreadable",
               "store.locked",
               "store.unreadable",
@@ -828,7 +837,8 @@
               "undo.replaced",
               "undo.result-kept",
               "workflow.name-invalid",
-              "workflow.name-taken"
+              "workflow.name-taken",
+              "workflow.no-script"
             ]
           },
           "params": {
@@ -959,6 +969,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.owner-entry",
                     "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
@@ -969,7 +980,8 @@
                     "undo.replaced",
                     "undo.result-kept",
                     "workflow.name-invalid",
-                    "workflow.name-taken"
+                    "workflow.name-taken",
+                    "workflow.no-script"
                   ]
                 },
                 "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -1326,6 +1338,7 @@
                             "session.host",
                             "session.origin",
                             "session.token",
+                            "settings.owner-entry",
                             "settings.unreadable",
                             "store.locked",
                             "store.unreadable",
@@ -1336,7 +1349,8 @@
                             "undo.replaced",
                             "undo.result-kept",
                             "workflow.name-invalid",
-                            "workflow.name-taken"
+                            "workflow.name-taken",
+                            "workflow.no-script"
                           ]
                         },
                         "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -1432,6 +1446,7 @@
                     "session.host",
                     "session.origin",
                     "session.token",
+                    "settings.owner-entry",
                     "settings.unreadable",
                     "store.locked",
                     "store.unreadable",
@@ -1442,7 +1457,8 @@
                     "undo.replaced",
                     "undo.result-kept",
                     "workflow.name-invalid",
-                    "workflow.name-taken"
+                    "workflow.name-taken",
+                    "workflow.no-script"
                   ]
                 },
                 "params": {
@@ -1581,6 +1597,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.owner-entry",
               "settings.unreadable",
               "store.locked",
               "store.unreadable",
@@ -1591,7 +1608,8 @@
               "undo.replaced",
               "undo.result-kept",
               "workflow.name-invalid",
-              "workflow.name-taken"
+              "workflow.name-taken",
+              "workflow.no-script"
             ]
           },
           "params": {
@@ -1676,6 +1694,7 @@
               "session.host",
               "session.origin",
               "session.token",
+              "settings.owner-entry",
               "settings.unreadable",
               "store.locked",
               "store.unreadable",
@@ -1686,7 +1705,8 @@
               "undo.replaced",
               "undo.result-kept",
               "workflow.name-invalid",
-              "workflow.name-taken"
+              "workflow.name-taken",
+              "workflow.no-script"
             ]
           },
           "params": {

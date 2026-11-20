@@ -17,6 +17,8 @@ export const MESSAGE_IDS = [
   'help.workflows-list',
   'help.workflows-move',
   'help.workflows-new',
+  'help.workflows-off',
+  'help.workflows-on',
   'help.workflows-remove',
   'help.workflows-set',
   'help.workflows-show',
@@ -45,6 +47,8 @@ export interface MessagePlaceholders {
   'help.workflows-list': never;
   'help.workflows-move': never;
   'help.workflows-new': never;
+  'help.workflows-off': never;
+  'help.workflows-on': never;
   'help.workflows-remove': never;
   'help.workflows-set': never;
   'help.workflows-show': never;
