@@ -12,9 +12,10 @@ import {
 } from 'node:fs';
 import { connect, Server } from 'node:net';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { writeRedirect } from './redirect.ts';
 import { type AppIo, closed, openPage, type Started, start } from './start.ts';
 
 const folders: string[] = [];
@@ -170,6 +171,13 @@ const pageIo = (stateDir: string) => ({
   clock: { now: () => new Date('2026-01-01T00:00:00Z'), newRunId: () => 'r1' },
 });
 
+// A page an earlier start wrote, its folder changed at `seconds` since the epoch.
+const earlier = (state: string, seconds: number): string => {
+  const { path } = writeRedirect(state, 'http://127.0.0.1:4000/#t=old');
+  utimesSync(dirname(path), seconds, seconds);
+  return path;
+};
+
 describe('openPage', () => {
   it.each([
     ['linux', false, 1],
@@ -183,18 +191,18 @@ describe('openPage', () => {
     expect(errors).toHaveLength(lines);
   });
 
-  it('removes a redirect folder of a start more than 10 minutes ago, keeps a younger one and its own', () => {
+  it('removes the page of a start more than 10 minutes ago, keeps a younger one and its own', () => {
     const state = folder();
-    for (const [name, seconds] of [
-      ['open-Old123', 1_767_224_999],
-      ['open-New123', 1_767_225_001],
-    ] as const) {
-      mkdirSync(join(state, name));
-      writeFileSync(join(state, name, 'cedarloom-app.html'), 'page');
-      utimesSync(join(state, name), seconds, seconds);
-    }
-    const own = openPage(pageIo(state), 'http://127.0.0.1:4000/#t=abc', true);
-    expect(readdirSync(state).toSorted()).toEqual([basename(dirname(own?.path ?? '')), 'open-New123'].toSorted());
+    const pages = [earlier(state, 1_767_224_999), earlier(state, 1_767_225_001)];
+    openPage(pageIo(state), 'http://127.0.0.1:4000/#t=abc', true);
+    expect([pages.map((page) => existsSync(page)), readdirSync(state).length]).toEqual([[false, true], 2]);
+  });
+
+  it('keeps its own page when the clock runs more than 10 minutes ahead of the state folder', () => {
+    const state = folder();
+    const clock = { now: () => new Date('2100-01-01T00:00:00Z'), newRunId: () => 'r1' };
+    openPage({ ...pageIo(state), clock }, 'http://127.0.0.1:4000/#t=abc', true);
+    expect(readdirSync(state).map((name) => readdirSync(join(state, name)))).toEqual([['cedarloom-app.html']]);
   });
 });
 

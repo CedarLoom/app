@@ -23,6 +23,8 @@ export const GENERATOR_TIMEOUT_MS = 30_000;
 // What the generator prints with --json: one { file, field, rule } per refusal.
 const Refusals = z.array(z.object({ file: z.string(), field: z.string(), rule: z.string() }));
 const LIMIT = 4096;
+/** A text a finding or refusal carries, cut to the length every such value is cut to. */
+export const cut = (text: string): string => text.slice(0, LIMIT);
 const OUTPUT_LIMIT = 64 * 1024 * 1024;
 
 // Windows needs SystemRoot to start a process; nothing else of the caller's environment reaches the generator.
@@ -54,12 +56,12 @@ const failed = (run: SpawnSyncReturns<string>): Generated => ({
   finding: {
     code: 'generator.failed',
     severity: 'error',
-    params: { reason: reasonOf(run), exitCode: run.status, signal: run.signal, stderr: run.stderr.slice(0, LIMIT) },
+    params: { reason: reasonOf(run), exitCode: run.status, signal: run.signal, stderr: cut(run.stderr) },
   },
 });
 /** Output of the generator CedarLoom cannot read. */
 export const unknownOutput = (output: string): { finding: Finding } => ({
-  finding: { code: 'generator.output-unknown', severity: 'error', params: { output: output.slice(0, LIMIT) } },
+  finding: { code: 'generator.output-unknown', severity: 'error', params: { output: cut(output) } },
 });
 
 // The refusals of each file, in their order, from the list a run that exited with 0 or 1 printed; or why it gave none.
@@ -85,7 +87,9 @@ const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): G
   return { outputs: new Map(filesBelow(out).map((path) => [path, readFileSync(join(out, path))])) };
 };
 
-const SIGNALS = ['SIGINT', 'SIGTERM'] as const;
+// Windows sends SIGHUP when its console closes, but process.kill cannot send it there again.
+const SIGNALS: readonly NodeJS.Signals[] =
+  process.platform === 'win32' ? ['SIGINT', 'SIGTERM'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // The calls whose hold on the signals is not released yet; raise is removed when none is left.
 let holds = 0;
 
@@ -148,7 +152,7 @@ const runGenerator = (definitions: Uint8Array[], request: GeneratorRun): Generat
 
 /**
  * Runs the plugin's generator on the definitions' bytes in one run, as a project regenerates them, in a temporary
- * folder of its own that is removed afterwards, also on SIGINT or SIGTERM.
+ * folder of its own that is removed afterwards, also on SIGINT, SIGTERM or SIGHUP.
  */
 export const generate = (definitions: Uint8Array[], request: GeneratorRun): Generated =>
   holdingSignals(() => runGenerator(definitions, request));

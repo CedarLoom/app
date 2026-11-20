@@ -138,8 +138,10 @@ export const openPage = (
     io.open(redirect.path);
     // Snap-packaged browsers, a Windows browser under WSL and a Chromebook's Linux container cannot read the page.
     if (io.platform === 'linux' && !json) io.stderr(text('server.open-hint', {}));
-    // A server writes its page after its token starts, so a page older than the token's life holds a dead token.
-    sweepRedirects(io.stateDir, io.clock.now().getTime() - TOKEN_MS);
+    // A page is written after its token starts, so one older than the token's life by the wall clock holds a dead token,
+    // unless the machine slept: the token's monotonic clock can stop then.
+    for (const error of sweepRedirects(io.stateDir, io.clock.now().getTime() - TOKEN_MS, redirect))
+      io.stderr(message(error));
   } catch (error) {
     io.stderr(message(error));
   }
