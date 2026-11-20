@@ -67,8 +67,8 @@ export const stoppedBy = (refusals: Refusal[], findings: Finding[]): Generation 
   findings,
 });
 
-// A definition's text; one that is not UTF-8 JSON or is named other than its file stops the generation before the
-// generator runs.
+// A definition's text; one that is not UTF-8 JSON, or a project one named other than its file, stops the generation
+// before the generator runs.
 export const definitionOf = (place: Place, { name, path }: { name: string; path: string }): Definition | Refusal => {
   const bytes = definitionBytes(place.base, path);
   if (bytes === 'absent') return { code: 'definition.not-found', params: { name, source: place.source } };
@@ -78,7 +78,7 @@ export const definitionOf = (place: Place, { name, path }: { name: string; path:
   const json = jsonOf(text);
   // JsonValue also refuses a __proto__ member, as the definition readers do.
   if (!JsonValue.safeParse(json).success) return notJson(shown);
-  return nameMismatch(shown, json) ?? { name, path, text };
+  return (place.source === 'project' ? nameMismatch(shown, json) : undefined) ?? { name, path, text };
 };
 
 // The generator's outputs by their project path; a file that is not UTF-8 is output the app cannot read.

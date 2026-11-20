@@ -360,6 +360,14 @@ it('undo of an applied workflows new removes the definition and its generated fi
   expect(exist()).toEqual([true, true, true]);
   expect(undo(store, { root: project, run: made.run ?? '' }).refusal).toBeNull();
   expect(exist()).toEqual([false, false, false]);
+  expect(created('mine', 'full')).toMatchObject({ refusals: [], run: expect.any(String) });
+});
+
+it('workflows new copies a shipped definition whose name is not its file name', () => {
+  const { plugin, created, text } = newSetup();
+  put(join(plugin, 'definitions', 'full.json'), '{ "schemaVersion": 2, "name": "other", "skill": "Run.\\n" }');
+  expect(created('mine', 'full').refusals).toEqual([]);
+  expect(text(MINE)).toBe('{\n  "schemaVersion": 2,\n  "name": "mine",\n  "skill": "Run.\\n"\n}\n');
 });
 
 it("counts a new workflow's files as generated: generate keeps its definition and deletes its dropped script", () => {
