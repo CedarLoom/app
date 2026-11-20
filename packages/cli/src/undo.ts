@@ -44,6 +44,9 @@ const applied = (store: Parameters<typeof undo>[0], root: string, target: string
 
 /** cedarloom undo <run>: plans the undo of a run, and applies it with --yes. */
 export const undoRun = (io: Io, run: string, yes: boolean): Outcome => {
-  if (!RunId.safeParse(run).success) return refused({ code: 'run.not-found', params: { run } });
-  return withStore(io, (store, root) => (yes ? applied(store, root, run) : shown(store, root, run)));
+  return withStore(io, (store, root) => {
+    // After the project, as for runs show.
+    if (!RunId.safeParse(run).success) return refused({ code: 'run.not-found', params: { run } });
+    return yes ? applied(store, root, run) : shown(store, root, run);
+  });
 };

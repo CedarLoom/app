@@ -114,7 +114,10 @@ const commandOf = (
     return help ? { topic: null } : usage('cli.missing-argument', { argument: '<command>', command: BIN });
   }
   if (!isNoun(first)) {
-    return isCommand(first) ? { name: first, used: 1 } : usage('cli.unknown-command', { command: first, bin: BIN });
+    // A quoted "runs list" is one word, not the noun and verb.
+    return isCommand(first) && !first.includes(' ')
+      ? { name: first, used: 1 }
+      : usage('cli.unknown-command', { command: first, bin: BIN });
   }
   if (second === undefined) {
     return help ? { topic: first } : usage('cli.missing-argument', { argument: '<verb>', command: `${BIN} ${first}` });
@@ -155,33 +158,48 @@ const flagRefusal = ({ flags, help, json }: Line, name: CommandName | Noun | nul
   return help && json ? { code: 'cli.flag-conflict', params: { flags: '--help, --json' } } : undefined;
 };
 
-const argumentsOf = (name: CommandName, rest: string[]): { args: string[] } | { refusal: Refusal } => {
+// A surplus word is refused also with --help; a missing argument only without it, since the usage then names it.
+const argumentsOf = (name: CommandName, rest: string[], help: boolean): { args: string[] } | { refusal: Refusal } => {
   const { args, optional = 0, variadic } = commandNamed(name);
   if (variadic) return { args: rest };
-  const missing = args[rest.length];
-  if (missing !== undefined && rest.length < args.length - optional)
-    return usage('cli.missing-argument', { argument: missing, command: `${BIN} ${name}` });
+  const command = `${BIN} ${name}`;
   const surplus = rest[args.length];
-  if (surplus !== undefined) return usage('cli.unknown-command', { command: surplus, bin: BIN });
+  if (surplus !== undefined) return usage('cli.surplus-argument', { argument: surplus, command });
+  // An empty <run> names no run.
+  const given = (argument: string, index: number): boolean =>
+    rest[index] !== undefined && !(argument === '<run>' && rest[index] === '');
+  const missing = args.find((argument, index) => index < args.length - optional && !given(argument, index));
+  if (!help && missing !== undefined) return usage('cli.missing-argument', { argument: missing, command });
   return { args: rest };
 };
 
 const isVersion = (argv: readonly string[]): boolean =>
   argv.length === 1 && (argv[0] === '--version' || argv[0] === '-V');
 
+// --version or -V beside another flag and no word; with a word, the command's own flags decide.
+const versionConflict = ({ words, flags }: Line): Refusal | undefined => {
+  const version = flags.find(({ name }) => name === 'version');
+  const other = flags.find((flag) => flag !== version);
+  if (words.length > 0 || version === undefined || other === undefined) return undefined;
+  return { code: 'cli.flag-conflict', params: { flags: `${version.rawName}, ${other.rawName}` } };
+};
+
 /** Reads a command line of cedarloom or cloom, without the node and bin words. */
 export const parse = (argv: readonly string[]): Parsed => {
   if (isVersion(argv)) return { ok: true, value: { kind: 'version' } };
   const line = lineOf(argv);
   const refused = (refusal: Refusal): Parsed => ({ ok: false, refusal, json: line.json });
+  const conflict = versionConflict(line);
+  if (conflict !== undefined) return refused(conflict);
   const command = commandOf(line.words, line.help);
   if ('refusal' in command) return refused(command.refusal);
   const named = 'name' in command ? command.name : command.topic;
   const stop = flagRefusal(line, named);
   if (stop !== undefined) return refused(stop);
-  if (line.help || !('name' in command)) return { ok: true, value: { kind: 'help', topic: named } };
-  const taken = argumentsOf(command.name, line.words.slice(command.used));
+  if (!('name' in command)) return { ok: true, value: { kind: 'help', topic: named } };
+  const taken = argumentsOf(command.name, line.words.slice(command.used), line.help);
   if ('refusal' in taken) return refused(taken.refusal);
+  if (line.help) return { ok: true, value: { kind: 'help', topic: command.name } };
   const has = (flag: string): boolean => line.flags.some(({ name }) => name === flag);
   const valueOf = (flag: string): string | null => line.flags.findLast(({ name }) => name === flag)?.value ?? null;
   return {

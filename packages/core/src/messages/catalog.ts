@@ -19,6 +19,7 @@ export const MESSAGE_IDS = [
   'cli.flag-conflict',
   'cli.internal',
   'cli.missing-argument',
+  'cli.surplus-argument',
   'cli.unknown-command',
   'cli.unknown-flag',
   'cli.value-not-json',
@@ -96,6 +97,7 @@ export interface MessagePlaceholders {
   'cli.flag-conflict': 'flags';
   'cli.internal': never;
   'cli.missing-argument': 'argument' | 'command';
+  'cli.surplus-argument': 'argument' | 'command';
   'cli.unknown-command': 'bin' | 'command';
   'cli.unknown-flag': 'command' | 'flag';
   'cli.value-not-json': 'argument';

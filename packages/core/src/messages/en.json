@@ -36,6 +36,14 @@
     "cli.flag-conflict": ["These options cannot be used together: ", ["flags"], "."],
     "cli.internal": ["CedarLoom stopped on an unexpected error. Please report it with the output above."],
     "cli.missing-argument": [["command"], " needs ", ["argument"], "."],
+    "cli.surplus-argument": [
+      ["command"],
+      " does not take the argument ",
+      ["argument"],
+      ". Run ",
+      ["command"],
+      " --help for usage."
+    ],
     "cli.unknown-command": ["Unknown command: ", ["command"], ". Run ", ["bin"], " --help for usage."],
     "cli.unknown-flag": [["command"], " has no option ", ["flag"], "."],
     "cli.value-not-json": [["argument"], " must be JSON; write a text value in quotes, for example '\"opus\"'."],
@@ -114,7 +122,7 @@
     "plan.name-too-long": [
       "The path of ",
       ["path"],
-      " leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use shorter names, or a project folder with a shorter path."
+      " leaves no room for the temporary names CedarLoom writes beside it. The plan was not applied. Use shorter names, or a project folder with a shorter path."
     ],
     "plan.not-text": [
       ["path"],
@@ -140,7 +148,7 @@
     "plan.text-mismatch": [
       "The new text of ",
       ["path"],
-      " does not match the plan's hash. Nothing was changed. Make the plan again."
+      " does not match the plan's hash. The plan was not applied. Make the plan again."
     ],
     "plugin.disabled": [
       [
@@ -257,7 +265,7 @@
       ["path"],
       " is in use by another CedarLoom process, for example a running cedarloom-app. Stop it, or make the change from the UI."
     ],
-    "store.unreadable": ["The CedarLoom state store ", ["path"], " cannot be read or written. Nothing was changed."],
+    "store.unreadable": ["The CedarLoom state store ", ["path"], " cannot be read or written."],
     "store.version-unsupported": [
       "The CedarLoom state store has version ",
       ["found"],

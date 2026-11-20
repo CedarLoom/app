@@ -45,9 +45,9 @@ const runText = (run: Run): string => {
 /** cedarloom runs show <run>: a run with its steps. */
 export const runsShow = (io: Io, id: string): Outcome => {
   const notFound = refused({ code: 'run.not-found', params: { run: id } });
-  // An id outside the run id form names no run, and never reaches the store.
-  if (!RunId.safeParse(id).success) return notFound;
   return read(io, (view) => {
+    // An id outside the run id form names no run, and is never looked up; the project is checked first.
+    if (!RunId.safeParse(id).success) return notFound;
     const run = view.run(id);
     if (!run.ok) return refused(run.refusal);
     if (run.value === undefined) return notFound;

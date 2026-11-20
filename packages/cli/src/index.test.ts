@@ -94,7 +94,11 @@ it.each([
   [['runs', 'show'], 'cli.missing-argument', { argument: '<run>', command: 'cedarloom runs show' }],
   [['nope'], 'cli.unknown-command', { command: 'nope', bin: 'cedarloom' }],
   [['runs', 'drop'], 'cli.unknown-command', { command: 'runs drop', bin: 'cedarloom' }],
-  [['doctor', 'extra'], 'cli.unknown-command', { command: 'extra', bin: 'cedarloom' }],
+  [['runs list'], 'cli.unknown-command', { command: 'runs list', bin: 'cedarloom' }],
+  [['runs', 'show', ''], 'cli.missing-argument', { argument: '<run>', command: 'cedarloom runs show' }],
+  [['--version'], 'cli.flag-conflict', { flags: '--version, --json' }],
+  [['-V', '--help'], 'cli.flag-conflict', { flags: '-V, --help' }],
+  [['doctor', 'extra'], 'cli.surplus-argument', { argument: 'extra', command: 'cedarloom doctor' }],
   [['doctor', '--yes'], 'cli.unknown-flag', { flag: '--yes', command: 'cedarloom doctor' }],
   [['runs', 'list', '--json=no'], 'cli.bad-value', { flag: '--json', value: 'no' }],
   [['doctor', '--help'], 'cli.flag-conflict', { flags: '--help, --json' }],
@@ -134,7 +138,11 @@ it.each([
     'cli.missing-argument',
     { argument: '<to>', command: 'cedarloom workflows move' },
   ],
-  [['workflows', 'remove', 'mine', '/stages/0', 'x'], 'cli.unknown-command', { command: 'x', bin: 'cedarloom' }],
+  [
+    ['workflows', 'remove', 'mine', '/stages/0', 'x'],
+    'cli.surplus-argument',
+    { argument: 'x', command: 'cedarloom workflows remove' },
+  ],
   [
     ['workflows', 'add', 'mine', '/stages/-', '{}', '--unset'],
     'cli.unknown-flag',
@@ -146,11 +154,15 @@ it.each([
     { flag: '--from', command: 'cedarloom workflows generate' },
   ],
   [['workflows', 'off'], 'cli.missing-argument', { argument: '<id>', command: 'cedarloom workflows off' }],
-  [['workflows', 'off', 'dev', 'plain'], 'cli.unknown-command', { command: 'plain', bin: 'cedarloom' }],
+  [
+    ['workflows', 'off', 'dev', 'plain'],
+    'cli.surplus-argument',
+    { argument: 'plain', command: 'cedarloom workflows off' },
+  ],
   [['workflows', 'off', 'dev', '--plugin'], 'cli.flag-conflict', { flags: '<id>, --plugin' }],
   [['workflows', 'off', '--plugin', '--script-only'], 'cli.flag-conflict', { flags: '--script-only, --plugin' }],
   [['workflows', 'off', '--plugin', '--plugin-root', 'x'], 'cli.flag-conflict', { flags: '--plugin-root, --plugin' }],
-  [['workflows', 'on', 'dev', 'plain'], 'cli.unknown-command', { command: 'plain', bin: 'cedarloom' }],
+  [['workflows', 'on', 'dev', 'plain'], 'cli.surplus-argument', { argument: 'plain', command: 'cedarloom workflows on' }],
   [
     ['workflows', 'on', 'dev', '--script-only'],
     'cli.unknown-flag',
@@ -185,6 +197,18 @@ it('refuses outside a Git working tree with project.not-found, exit 3', () => {
     refusals: [{ code: 'project.not-found', params: { cwd } }],
   });
   expect(ran(['runs', 'list'], cwd).code).toBe(3);
+});
+
+it.each([['runs', 'show'], ['undo']])('checks the project before the run id with %s', (...words) => {
+  const cwd = fresh();
+  expect(ran([...words, '../r1', '--json'], cwd).document.refusals).toEqual([
+    { code: 'project.not-found', params: { cwd } },
+  ]);
+});
+
+it('refuses a surplus word also with --help, exit 2', () => {
+  const { root } = project();
+  expect(ran(['doctor', 'extra', '--help'], root).code).toBe(2);
 });
 
 it('refuses a run id outside the run id form with run.not-found, exit 3, escaped on standard error', () => {

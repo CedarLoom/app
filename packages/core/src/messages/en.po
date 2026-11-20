@@ -13,7 +13,7 @@ msgstr "The CedarLoom state store {path} is in use by another CedarLoom process,
 
 #. js-lingui-explicit-id
 msgid "store.unreadable"
-msgstr "The CedarLoom state store {path} cannot be read or written. Nothing was changed."
+msgstr "The CedarLoom state store {path} cannot be read or written."
 
 #. js-lingui-explicit-id
 msgid "plan.file-changed"
@@ -37,11 +37,11 @@ msgstr "{path} is not a UTF-8 text file, or CedarLoom may not read it. CedarLoom
 
 #. js-lingui-explicit-id
 msgid "plan.text-mismatch"
-msgstr "The new text of {path} does not match the plan's hash. Nothing was changed. Make the plan again."
+msgstr "The new text of {path} does not match the plan's hash. The plan was not applied. Make the plan again."
 
 #. js-lingui-explicit-id
 msgid "plan.name-too-long"
-msgstr "The path of {path} leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use shorter names, or a project folder with a shorter path."
+msgstr "The path of {path} leaves no room for the temporary names CedarLoom writes beside it. The plan was not applied. Use shorter names, or a project folder with a shorter path."
 
 #. js-lingui-explicit-id
 msgid "plan.path-nested"
@@ -266,6 +266,10 @@ msgstr "Something went wrong in CedarLoom. The details are in the terminal where
 #. js-lingui-explicit-id
 msgid "cli.unknown-command"
 msgstr "Unknown command: {command}. Run {bin} --help for usage."
+
+#. js-lingui-explicit-id
+msgid "cli.surplus-argument"
+msgstr "{command} does not take the argument {argument}. Run {command} --help for usage."
 
 #. js-lingui-explicit-id
 msgid "cli.unknown-flag"
