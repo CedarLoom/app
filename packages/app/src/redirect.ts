@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** A page only its user can read that refreshes to the session URL, so the opener's arguments name a file, not the token. */
@@ -9,6 +9,10 @@ export interface Redirect {
 }
 
 // The URL holds only a port and a base64url token, none of which the attribute needs escaped.
+const PAGE = 'cedarloom-app.html';
+// mkdtemp's six random letters and digits after the prefix.
+const FOLDER = /^open-[A-Za-z0-9]{6}$/;
+
 const page = (url: string): string =>
   `<!DOCTYPE html>
 <html>
@@ -27,7 +31,7 @@ const page = (url: string): string =>
 export const writeRedirect = (parent: string, url: string): Redirect => {
   mkdirSync(parent, { recursive: true, mode: 0o700 });
   const folder = mkdtempSync(join(parent, 'open-'));
-  const path = join(folder, 'cedarloom-app.html');
+  const path = join(folder, PAGE);
   const remove = (): void => rmSync(folder, { recursive: true, force: true });
   try {
     writeFileSync(path, page(url), { flag: 'wx', mode: 0o600 });
@@ -36,4 +40,36 @@ export const writeRedirect = (parent: string, url: string): Redirect => {
     throw error;
   }
   return { path, remove };
+};
+
+const missing = (error: unknown): boolean => error instanceof Error && 'code' in error && error.code === 'ENOENT';
+
+// A real folder, no link, holding nothing but the page as a real file, if anything.
+const redirectFolder = (folder: string, before: number): boolean => {
+  const stat = lstatSync(folder);
+  if (!stat.isDirectory() || stat.mtimeMs >= before) return false;
+  return readdirSync(folder).every((name) => name === PAGE && lstatSync(join(folder, name)).isFile());
+};
+
+/** Removes the redirect folders in `parent` last changed before `before` (ms since the epoch); others stay. */
+export const sweepRedirects = (parent: string, before: number): void => {
+  let names: string[];
+  try {
+    names = readdirSync(parent);
+  } catch (error) {
+    if (missing(error)) return;
+    throw error;
+  }
+  for (const name of names.filter((entry) => FOLDER.test(entry))) {
+    const folder = join(parent, name);
+    try {
+      if (!redirectFolder(folder, before)) continue;
+      // No recursive removal: rmdir fails on a folder that got another entry or became a link since the check.
+      rmSync(join(folder, PAGE), { force: true });
+      rmdirSync(folder);
+    } catch (error) {
+      // Another start swept it first.
+      if (!missing(error)) throw error;
+    }
+  }
 };

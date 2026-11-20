@@ -1,6 +1,7 @@
 {
   "messages": {
-    "api.bad-request": ["The request is not valid. Fields with issues: ", ["issues"]],
+    "api.bad-fields": ["The request is not valid. Fields with issues: ", ["issues"]],
+    "api.bad-request": ["The request is not valid."],
     "api.internal": ["Something went wrong in CedarLoom. The details are in the terminal where cedarloom-app runs."],
     "api.not-found": ["Not found."],
     "apply.backup-failed": [
@@ -157,6 +158,13 @@
     ],
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],
+    "server.listen-failed": [
+      "The server cannot listen on ",
+      ["port", "plural", { "0": ["a free port"], "other": ["port ", "#"] }],
+      " of 127.0.0.1: the system answered ",
+      ["error"],
+      "."
+    ],
     "server.open-hint": [
       "If the browser shows an error about a file instead of CedarLoom, open the URL printed above."
     ],

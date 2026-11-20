@@ -4,3 +4,7 @@ locale = "en-us"
 
 [files]
 extend-exclude = ["pnpm-lock.yaml", "package-lock.json", "LICENSES/", "LICENSE"]
+
+# The prefix of Node's HTTP parser error codes.
+[default.extend-words]
+HPE = "HPE"

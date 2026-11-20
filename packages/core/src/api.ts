@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Finding, Refusal } from './finding.ts';
 import { Hash, PlanPreview } from './plan.ts';
-import { RunSummary } from './run.ts';
+import { RunId, RunSummary } from './run.ts';
 
 /** The checks of this installation; the findings carry the details of each failed check. */
 export const DoctorReport = z.strictObject({
@@ -38,3 +38,6 @@ export const UndoPreview = z.strictObject({
 /** The hash of the undo plan the client showed: only that plan applies. */
 export const UndoApply = z.strictObject({ planHash: Hash });
 export const UndoApplied = z.strictObject({ run: RunSummary });
+/** A refused or failed apply; run: the run it recorded, whose earlier steps may have written. */
+export const ApplyRefusal = Refusal.extend({ run: RunId.optional() });
+export type ApplyRefusal = z.infer<typeof ApplyRefusal>;
