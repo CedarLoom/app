@@ -88,21 +88,39 @@ const SOCKET_STATUS: Readonly<Record<string, number>> = {
   HPE_CHUNK_EXTENSIONS_OVERFLOW: 413,
 };
 
-// The last response on each socket: Node keeps it only in a private field.
-const responses = new WeakMap<Socket, ServerResponse>();
+// Per socket: the latest response, and those not finished yet in request order (Node writes them one after another).
+const latest = new WeakMap<Socket, ServerResponse>();
+const unfinished = new WeakMap<Socket, Set<ServerResponse>>();
+// Sockets whose answer is written or waits: Node raises the parse error again on every later chunk.
+const answering = new WeakSet<Socket>();
+
+const track = (socket: Socket, response: ServerResponse): void => {
+  latest.set(socket, response);
+  const open = unfinished.get(socket) ?? new Set();
+  unfinished.set(socket, open.add(response));
+  const done = (): void => void open.delete(response);
+  response.once('finish', done).once('close', done);
+};
 
 // Node's answers at the socket, before any route (a request timeout, a malformed request), with Node's statuses.
 const clientErrorHandler = (error: Error & { code?: string }, socket: Socket): void => {
-  if (error.code === 'ECONNRESET' || socket.destroyed) return;
-  const response = responses.get(socket);
-  // As Node's own handler: an answer after a response's headers would land inside that response.
-  const inFlight = response !== undefined && response.headersSent && !response.writableFinished;
+  if (error.code === 'ECONNRESET' || socket.destroyed || answering.has(socket)) return;
+  answering.add(socket);
+  const last = latest.get(socket);
+  // An error inside a body belongs to that request; once its response's headers are out, it has its answer.
+  const own = last !== undefined && !last.req.complete ? last : undefined;
   const status = SOCKET_STATUS[error.code ?? ''] ?? 400;
   const body = JSON.stringify(refusal('api.bad-request'));
   const head = `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}`;
   const headers = 'Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close';
-  if (socket.writable && !inFlight) socket.write(`${head}\r\n${headers}\r\n\r\n${body}`);
-  socket.destroy(error);
+  const answer = (): void => {
+    if (socket.writable && own?.headersSent !== true) socket.write(`${head}\r\n${headers}\r\n\r\n${body}`);
+    socket.destroy(error);
+  };
+  // Written earlier, the answer would land inside or ahead of the responses before it.
+  const before = [...(unfinished.get(socket) ?? [])].findLast((response) => response !== own);
+  if (before === undefined) answer();
+  else before.once('finish', answer).once('close', answer);
 };
 
 const SERVER = {
@@ -118,7 +136,7 @@ const SERVER = {
 /** The local server: session security on every request, Refusal bodies for every error, the API and the UI's files. */
 export const buildServer = async ({ session, log, project, ui }: ServerOptions): Promise<FastifyInstance> => {
   const app = Fastify(SERVER);
-  app.server.on('request', (req, res) => responses.set(req.socket, res));
+  app.server.on('request', (req, res) => track(req.socket, res));
   // Zod schemas validate requests and responses and make the OpenAPI document; swagger collects the routes added after it.
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
