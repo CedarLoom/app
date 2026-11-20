@@ -108,6 +108,16 @@ it.each([
   [['workflows'], 'cli.missing-argument', { argument: '<verb>', command: 'cedarloom workflows' }],
   [['workflows', 'show'], 'cli.missing-argument', { argument: '<name>', command: 'cedarloom workflows show' }],
   [['workflows', 'list', '--shipped'], 'cli.unknown-flag', { flag: '--shipped', command: 'cedarloom workflows list' }],
+  [
+    ['workflows', 'new', 'mine', '--from'],
+    'cli.missing-argument',
+    { argument: '<shipped>', command: 'cedarloom workflows new --from' },
+  ],
+  [
+    ['workflows', 'generate', '--from=dev'],
+    'cli.unknown-flag',
+    { flag: '--from', command: 'cedarloom workflows generate' },
+  ],
 ])('refuses %j as a usage error, exit 2', (argv, code, params) => {
   const { root } = project();
   expect(ran([...argv, '--json'], root)).toEqual({
@@ -563,5 +573,20 @@ describe('workflows generate', () => {
         refusals: [],
       },
     });
+  });
+});
+
+it('plans with workflows new a copy of the shipped dev without --yes, exit 4, and applies it with --yes, exit 0', () => {
+  const { workflows } = workflowsSetup({});
+  const after =
+    '{\n  "name": "mine",\n  "description": "Shipped dev.",\n  "stages": [\n    {\n      "id": "change",\n      "phases": []\n    }\n  ]\n}\n';
+  const plan = { operations: [{ kind: 'create', path: '.cedarloom/workflows/mine.json', before: null, after }] };
+  expect(workflows('new', 'mine')).toMatchObject({
+    code: 4,
+    document: { result: { plan, applied: false }, refusals: [{ code: 'cli.confirm-required', params: {} }] },
+  });
+  expect(workflows('new', 'mine', '--from', 'dev', '--yes')).toMatchObject({
+    code: 0,
+    document: { result: { plan, applied: true, run: 'u1' }, refusals: [] },
   });
 });

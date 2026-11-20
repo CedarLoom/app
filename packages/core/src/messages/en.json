@@ -228,6 +228,7 @@
     "workflow.name-invalid": [
       ["name"],
       " is not a valid workflow name. Use lowercase letters, digits and single hyphens."
-    ]
+    ],
+    "workflow.name-taken": ["The name ", ["name"], " is already used by ", ["path"], "."]
   }
 }

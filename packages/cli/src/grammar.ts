@@ -3,14 +3,36 @@ import type { Refusal } from '@cedarloom/core';
 
 /** The commands by their words; variadic takes its argument any number of times, the others name the flags taken. */
 const COMMANDS = {
-  doctor: { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false },
-  'runs list': { argument: null, variadic: false, change: false, pluginRoot: false, shipped: false },
-  'runs show': { argument: '<run>', variadic: false, change: false, pluginRoot: false, shipped: false },
-  undo: { argument: '<run>', variadic: false, change: true, pluginRoot: false, shipped: false },
-  'workflows list': { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false },
-  'workflows show': { argument: '<name>', variadic: false, change: false, pluginRoot: true, shipped: true },
-  'workflows validate': { argument: '<name>', variadic: true, change: false, pluginRoot: true, shipped: true },
-  'workflows generate': { argument: '<name>', variadic: true, change: true, pluginRoot: true, shipped: false },
+  doctor: { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false, from: false },
+  'runs list': { argument: null, variadic: false, change: false, pluginRoot: false, shipped: false, from: false },
+  'runs show': { argument: '<run>', variadic: false, change: false, pluginRoot: false, shipped: false, from: false },
+  undo: { argument: '<run>', variadic: false, change: true, pluginRoot: false, shipped: false, from: false },
+  'workflows list': { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false, from: false },
+  'workflows show': {
+    argument: '<name>',
+    variadic: false,
+    change: false,
+    pluginRoot: true,
+    shipped: true,
+    from: false,
+  },
+  'workflows validate': {
+    argument: '<name>',
+    variadic: true,
+    change: false,
+    pluginRoot: true,
+    shipped: true,
+    from: false,
+  },
+  'workflows generate': {
+    argument: '<name>',
+    variadic: true,
+    change: true,
+    pluginRoot: true,
+    shipped: false,
+    from: false,
+  },
+  'workflows new': { argument: '<name>', variadic: false, change: true, pluginRoot: true, shipped: false, from: true },
 } as const;
 type CommandName = keyof typeof COMMANDS;
 const NOUNS = ['runs', 'workflows'] as const;
@@ -26,6 +48,7 @@ export type Request =
       shipped: boolean;
       json: boolean;
       pluginRoot: string | null;
+      from: string | null;
     }
   | { kind: 'help'; topic: CommandName | Noun | null }
   | { kind: 'version' };
@@ -61,6 +84,7 @@ const lineOf = (argv: readonly string[]): Line => {
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'V' },
       'plugin-root': { type: 'string' },
+      from: { type: 'string' },
     },
   });
   const words = tokens.flatMap((token) => (token.kind === 'positional' ? [token.value] : []));
@@ -102,15 +126,22 @@ const allowedFlags = (name: CommandName | Noun | null): Set<string> => {
   if (COMMANDS[name].change) allowed.add('yes');
   if (COMMANDS[name].pluginRoot) allowed.add('plugin-root');
   if (COMMANDS[name].shipped) allowed.add('shipped');
+  if (COMMANDS[name].from) allowed.add('from');
   return allowed;
 };
 
-// --plugin-root needs a folder, never a following flag (--plugin-root=-x names one); other flags refuse a value.
+const VALUES = new Map([
+  ['plugin-root', '<dir>'],
+  ['from', '<shipped>'],
+]);
+
+// --plugin-root and --from need a value, never a following flag (--plugin-root=-x names one); other flags refuse one.
 const valueRefusal = ({ name, rawName, value, inlineValue }: Flag, command: string): Refusal | undefined => {
-  if (name === 'plugin-root')
+  const argument = VALUES.get(name);
+  if (argument !== undefined)
     return value && (inlineValue === true || !value.startsWith('-'))
       ? undefined
-      : { code: 'cli.missing-argument', params: { argument: '<dir>', command: `${command} --plugin-root` } };
+      : { code: 'cli.missing-argument', params: { argument, command: `${command} --${name}` } };
   return value === undefined ? undefined : { code: 'cli.bad-value', params: { flag: rawName, value } };
 };
 
@@ -154,7 +185,7 @@ export const parse = (argv: readonly string[]): Parsed => {
   const taken = argumentsOf(command.name, line.words.slice(command.used));
   if ('refusal' in taken) return refused(taken.refusal);
   const has = (flag: string): boolean => line.flags.some(({ name }) => name === flag);
-  const pluginRoot = line.flags.findLast(({ name }) => name === 'plugin-root')?.value ?? null;
+  const valueOf = (flag: string): string | null => line.flags.findLast(({ name }) => name === flag)?.value ?? null;
   return {
     ok: true,
     value: {
@@ -164,7 +195,8 @@ export const parse = (argv: readonly string[]): Parsed => {
       yes: has('yes'),
       shipped: has('shipped'),
       json: line.json,
-      pluginRoot,
+      pluginRoot: valueOf('plugin-root'),
+      from: valueOf('from'),
     },
   };
 };

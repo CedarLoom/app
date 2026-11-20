@@ -14,6 +14,7 @@ export const MESSAGE_IDS = [
   'help.workflows',
   'help.workflows-generate',
   'help.workflows-list',
+  'help.workflows-new',
   'help.workflows-show',
   'help.workflows-validate',
   'output.generate-applied',
@@ -37,6 +38,7 @@ export interface MessagePlaceholders {
   'help.workflows': never;
   'help.workflows-generate': never;
   'help.workflows-list': never;
+  'help.workflows-new': never;
   'help.workflows-show': never;
   'help.workflows-validate': never;
   'output.generate-applied': 'run';
