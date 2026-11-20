@@ -105,8 +105,8 @@ const previousFiles = (store: RunStore, names: readonly string[]): Map<string, s
   );
 };
 
-// The project's file at a planned path; a path outside the write roots, through a link or that the app may not read
-// is refused.
+// The project's file at a planned path; a path outside the write roots, through a link, below a folder the app may not
+// enter or that the app may not read is refused.
 const foundAt = (root: string, path: string): Found | Refusal => {
   if (!inWriteRoots(path)) return refusal('plan.path-outside-roots', path);
   return linkRefusal(root, path) ?? reached(() => readFound(join(root, path))) ?? refusal('plan.not-text', path);
