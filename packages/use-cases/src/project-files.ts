@@ -130,15 +130,24 @@ export const writeNew = (path: string, bytes: Uint8Array, mode: number | undefin
   }
 };
 
-/** Makes the missing folders of a path, each flushed into its parent so a crash keeps them; gives how many it made. */
-export const makeFolders = (path: string, mode = 0o777): number => {
-  // Counted before, not from what mkdir returns: on Windows that can name a deeper folder than the first it made.
-  let made = 0;
-  for (let folder = path; entryAt(folder) === undefined && dirname(folder) !== folder; folder = dirname(folder))
-    made += 1;
-  mkdirSync(path, { recursive: true, mode });
-  for (let folder = path, left = made; left > 0; left -= 1, folder = dirname(folder)) flushFolder(dirname(folder));
-  return made;
+// A folder another process made meanwhile counts as made, as a recursive mkdir would take it.
+const makeFolder = (path: string, mode: number): void => {
+  try {
+    mkdirSync(path, { mode });
+  } catch (error) {
+    if (errorCode(error) !== 'EEXIST') throw error;
+  }
+};
+
+/** Makes the missing folders of a path, at most `levels`, each flushed into its parent; gives how many it made. */
+export const makeFolders = (path: string, mode = 0o777, levels = Number.POSITIVE_INFINITY): number => {
+  const missing: string[] = [];
+  for (let at = path; missing.length < levels && entryAt(at) === undefined && dirname(at) !== at; at = dirname(at))
+    missing.push(at);
+  // One at a time from the top, never recursive, so a project root that is gone is not made again; ENOENT then.
+  for (const folder of missing.toReversed()) makeFolder(folder, mode);
+  for (const folder of missing) flushFolder(dirname(folder));
+  return missing.length;
 };
 
 /** Writes a private copy beside `dest` and renames it in, so `dest` is whole or missing, never half written. */
@@ -166,14 +175,15 @@ const linkedBack = (aside: string, path: string): boolean => {
   } catch {
     return false;
   }
+  // A stop between the link and the unlink leaves the aside as the file at the path, which recovery drops.
   unlinkSync(aside);
   return true;
 };
 
 /** Puts a file, link or folder set aside back at its path; when another process put a file there meanwhile, both stay. */
 export const putBack = (aside: string, path: string): void => {
-  // Node.js has no rename that refuses a taken path: where no new name puts the aside back, as for a link on Windows or
-  // a file on a volume without hard links, a file put at the path between this check and the rename is replaced.
+  // Node.js has no rename that refuses a taken path: where no new name puts the aside back (a folder, a link on Windows,
+  // a file on a volume without hard links), a file put at the path between this check and the rename is replaced.
   if (!linkedBack(aside, path)) {
     if (entryAt(path) !== undefined) return;
     renameSync(aside, path);
@@ -224,8 +234,8 @@ export const removeEmptyFolder = (path: string): boolean => {
   return true;
 };
 
-// link() of a volume without hard links: ENOTSUP on exFAT and FAT, EPERM or EXDEV on some network shares.
-const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EPERM', 'EXDEV']);
+// link() without hard links: ENOTSUP, or EISDIR on Windows, on FAT and exFAT; EPERM or EXDEV on some network shares.
+const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EISDIR', 'EPERM', 'EXDEV']);
 
 // What a probe in a private folder made in `folder` finds; the folder goes after.
 const probed = <T>(folder: string, find: (probe: string) => T): T => {
