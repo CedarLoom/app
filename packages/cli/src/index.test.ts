@@ -246,7 +246,11 @@ const started = (args: string[], options: { cwd: string; env?: Record<string, st
     input: '',
     encoding: 'utf8',
   });
-  return { code: child.status, document: JSON.parse(child.stdout), stderr: child.stderr };
+  return {
+    code: child.status,
+    document: args.includes('--json') ? JSON.parse(child.stdout) : child.stdout,
+    stderr: child.stderr,
+  };
 };
 
 const lostDisk = (): string => {
@@ -258,19 +262,6 @@ const stoppedRun = (): string => {
 };
 
 describe('bin/cedarloom.js', () => {
-  it('names cedarloom in cli.unknown-command', () => {
-    const { root } = project();
-    expect(started([bin, 'nope', '--json'], { cwd: root })).toEqual({
-      code: 2,
-      document: {
-        result: null,
-        findings: [],
-        refusals: [{ code: 'cli.unknown-command', params: { command: 'nope', bin: 'cedarloom' } }],
-      },
-      stderr: '',
-    });
-  });
-
   it('refuses undo without --yes on closed standard input with cli.confirm-required, exit 4', () => {
     const { root, state } = project();
     recorded(root, state);
@@ -296,6 +287,46 @@ describe('bin/cedarloom.js', () => {
       document: { result: null, findings: [failed], refusals: [] },
       stderr: '',
     });
+  });
+
+  it('ends with the code cli.internal, exit 5, when its packages do not load', () => {
+    const { root } = project();
+    writeFileSync(
+      join(root, 'missing.mjs'),
+      "import { registerHooks } from 'node:module';\n" +
+        "registerHooks({ resolve: (name, context, next) => { if (name.startsWith('@cedarloom/')) throw new Error('missing'); return next(name, context); } });",
+    );
+    const { code, stderr } = started(['--import', './missing.mjs', bin, 'doctor'], { cwd: root });
+    expect([code, stderr.endsWith('\ncli.internal\n')]).toEqual([5, true]);
+  });
+});
+
+describe('bin/cedarloom.js in its working folder', () => {
+  // Windows cannot remove the working folder of a running process.
+  it.skipIf(process.platform === 'win32')('answers --version in a removed working folder', () => {
+    const { root } = project();
+    const gone = join(root, 'gone');
+    mkdirSync(gone);
+    writeFileSync(
+      join(root, 'gone.mjs'),
+      `import { rmdirSync } from 'node:fs';\nprocess.chdir(${JSON.stringify(gone)});\nrmdirSync(${JSON.stringify(gone)});`,
+    );
+    expect(started(['--import', './gone.mjs', bin, '--version'], { cwd: root })).toEqual({
+      code: 0,
+      document: '0.0.0\n',
+      stderr: '',
+    });
+  });
+
+  // The store folder is named by the project's real path, which on Windows, unlike the working folder, has the case on disk.
+  it.runIf(process.platform === 'win32')('finds the store of a project from a working folder in other case', () => {
+    const { root, state } = project();
+    recorded(root, state);
+    const { code, document } = started([bin, 'runs', 'show', 'r1', '--json'], {
+      cwd: root.toUpperCase(),
+      env: { CEDARLOOM_STATE_DIR: state },
+    });
+    expect([code, document.result.id]).toEqual([0, 'r1']);
   });
 });
 

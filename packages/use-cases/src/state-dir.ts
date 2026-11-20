@@ -27,9 +27,13 @@ export interface StoreDirInputs extends StateDirInputs {
   realpath: (path: string) => string;
 }
 
-/** A project's store folder: in the state folder, named by the first 16 hex digits of the SHA-256 of the project root's real path, so one project's lock never blocks another. */
+/**
+ * A project's store folder: in the state folder, a relative CEDARLOOM_STATE_DIR from the project root, so each
+ * subfolder finds the same store; named by the first 16 hex digits of the SHA-256 of the project root's real path, so
+ * one project's lock never blocks another.
+ */
 export const storeDir = (inputs: StoreDirInputs): string => {
   const path = inputs.platform === 'win32' ? win32 : posix;
   const root = inputs.realpath(path.resolve(inputs.cwd, inputs.projectRoot));
-  return path.join(stateDir(inputs), createHash('sha256').update(root).digest('hex').slice(0, 16));
+  return path.join(stateDir({ ...inputs, cwd: root }), createHash('sha256').update(root).digest('hex').slice(0, 16));
 };

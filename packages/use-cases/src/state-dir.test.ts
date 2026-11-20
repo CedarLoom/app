@@ -38,6 +38,13 @@ describe('stateDir', () => {
     );
   });
 
+  it('takes a relative CEDARLOOM_STATE_DIR from the project root for the store folder, not from the working folder', () => {
+    const env = { CEDARLOOM_STATE_DIR: 'state' };
+    expect(storeDir({ env, ...posixHome, cwd: '/work/link/docs', projectRoot: '/work/link', realpath })).toBe(
+      '/work/repo/state/ddc5e473a09bd156',
+    );
+  });
+
   it('reads Windows paths on Windows', () => {
     const env = { XDG_STATE_HOME: 'D:\\xdg' };
     expect(stateDir({ env, platform: 'win32', home: 'C:\\Users\\me', cwd: 'C:\\' })).toBe('D:\\xdg\\cedarloom');

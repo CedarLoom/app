@@ -3,7 +3,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { DoctorReport, Finding } from '@cedarloom/core';
 import { z } from 'zod';
 import { jsonFile } from './json-file.ts';
-import { isContained, reached, realOf, statOf, tooOldFinding } from './plugin-folder.ts';
+import { isContained, realOf, statOf, tooOldFinding } from './plugin-folder.ts';
 import { MARKETPLACE, originFinding } from './plugin-origin.ts';
 import { projectRoot } from './project-root.ts';
 
@@ -51,8 +51,8 @@ const untrusted = (id: string): Located => failed({ code: 'plugin.untrusted', se
 // Claude Code applies a project's record when it names a folder of the same Git working tree; outside one, none applies, nor one whose folder the app cannot reach.
 const isForProject = (projectPath: string, project: string | undefined): boolean => {
   const real = realOf(projectPath);
-  const root = real === undefined ? undefined : reached(() => projectRoot(real));
-  return project !== undefined && root !== undefined && realOf(root) === realOf(project);
+  const root = real === undefined ? undefined : projectRoot(real);
+  return project !== undefined && typeof root === 'string' && realOf(root) === realOf(project);
 };
 
 const isMadeIn = (record: InstallRecord, folder: string | undefined): boolean =>

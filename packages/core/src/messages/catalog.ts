@@ -50,6 +50,7 @@ export const MESSAGE_IDS = [
   'plugin.too-old',
   'plugin.trust-bypassed',
   'plugin.untrusted',
+  'project.git-unreadable',
   'project.not-found',
   'recovery.skipped',
   'run.already-undone',
@@ -122,6 +123,7 @@ export interface MessagePlaceholders {
   'plugin.too-old': 'root' | 'version';
   'plugin.trust-bypassed': 'root';
   'plugin.untrusted': 'id';
+  'project.git-unreadable': 'path';
   'project.not-found': 'cwd';
   'recovery.skipped': 'path' | 'run';
   'run.already-undone': 'by' | 'run';

@@ -109,7 +109,11 @@ msgstr "Node.js {found} is running; CedarLoom needs Node.js {required}."
 
 #. js-lingui-explicit-id
 msgid "project.not-found"
-msgstr "{cwd} is not inside a Git repository. Run CedarLoom from your project folder."
+msgstr "{cwd} is not inside the working tree of a Git repository. Run CedarLoom from your project folder."
+
+#. js-lingui-explicit-id
+msgid "project.git-unreadable"
+msgstr "{path} is neither a folder nor a file that starts with \"gitdir: \", or it cannot be read, so CedarLoom cannot tell which project this folder is in. Nothing was changed."
 
 #. js-lingui-explicit-id
 msgid "plugin.found"

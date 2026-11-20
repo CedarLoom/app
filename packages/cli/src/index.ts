@@ -96,7 +96,10 @@ export const run = (manifest: { version: string; engines: { node: string } }): v
   process.exitCode = main({
     argv: process.argv.slice(2),
     env: process.env,
-    cwd: process.cwd(),
+    // Read only by a command that needs it, so --version and --help answer in a removed working folder too.
+    get cwd() {
+      return process.cwd();
+    },
     home: homedir(),
     platform: process.platform,
     realpath: realpathSync.native,

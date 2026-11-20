@@ -194,7 +194,7 @@ export const start = async (io: AppIo): Promise<Started> => {
   const options = request(io, json, stop);
   if (!('port' in options)) return options;
   const root = projectRoot(io.cwd);
-  if (root === undefined) return stop({ code: 'project.not-found', params: { cwd: io.cwd } }, 3);
+  if (typeof root !== 'string') return stop(root, 3);
   let redirect: Redirect | undefined;
   // A page left behind holds a token that is spent or ends with the server, so a failed removal is only reported.
   const removePage = (): void => {
