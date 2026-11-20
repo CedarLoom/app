@@ -193,7 +193,8 @@ export const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoP
 const removeMadeFolders = (root: string, run: Run): void => {
   for (const { path, madeFolders } of run.operations.toReversed()) {
     let folder = dirname(path);
-    for (let left = madeFolders; left > 0; left -= 1, folder = dirname(folder)) {
+    // No more than the folders of the path, so a wrong count never reaches the project root.
+    for (let left = Math.min(madeFolders, path.split('/').length - 1); left > 0; left -= 1, folder = dirname(folder)) {
       const absolute = join(root, folder);
       const plain = linkOnWay(root, folder) === undefined && entryAt(absolute)?.isDirectory() === true;
       if (!plain || !removeEmptyFolder(absolute)) break;

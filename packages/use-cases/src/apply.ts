@@ -218,6 +218,8 @@ const change = ({ run, root, at }: Step, position: number, op: PlanOperation, mo
     if (op.after !== null) {
       linkNew(temp, path, op.beforeHash === null ? null : aside);
       at('linked', position);
+      // Before the old file, as on the race path.
+      dropAside(temp);
     }
     if (op.beforeHash !== null) dropAside(aside);
   } finally {

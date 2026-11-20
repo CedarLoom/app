@@ -40,14 +40,16 @@ const settleStep = ({ store, root, run }: Unsettled, position: number, op: Opera
   const temp = tempPath(path, run, position);
   const aside = asidePath(path, run, position);
   const tempLeft = entryAt(temp) !== undefined;
+  // A finished step killed before its journal entry reads as never started only once another file took its path.
   const started = tempLeft || entryAt(aside) !== undefined || resultAt(path) === op.afterHash;
   // rmSync throws for a name that cannot exist, also with force.
   if (tempLeft) rmSync(temp, { force: true });
   rmSync(`${store.backupPath(run, position)}.tmp`, { force: true });
   const dropped = settleAside(path, aside, op);
   if (!started) return undefined;
-  // The old file goes only after the temporary file, so a step that neither dropped it nor left its result changed nothing.
-  return dropped || resultAt(path) === op.afterHash ? 'settled' : 'untouched';
+  // The old file goes after the temporary file; a create may have linked its file before an edit, so any file counts.
+  const now = resultAt(path);
+  return dropped || now === op.afterHash || (op.beforeHash === null && now !== null) ? 'settled' : 'untouched';
 };
 
 // The codes of a filesystem that refuses a change for now: no permission, a read-only volume, a file another process holds.

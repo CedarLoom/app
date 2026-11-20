@@ -30,6 +30,8 @@ const refuseLinks = vi.hoisted(() => ({ on: false, code: 'EPERM' }));
 const racing = vi.hoisted(() => ({ path: '' }));
 // Every path reads as absent while `driveGone.on`, as on a drive that was unplugged; `calls` ends a walk without end.
 const driveGone = vi.hoisted(() => ({ on: false, calls: 0 }));
+// Sees each path right before unlinkSync removes it.
+const unlinking = vi.hoisted(() => ({ check: (_path: string): void => undefined }));
 vi.mock('node:fs', async (load) => {
   const fs = await load<typeof import('node:fs')>();
   const raceAt = (to: unknown): void => {
@@ -57,12 +59,17 @@ vi.mock('node:fs', async (load) => {
     raceAt(path);
     fs.symlinkSync(target, path, type);
   };
-  return { ...fs, linkSync, lstatSync, renameSync: renamed, symlinkSync: linked };
+  const unlinkSync: typeof fs.unlinkSync = (path) => {
+    unlinking.check(String(path));
+    fs.unlinkSync(path);
+  };
+  return { ...fs, linkSync, lstatSync, renameSync: renamed, symlinkSync: linked, unlinkSync };
 });
 
 const folders: string[] = [];
 const opened: { close(): void }[] = [];
 afterEach(() => {
+  unlinking.check = () => undefined;
   for (const item of opened.splice(0)) item.close();
   for (const dir of folders.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -450,6 +457,26 @@ describe('apply stops a run', () => {
   });
 });
 
+// Recovery reads a temporary file left without an aside as a step that kept the old file.
+describe('apply drops the temporary file before the old one', () => {
+  it.each([
+    ['linked its file', false],
+    ['met a file another process wrote after the old one was set aside', true],
+  ])('when the step %s', (_case, race) => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const temp = join(root, '.claude/.b.md.cedarloom-r1-0');
+    const tempLeft: boolean[] = [];
+    unlinking.check = (path) => {
+      if (path === `${temp}.old`) tempLeft.push(existsSync(temp));
+    };
+    const at = (boundary: Boundary): void => {
+      if (race && boundary === 'set-aside') writeFileSync(join(root, '.claude/b.md'), 'theirs\n');
+    };
+    apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), at);
+    expect(tempLeft).toEqual([false]);
+  });
+});
+
 describe('apply after a step throws', () => {
   it('puts the old file back where the filesystem refuses hard links, and the next apply runs', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
@@ -762,6 +789,33 @@ describe('recovery of an aside', () => {
     expect(apply(held, request(root, [])).findings).toEqual([recovered('.claude/b.md')]);
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
     expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['untouched'] });
+  });
+});
+
+describe('recovery of a step that changed its path, then edited', () => {
+  it('settles a create killed after linked, so undo refuses the edited file', async () => {
+    const { root, state } = project();
+    await crash(state, request(root, [create('.claude/a.md', 'a\n')]), 'linked', 0);
+    writeFileSync(join(root, '.claude/a.md'), 'mine\n');
+    expect(undo(store(state, 'u1'), { root, run: 'r1' })).toMatchObject({
+      refusal: { code: 'undo.file-changed', params: { path: '.claude/a.md' } },
+      findings: [recovered('.claude/a.md')],
+    });
+    expect([run(state, 'r1'), text(join(root, '.claude/a.md'))]).toEqual([
+      { status: 'interrupted', steps: ['settled'] },
+      'mine\n',
+    ]);
+  }, 20_000);
+
+  // A replace that dropped its temporary file and stopped before it dropped the old one.
+  it('settles a replace whose aside holds the old text, without a temporary file', () => {
+    const { root, state } = project({ '.claude/b.md': 'theirs\n' });
+    const held = store(state);
+    begin(held, root, '.claude/b.md', hash('old\n'));
+    writeFileSync(join(root, '.claude/.b.md.cedarloom-r1-0.old'), 'old\n');
+    expect(apply(held, request(root, [])).findings).toEqual([recovered('.claude/b.md')]);
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
+    expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled'] });
   });
 });
 
@@ -1187,6 +1241,25 @@ describe('undo of a create', () => {
     expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
     expect(listing(root)).toEqual(left);
     if (added !== null) expect(text(join(root, added))).toBe('mine\n');
+  });
+
+  it('removes a folder a later step made inside one an earlier step made', () => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/skills/x.md', 'x\n'), create('.claude/skills/a/y.md', 'y\n')]));
+    expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
+    expect(listing(root)).toEqual([]);
+  });
+
+  it('removes no more folders than its path has, whatever the journal counts', () => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/x.md', 'x\n')]));
+    const db = new DatabaseSync(join(state, 'runs.sqlite'));
+    db.exec('UPDATE operations SET madeFolders = 1000000');
+    db.close();
+    expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
+    expect(readdirSync(root)).toEqual([]);
   });
 
   it('leaves a folder behind a link that took the place of a folder it made', () => {
