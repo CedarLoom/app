@@ -14,6 +14,7 @@ import {
   readlinkSync,
   readSync,
   renameSync,
+  rmdirSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -129,12 +130,17 @@ export const writeNew = (path: string, bytes: Uint8Array, mode: number | undefin
   }
 };
 
-/** Makes the missing folders of a path and flushes each new one into its parent, so a crash keeps what goes in them. */
-export const makeFolders = (path: string, mode = 0o777): void => {
+/** Makes the missing folders of a path, each flushed into its parent so a crash keeps them; gives how many it made. */
+export const makeFolders = (path: string, mode = 0o777): number => {
   const first = mkdirSync(path, { recursive: true, mode });
-  if (first === undefined) return;
+  let made = 0;
+  if (first === undefined) return made;
   // Bounded by length, not by equality: Windows may spell the returned folder differently.
-  for (let folder = path; folder.length >= first.length; folder = dirname(folder)) flushFolder(dirname(folder));
+  for (let folder = path; folder.length >= first.length; folder = dirname(folder)) {
+    flushFolder(dirname(folder));
+    made += 1;
+  }
+  return made;
 };
 
 /** Writes a private copy beside `dest` and renames it in, so `dest` is whole or missing, never half written. */
@@ -200,9 +206,24 @@ export const linkIn = (temp: string, path: string): void => {
   flushFolder(dirname(path));
 };
 
+/** Removes a file and flushes its folder, so a crash after it never finds the file again. */
 export const dropAside = (aside: string): void => {
   unlinkSync(aside);
   flushFolder(dirname(aside));
+};
+
+// rmdir of a folder that holds something, or that is gone meanwhile, and of one the filesystem keeps for now.
+const KEPT_FOLDER = new Set<unknown>(['ENOTEMPTY', 'EEXIST', 'ENOENT', 'EACCES', 'EPERM', 'EROFS', 'EBUSY']);
+
+/** Removes a folder that holds nothing; false when it holds something or the filesystem keeps it. */
+export const removeEmptyFolder = (path: string): boolean => {
+  try {
+    rmdirSync(path);
+  } catch (error) {
+    if (KEPT_FOLDER.has(errorCode(error))) return false;
+    throw error;
+  }
+  return true;
 };
 
 // link() of a volume without hard links: ENOTSUP on exFAT and FAT, EPERM or EXDEV on some network shares.

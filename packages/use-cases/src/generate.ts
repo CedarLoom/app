@@ -94,7 +94,7 @@ const previousFiles = (store: RunStore, names: readonly string[]): Map<string, s
   const hashes = new Map<string, string | null>();
   for (const generation of store.generations().filter((each) => inEffect(store, each))) {
     for (const { path, afterHash, status } of generation.operations) {
-      // A pending or failed step never changed its file.
+      // Only a done or settled step left the file it wrote.
       if (!hashes.has(path) && (status === 'done' || status === 'settled')) hashes.set(path, afterHash);
     }
   }

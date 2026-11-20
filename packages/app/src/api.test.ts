@@ -90,9 +90,8 @@ describe('reads', () => {
 
   it('answers GET /api/runs/{id} with the run and its steps', async () => {
     const { app } = await served();
-    const steps = [
-      { kind: 'create', path: '.claude/notes.md', beforeHash: null, afterHash: NOTES, status: 'done', entries: null },
-    ];
+    const journal = { status: 'done', entries: null, mode: null, madeFolders: 0 };
+    const steps = [{ kind: 'create', path: '.claude/notes.md', beforeHash: null, afterHash: NOTES, ...journal }];
     expect(answer(await get(app, '/api/runs/r1'))).toEqual([
       200,
       { ...r1, planHash: RUN_PLAN, operations: steps, generatedFrom: [] },
@@ -129,10 +128,10 @@ describe('store faults', () => {
     if (code === 'store.unreadable') writeFileSync(runs, 'not a database, only text. '.repeat(20));
     else {
       const db = new DatabaseSync(runs);
-      db.exec('PRAGMA user_version = 2');
+      db.exec('PRAGMA user_version = 3');
       db.close();
     }
-    const params = code === 'store.unreadable' ? { path: runs } : { found: 2, supported: 1 };
+    const params = code === 'store.unreadable' ? { path: runs } : { found: 3, supported: 2 };
     expect(answer(await get(app, '/api/runs'))).toEqual([500, { code, params }]);
   });
 });

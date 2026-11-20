@@ -26,7 +26,7 @@ const holdsFile = (folder: string): boolean =>
     (entry) => !entry.isDirectory() || holdsFile(join(folder, entry.name)),
   ) !== false;
 
-// Undo and generate leave the folders they empty, so a skill folder holding only folders is no use of the name.
+// Generate and undo can leave empty folders, so a skill folder holding only folders is no use of the name.
 const skillTaken = (path: string): boolean => {
   const entry = reached(() => entryAt(path));
   return entry !== undefined && (!entry.isDirectory() || holdsFile(path));

@@ -38,6 +38,8 @@ export interface ApplyRequest {
   run: Pick<NewRun, 'kind' | 'action' | 'subject' | 'undoes' | 'generatedFrom'>;
   /** What a recovery right before, on the same held store, reported; the apply's findings start with it. */
   earlier?: Finding[];
+  /** The permission bits of the file each create writes, by its position in the plan; a new file's default otherwise. */
+  modes?: ReadonlyMap<number, number>;
 }
 
 export interface Applied {
@@ -56,7 +58,19 @@ interface Step {
   run: string;
   root: string;
   at: At;
+  modes: ReadonlyMap<number, number>;
 }
+
+/** A step that stopped: its refusal, and whether it changed its path before. */
+interface Stop {
+  refusal: Refusal;
+  end: 'failed' | 'untouched';
+}
+
+const untouched = (stop: Refusal): Stop => ({ refusal: stop, end: 'untouched' });
+
+/** Another process's file took the path after the step dropped the old one. */
+class Dropped extends Changed {}
 
 export const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
 
@@ -176,8 +190,13 @@ const linkNew = (temp: string, path: string, aside: string | null): void => {
   try {
     linkIn(temp, path);
   } catch (error) {
-    if (aside !== null && error instanceof Changed) dropAside(aside);
-    else if (aside !== null) putBack(aside, path);
+    if (aside !== null && error instanceof Changed) {
+      // First, so recovery never reads a temporary file left as a step that kept the old file.
+      dropAside(temp);
+      dropAside(aside);
+      throw new Dropped();
+    }
+    if (aside !== null) putBack(aside, path);
     throw error;
   }
 };
@@ -206,33 +225,41 @@ const change = ({ run, root, at }: Step, position: number, op: PlanOperation, mo
   }
 };
 
-// Re-checked before the missing folders are made, which would follow a link, and again right before the write.
-const step = (context: Step, position: number, op: PlanOperation): Refusal | undefined => {
-  const { store, run, root, at } = context;
-  const path = join(root, op.path);
-  const linked = linkRefusal(root, op.path);
-  if (linked !== undefined) return linked;
-  let mode: number | undefined;
-  if (op.beforeHash !== null) {
-    const file = expected(op.path, op.beforeHash, readFound(path));
-    if ('code' in file) return file;
-    if (!backUp(file.bytes, store.backupPath(run, position))) {
-      return { code: 'apply.backup-failed', params: { run, path: op.path } };
-    }
-    mode = file.mode;
-  }
-  makeFolders(dirname(path));
-  const relinked = linkRefusal(root, op.path);
-  if (relinked !== undefined) return relinked;
+// The write of a step, and whether it changed the path when it stops.
+const written = (context: Step, position: number, op: PlanOperation, mode: number | undefined): Stop | undefined => {
   try {
     change(context, position, op, mode);
   } catch (error) {
-    if (error instanceof Changed) return refusal('plan.file-changed', op.path);
-    throw error;
+    if (!(error instanceof Changed)) throw error;
+    return { refusal: refusal('plan.file-changed', op.path), end: error instanceof Dropped ? 'failed' : 'untouched' };
   }
-  if (hashAt(path) !== op.afterHash) return { code: 'apply.write-mismatch', params: { run, path: op.path } };
-  at('written', position);
-  return undefined;
+  if (hashAt(join(context.root, op.path)) === op.afterHash) return undefined;
+  return { refusal: { code: 'apply.write-mismatch', params: { run: context.run, path: op.path } }, end: 'failed' };
+};
+
+// Re-checked before the missing folders are made, which would follow a link, and again right before the write.
+const step = (context: Step, position: number, op: PlanOperation): Stop | undefined => {
+  const { store, run, root, at } = context;
+  const path = join(root, op.path);
+  const linked = linkRefusal(root, op.path);
+  if (linked !== undefined) return untouched(linked);
+  let mode = context.modes.get(position);
+  if (op.beforeHash !== null) {
+    const file = expected(op.path, op.beforeHash, readFound(path));
+    if ('code' in file) return untouched(file);
+    if (!backUp(file.bytes, store.backupPath(run, position))) {
+      return untouched({ code: 'apply.backup-failed', params: { run, path: op.path } });
+    }
+    mode = file.mode;
+    if (op.afterHash === null) store.deleting(run, position, mode);
+  }
+  const made = makeFolders(dirname(path));
+  if (made > 0) store.madeFolders(run, position, made);
+  const relinked = linkRefusal(root, op.path);
+  if (relinked !== undefined) return untouched(relinked);
+  const stopped = written(context, position, op, mode);
+  if (stopped === undefined) at('written', position);
+  return stopped;
 };
 
 /** What a step's exception becomes: the run it stopped, what the recoveries around it reported, and the cause. */
@@ -271,8 +298,8 @@ const steps = (context: Step, operations: readonly PlanOperation[]): Refusal | n
   for (const [position, op] of operations.entries()) {
     const stopped = step(context, position, op);
     if (stopped !== undefined) {
-      store.finish(run, 'failed', [position, 'failed']);
-      return stopped;
+      store.finish(run, 'failed', [position, stopped.end]);
+      return stopped.refusal;
     }
     if (position < last) store.settle(run, position, 'done');
   }
@@ -287,7 +314,7 @@ const steps = (context: Step, operations: readonly PlanOperation[]): Refusal | n
  * findings of StepFailed report, and throws StepFailed.
  */
 export const apply = (store: RunStore, request: ApplyRequest, at: At = () => undefined): Applied => {
-  const { root, plan, run, earlier = [] } = request;
+  const { root, plan, run, earlier = [], modes = new Map() } = request;
   const findings = [...earlier, ...recover(store, root)];
   const { operations } = plan;
   if (operations.length === 0) return { run: null, refusal: null, findings };
@@ -296,7 +323,7 @@ export const apply = (store: RunStore, request: ApplyRequest, at: At = () => und
   const begun = store.begin({ ...run, planHash: plan.planHash, operations: operations.map(journal) });
   if (!begun.ok) return { run: null, refusal: begun.refusal, findings };
   try {
-    return { run: begun.value, refusal: steps({ store, run: begun.value, root, at }, operations), findings };
+    return { run: begun.value, refusal: steps({ store, run: begun.value, root, at, modes }, operations), findings };
   } catch (error) {
     // Settled now where the filesystem allows, so the run is not listed as running while this process holds the store.
     const after = afterRecovery(store, root, error);

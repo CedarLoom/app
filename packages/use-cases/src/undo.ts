@@ -1,5 +1,5 @@
 import { isUtf8 } from 'node:buffer';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   type Finding,
   type Hash,
@@ -10,9 +10,10 @@ import {
   type Run,
 } from '@cedarloom/core';
 import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
-import { entryAt, readFound, sha256 } from './project-files.ts';
+import { entryAt, errorCode, readFound, removeEmptyFolder, sha256 } from './project-files.ts';
 import { type Operation, recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
+import { linkOnWay } from './write-roots.ts';
 
 export interface UndoRequest {
   /** The project root, absolute; the run's paths are relative to it. */
@@ -23,9 +24,12 @@ export interface UndoRequest {
   planHash?: Hash;
 }
 
-/** The undo plan, or the refusal that stops it; findings: what recovery settled first, or could not. */
+/**
+ * The undo plan, or the refusal that stops it; findings: what recovery settled first, or could not; modes: the
+ * permission bits each create gives back, by its position in the plan.
+ */
 export type UndoPlan =
-  | { plan: PlanPreview; refusal: null; findings: Finding[] }
+  | { plan: PlanPreview; refusal: null; findings: Finding[]; modes: ReadonlyMap<number, number> }
   | { plan: null; refusal: Refusal; findings: Finding[] };
 
 export type Undone = Applied & { plan: PlanPreview | null };
@@ -64,6 +68,7 @@ interface Walk {
   /** Each file's text once the undo operations planned so far ran, by fileKey. */
   now: Map<string, string | null>;
   operations: PlanOperation[];
+  modes: Map<number, number>;
 }
 
 // The text the step found, from the backup it made; a create found nothing.
@@ -91,6 +96,7 @@ const visit = (walk: Walk, position: number, step: Operation): Refusal | undefin
   if (hash !== step.afterHash) return states.includes(hash) ? undefined : refusal('undo.file-changed', step.path);
   const before = textBefore(walk, position, step);
   if (typeof before === 'object' && before !== null) return before;
+  if (step.mode !== null) walk.modes.set(walk.operations.length, step.mode);
   walk.operations.push(operation(step.path, current, before));
   walk.now.set(key, before);
   return undefined;
@@ -122,14 +128,9 @@ const replaced = (store: RunStore, run: Run, wanted = true, belowUnfinished = fa
   return replaced(store, target, want, belowUnfinished || !done);
 };
 
-// A failed step with a backup may have dropped the old file before it stopped.
-const startedOf = (store: RunStore, run: Run): [number, Operation][] =>
-  [...run.operations.entries()].filter(
-    ([position, op]) =>
-      op.status === 'done' ||
-      op.status === 'settled' ||
-      (op.status === 'failed' && entryAt(store.backupPath(run.id, position)) !== undefined),
-  );
+// A pending step never started, and an untouched one stopped before any change.
+const startedOf = (run: Run): [number, Operation][] =>
+  [...run.operations.entries()].filter(([, op]) => op.status !== 'pending' && op.status !== 'untouched');
 
 // A file the run's undo `back` did not write still holds a result of the run: it hashes as a started step left it, and
 // not as before the run's first step on it. Any other content is not the run's, and no undo of the chain writes it.
@@ -137,15 +138,15 @@ const startedOf = (store: RunStore, run: Run): [number, Operation][] =>
 // did not finish and still counts. So does an unfinished undo of the run that `run` itself undid, for the file it wrote.
 const kept = (walk: Walk, run: Run, back: Run): Refusal | undefined => {
   const { store } = walk;
-  const restored = new Set(startedOf(store, back).map(([, step]) => fileKey(step.path)));
+  const restored = new Set(startedOf(back).map(([, step]) => fileKey(step.path)));
   const held = (run.undoes === null ? [] : store.unfinishedUndos(run.undoes))
     .filter((undo) => undo.id !== run.id && inEffect(store, undo))
-    .flatMap((undo) => startedOf(store, undo).map(([, step]) => step));
-  const started = startedOf(store, run).map(([, step]) => step);
+    .flatMap((undo) => startedOf(undo).map(([, step]) => step));
+  const started = startedOf(run).map(([, step]) => step);
   const left = started.find((step) => {
     const key = fileKey(step.path);
     if (restored.has(key)) return false;
-    const current = walk.now.has(key) ? walk.now.get(key) : textAt(walk.root, step.path);
+    const current = textAt(walk.root, step.path);
     const hash = current === undefined ? undefined : hashOf(current);
     if (hash !== step.afterHash || hash === started.find((op) => fileKey(op.path) === key)?.beforeHash) return false;
     return !held.some((op) => fileKey(op.path) === key && op.afterHash === hash);
@@ -180,11 +181,33 @@ export const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoP
   if (!inEffect(store, run)) return refused({ code: 'run.already-undone', params: { run: run.id, by: run.undoneBy } });
   const blocked = replaced(store, run) ?? unsettledBy(findings);
   if (blocked !== undefined) return refused(blocked);
-  const walk: Walk = { root, store, run: run.id, started: startedOf(store, run), now: new Map(), operations: [] };
+  const started = startedOf(run);
+  const walk: Walk = { root, store, run: run.id, started, now: new Map(), operations: [], modes: new Map() };
   const stop = walked(walk, run);
   if (stop !== undefined) return refused(stop);
-  const { operations } = walk;
-  return { plan: { planHash: planHash(operations, sha256), operations, skipped: [] }, refusal: null, findings };
+  const { operations, modes } = walk;
+  return { plan: { planHash: planHash(operations, sha256), operations, skipped: [] }, refusal: null, findings, modes };
+};
+
+// Deepest first, while each is a plain folder that holds nothing; a folder that stays keeps the ones above it.
+const removeMadeFolders = (root: string, run: Run): void => {
+  for (const { path, madeFolders } of run.operations.toReversed()) {
+    let folder = dirname(path);
+    for (let left = madeFolders; left > 0; left -= 1, folder = dirname(folder)) {
+      const absolute = join(root, folder);
+      const plain = linkOnWay(root, folder) === undefined && entryAt(absolute)?.isDirectory() === true;
+      if (!plain || !removeEmptyFolder(absolute)) break;
+    }
+  }
+};
+
+// The undo is done once its files are; a folder the filesystem keeps from it stays.
+const tidy = (root: string, run: Run): void => {
+  try {
+    removeMadeFolders(root, run);
+  } catch (error) {
+    if (errorCode(error) === undefined) throw error;
+  }
 };
 
 // Every file is already as before the run: the undo is recorded all the same, so the run is no longer in effect.
@@ -206,12 +229,15 @@ export const undo = (store: RunStore, request: UndoRequest, at?: At): Undone => 
     undoes: request.run,
     generatedFrom: [],
   };
-  const { plan, findings } = planned;
+  const { plan, findings, modes } = planned;
   if (request.planHash !== undefined && request.planHash !== plan.planHash) {
     return { run: null, refusal: { code: 'plan.stale', params: {} }, findings, plan: null };
   }
-  if (plan.operations.length === 0) {
-    return { ...recordDone(store, { ...run, planHash: plan.planHash }), findings, plan };
-  }
-  return { ...apply(store, { root: request.root, plan, run, earlier: findings }, at), plan };
+  const done =
+    plan.operations.length === 0
+      ? { ...recordDone(store, { ...run, planHash: plan.planHash }), findings }
+      : apply(store, { root: request.root, plan, run, earlier: findings, modes }, at);
+  const undid = store.run(request.run);
+  if (done.refusal === null && undid !== undefined) tidy(request.root, undid);
+  return { ...done, plan };
 };
