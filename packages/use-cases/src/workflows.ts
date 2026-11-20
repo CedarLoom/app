@@ -81,8 +81,6 @@ export const stoppedOn = <T>(findings: Finding[]): Answer<T> =>
     findings.filter(({ severity }) => severity !== 'error'),
   );
 
-const projectOf = (cwd: string): string | Refusal => projectRoot(cwd) ?? { code: 'project.not-found', params: { cwd } };
-
 export const invalidName = (names: readonly string[]): Refusal | undefined => {
   const name = names.find((each) => !WorkflowName.safeParse(each).success);
   return name === undefined ? undefined : { code: 'workflow.name-invalid', params: { name } };
@@ -120,7 +118,7 @@ const listed = (place: Place): { workflows: WorkflowList['workflows']; findings:
 
 /** The shipped definitions of the located plugin and the project's own; without a usable plugin, the project's alone. */
 export const listWorkflows = (request: WorkflowsRequest): Answer<WorkflowList> => {
-  const project = projectOf(request.cwd);
+  const project = projectRoot(request.cwd);
   if (typeof project !== 'string') return stopped([project]);
   const plugin = pluginPlace(request, project);
   const shipped = plugin.place === null ? { workflows: [], findings: [] } : listed(plugin.place);
@@ -136,7 +134,7 @@ export const listWorkflows = (request: WorkflowsRequest): Answer<WorkflowList> =
 export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: boolean): Answer<WorkflowShown> => {
   const invalid = invalidName([name]);
   if (invalid !== undefined) return stopped([invalid]);
-  const project = projectOf(request.cwd);
+  const project = projectRoot(request.cwd);
   if (typeof project !== 'string') return stopped([project]);
   // A project definition needs no plugin, so the plugin is located only for a shipped one.
   const { place, findings } = shipped ? pluginPlace(request, project) : { place: projectPlace(project), findings: [] };
@@ -232,7 +230,7 @@ export const validateWorkflows = (
 ): Answer<WorkflowValidation> => {
   const invalid = invalidName(names);
   if (invalid !== undefined) return stopped([invalid]);
-  const project = projectOf(request.cwd);
+  const project = projectRoot(request.cwd);
   if (typeof project !== 'string') return stopped([project]);
   const plugin = pluginPlace(request, project);
   if (plugin.place === null) return stoppedOn(plugin.findings);

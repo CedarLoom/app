@@ -59,9 +59,9 @@ export const doctor = (request: DoctorRequest): { report: DoctorReport; findings
   const nodeFindings: Finding[] = supported
     ? []
     : [{ code: 'node.version-unsupported', severity: 'error', params: { found: node, required } }];
-  const project = projectRoot(cwd);
-  const projectFindings: Finding[] =
-    project === undefined ? [{ code: 'project.not-found', severity: 'warning', params: { cwd } }] : [];
+  const root = projectRoot(cwd);
+  const project = typeof root === 'string' ? root : undefined;
+  const projectFindings: Finding[] = typeof root === 'string' ? [] : [{ ...root, severity: 'warning' }];
   const override = pluginRoot === null ? null : resolve(cwd, pluginRoot);
   const located = locatePlugin({ pluginsRoot: pluginsRoot(request), cwd, project, override });
   // The settings enable the installed plugin, which --plugin-root bypasses.

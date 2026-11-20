@@ -192,7 +192,14 @@
       ["id"],
       " is not cl-workflow from the CedarLoom marketplace, so CedarLoom will not run its generator."
     ],
-    "project.not-found": [["cwd"], " is not inside a Git repository. Run CedarLoom from your project folder."],
+    "project.git-unreadable": [
+      ["path"],
+      " is neither a folder nor a file that starts with \"gitdir: \", or it cannot be read, so CedarLoom cannot tell which project this folder is in. Nothing was changed."
+    ],
+    "project.not-found": [
+      ["cwd"],
+      " is not inside the working tree of a Git repository. Run CedarLoom from your project folder."
+    ],
     "recovery.skipped": [
       ["path"],
       " was left from the interrupted run ",

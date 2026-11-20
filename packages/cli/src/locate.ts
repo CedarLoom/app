@@ -6,7 +6,7 @@ import { type Outcome, refused } from './output.ts';
 /** The project of the working directory and the folder of its store. */
 export const locate = (io: Io): { root: string; dir: string } | { refusal: Refusal } => {
   const root = projectRoot(io.cwd);
-  if (root === undefined) return { refusal: { code: 'project.not-found', params: { cwd: io.cwd } } };
+  if (typeof root !== 'string') return { refusal: root };
   return { root, dir: storeDir({ ...io, projectRoot: root }) };
 };
 

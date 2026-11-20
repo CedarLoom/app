@@ -6,9 +6,14 @@ const require = createRequire(import.meta.url);
 const manifest = require('../package.json');
 const json = process.argv.includes('--json');
 
-// The English text of a code, from the compiled catalog of core.
+// The English text of a code, from the compiled catalog of core; the code alone when core does not load.
 function text(code, params) {
-  const message = require('@cedarloom/core/messages/en.json').messages[code];
+  let message;
+  try {
+    message = require('@cedarloom/core/messages/en.json').messages[code];
+  } catch {
+    return code;
+  }
   if (typeof message === 'string') return message;
   return message
     .map(function (token) {
