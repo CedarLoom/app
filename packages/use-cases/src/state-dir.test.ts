@@ -49,4 +49,9 @@ describe('stateDir', () => {
     const env = { XDG_STATE_HOME: 'D:\\xdg' };
     expect(stateDir({ env, platform: 'win32', home: 'C:\\Users\\me', cwd: 'C:\\' })).toBe('D:\\xdg\\cedarloom');
   });
+
+  it("takes a CEDARLOOM_STATE_DIR relative to another drive from that drive's root folder, not the process's folder", () => {
+    const env = { CEDARLOOM_STATE_DIR: 'C:state' };
+    expect(stateDir({ env, platform: 'win32', home: 'C:\\Users\\me', cwd: 'D:\\project' })).toBe('C:\\state');
+  });
 });
