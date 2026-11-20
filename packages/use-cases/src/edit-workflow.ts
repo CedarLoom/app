@@ -4,7 +4,7 @@ import { appliedAs, definitionOf, type Generation, generationOf, locatedAfter, s
 import { nameTaken } from './name-taken.ts';
 import { sha256 } from './project-files.ts';
 import type { RunStore } from './store.ts';
-import { invalidName, notJson, projectPlace, type WorkflowsRequest } from './workflows.ts';
+import { invalidName, projectPlace, type WorkflowsRequest } from './workflows.ts';
 
 export interface EditRequest extends WorkflowsRequest {
   /** The project root, absolute. */
@@ -40,20 +40,27 @@ const planEdit = (store: RunStore, request: EditRequest): Generation => {
   const next = nameIn(result.definition, name);
   const text = `${JSON.stringify(result.definition, null, 2)}\n`;
   // The edited definition must read back as the definition readers read it.
-  if (jsonWithin(text) === undefined) return stoppedBy([notJson(path)], recovered);
+  if (jsonWithin(text) === undefined) return stoppedBy([{ code: 'edit.result-over-limits', params: {} }], recovered);
   const renamed = next !== name;
   const refusals = renamed ? renameRefusals(request, next) : [];
   if (refusals.length > 0) return stoppedBy(refusals, recovered);
   const plugin = locatedAfter(recovered, request, root);
   if (!('place' in plugin)) return plugin;
+  const nextPath = `${PROJECT_FOLDER}/${next}.json`;
+  const readHash = sha256(Buffer.from(read.text));
   return generationOf(store, {
     root,
     names: renamed ? [name, next] : [name],
     env: request.env,
     generator: plugin.place.base,
     definitions: [{ name: next, path, text }],
-    files: new Map([[`${PROJECT_FOLDER}/${next}.json`, Buffer.from(text)]]),
-    removed: renamed ? new Map([[path, sha256(Buffer.from(read.text))]]) : new Map(),
+    files: new Map([[nextPath, Buffer.from(text)]]),
+    removed: renamed ? new Map([[path, readHash]]) : new Map(),
+    // A new name's file must be absent; without a rename the later entry, the hash read, holds for the one path.
+    read: new Map([
+      [nextPath, null],
+      [path, readHash],
+    ]),
     findings: plugin.findings,
   });
 };

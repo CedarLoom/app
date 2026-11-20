@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Edit } from '@cedarloom/core';
+import type { Edit, JsonValue } from '@cedarloom/core';
 import {
   chmodSync,
   existsSync,
@@ -34,7 +34,8 @@ const put = (path: string, text: string): void => {
 };
 
 // A stub generator with hardcoded outputs: each definition's "skill" as its SKILL.md, a fixed script while "script" is
-// set, and each path of "extra" with fixed text; a definition with "refuse" is refused at that field.
+// set, and each path of "extra" with fixed text; a definition with "refuse" is refused at that field. With "meanwhile"
+// it writes that text to that absolute path, as the owner saving a file while the generator runs.
 const STUB = `import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 const argv = process.argv.slice(2);
@@ -45,8 +46,9 @@ const emit = (path, text) => {
 };
 const refusals = [];
 for (const definition of argv.slice(0, argv.indexOf('--json'))) {
-  const { name, skill, script, extra = [], refuse } = JSON.parse(readFileSync(definition, 'utf8'));
+  const { name, skill, script, extra = [], refuse, meanwhile } = JSON.parse(readFileSync(definition, 'utf8'));
   if (refuse) refusals.push({ file: definition, field: refuse, rule: 'refused' });
+  if (meanwhile) writeFileSync(meanwhile.path, meanwhile.text);
   emit('skills/' + name + '/SKILL.md', skill);
   if (script) emit('workflows/' + name + '.js', 'export default "stub";\\n');
   for (const path of extra) emit(path, 'extra\\n');
@@ -479,6 +481,59 @@ it.each<[Edit, object]>([
 ])('refuses the edit %o with a typed refusal and writes nothing', (edit, refusal) => {
   const { edited, text } = editSetup();
   expect(edited(edit)).toMatchObject({ plan: null, run: null, refusals: [refusal] });
+  expect(text(MINE)).toBe(COPY);
+});
+
+const SAVED = '{ "name": "mine", "skill": "Saved meanwhile.\\n" }\n';
+const refusedAsChanged = { plan: null, run: null, refusals: [{ code: 'plan.file-changed', params: { path: MINE } }] };
+
+it('refuses an edit with plan.file-changed when the owner saves the definition while the generator runs', () => {
+  const { project, edited, text } = editSetup();
+  const meanwhile = { path: join(project, MINE), text: SAVED };
+  expect(edited({ operation: 'set', pointer: '/meanwhile', value: meanwhile })).toMatchObject(refusedAsChanged);
+  expect(text(MINE)).toBe(SAVED);
+});
+
+it('refuses a rename with plan.file-changed when the owner saves the definition while the generator runs', () => {
+  const { project, define, edited, text } = editSetup();
+  define({ name: 'mine', skill: 'Run.\n', meanwhile: { path: join(project, MINE), text: SAVED } }, 'mine');
+  expect(edited({ operation: 'set', pointer: '/name', value: 'other' })).toMatchObject(refusedAsChanged);
+  expect([text(MINE), existsSync(join(project, '.cedarloom/workflows/other.json'))]).toEqual([SAVED, false]);
+});
+
+it('refuses a rename with plan.file-changed when the owner creates the new definition while the generator runs', () => {
+  const { project, define, edited, text } = editSetup();
+  const other = '.cedarloom/workflows/other.json';
+  define({ name: 'mine', skill: 'Run.\n', meanwhile: { path: join(project, other), text: SAVED } }, 'mine');
+  const before = text(MINE);
+  expect(edited({ operation: 'set', pointer: '/name', value: 'other' })).toMatchObject({
+    ...refusedAsChanged,
+    refusals: [{ code: 'plan.file-changed', params: { path: other } }],
+  });
+  expect([text(other), text(MINE)]).toEqual([SAVED, before]);
+});
+
+it('refuses workflows new with plan.file-changed when the owner saves its definition while the generator runs', () => {
+  const { project, plugin, created, text } = newSetup();
+  const meanwhile = { path: join(project, MINE), text: SAVED };
+  put(join(plugin, 'definitions', 'full.json'), JSON.stringify({ name: 'full', skill: 'Run.\n', meanwhile }));
+  expect(created('mine', 'full')).toMatchObject(refusedAsChanged);
+  expect(text(MINE)).toBe(SAVED);
+});
+
+// A list nested depth levels deep.
+const nested = (depth: number): JsonValue => (depth === 0 ? 0 : [nested(depth - 1)]);
+
+it.each<[string, JsonValue]>([
+  ['nested deeper than 100 levels', nested(100)],
+  ['larger than 16 MiB', 'a'.repeat(16 * 1024 * 1024)],
+])('refuses an edit whose result is %s with edit.result-over-limits and writes nothing', (_, value) => {
+  const { edited, text } = editSetup();
+  expect(edited({ operation: 'set', pointer: '/deep', value })).toMatchObject({
+    plan: null,
+    run: null,
+    refusals: [{ code: 'edit.result-over-limits', params: {} }],
+  });
   expect(text(MINE)).toBe(COPY);
 });
 

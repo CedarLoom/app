@@ -68,7 +68,16 @@
       ["paths"],
       ". Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete any other file of a definition that no longer exists yourself."
     ],
-    "edit.target-invalid": [["pointer"], " is not a place where ", ["operation"], " can apply in this definition."],
+    "edit.result-over-limits": [
+      "The edited definition would be larger than 16 MiB or nested deeper than 100 levels, more than CedarLoom reads. Nothing was changed."
+    ],
+    "edit.target-invalid": [
+      "The pointer \"",
+      ["pointer"],
+      "\" is not a place where ",
+      ["operation"],
+      " can apply in this definition."
+    ],
     "generate.delete-skipped": [
       ["path"],
       " is no longer generated, but it changed since it was written, so CedarLoom kept it. Delete it yourself if it is not needed."

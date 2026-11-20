@@ -189,7 +189,11 @@ msgstr "The name {name} is already used by {path}."
 
 #. js-lingui-explicit-id
 msgid "edit.target-invalid"
-msgstr "{pointer} is not a place where {operation} can apply in this definition."
+msgstr "The pointer \"{pointer}\" is not a place where {operation} can apply in this definition."
+
+#. js-lingui-explicit-id
+msgid "edit.result-over-limits"
+msgstr "The edited definition would be larger than 16 MiB or nested deeper than 100 levels, more than CedarLoom reads. Nothing was changed."
 
 #. js-lingui-explicit-id
 msgid "session.host"

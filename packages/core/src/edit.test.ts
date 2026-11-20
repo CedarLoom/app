@@ -120,6 +120,8 @@ const REFUSED: [Edit, string][] = [
   [{ operation: 'set', pointer: '/stages/0/phases/2', value: {} }, '/stages/0/phases/2'],
   [{ operation: 'set', pointer: '/stages/0/id/x', value: 1 }, '/stages/0/id/x'],
   [{ operation: 'set', pointer: '/__proto__', value: {} }, '/__proto__'],
+  [{ operation: 'set', pointer: '/__proto__/x', value: 1 }, '/__proto__/x'],
+  [{ operation: 'set', pointer: '/stages/0/__proto__/y', value: 1 }, '/stages/0/__proto__/y'],
   [{ operation: 'set', pointer: '/a~2', value: 1 }, '/a~2'],
   [{ operation: 'unset', pointer: '/description' }, '/description'],
   [{ operation: 'unset', pointer: '/stages/0' }, '/stages/0'],

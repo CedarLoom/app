@@ -27,6 +27,7 @@ export const MESSAGE_IDS = [
   'definition.not-found',
   'definition.not-json',
   'definition.stale',
+  'edit.result-over-limits',
   'edit.target-invalid',
   'generate.delete-skipped',
   'generator.failed',
@@ -98,6 +99,7 @@ export interface MessagePlaceholders {
   'definition.not-found': 'name' | 'source';
   'definition.not-json': 'path';
   'definition.stale': 'name' | 'paths';
+  'edit.result-over-limits': never;
   'edit.target-invalid': 'operation' | 'pointer';
   'generate.delete-skipped': 'path';
   'generator.failed': 'exitCode' | 'signal' | 'stderr';
