@@ -119,21 +119,20 @@ interface Chain {
   left: string | null;
 }
 
-// A folder the app may enter but not read or write fails a read or a probe there with EACCES.
+// A read or a probe the app may not make: EACCES, or EPERM, as Windows reports a denied access.
+const DENIED = new Set<unknown>(['EACCES', 'EPERM']);
 const orDenied = <T>(path: string, act: () => T): T | Refusal => {
   try {
     return act();
   } catch (error) {
-    if (errorCode(error) === 'EACCES') return refusal('plan.folder-denied', path);
+    if (DENIED.has(errorCode(error))) return refusal('plan.folder-denied', path);
     throw error;
   }
 };
 
 // A later operation on a path starts from what the one before it leaves, at the file the chain began with.
 const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined =>
-  op.beforeHash === left
-    ? orDenied(op.path, () => (sameFile(root, first, op.path) ? undefined : refusal('plan.file-changed', op.path)))
-    : refusal('plan.file-changed', op.path);
+  op.beforeHash === left && sameFile(root, first, op.path) ? undefined : refusal('plan.file-changed', op.path);
 
 // A folder on the way that is a file; Windows reads a path below it as absent, not as ENOTDIR.
 const fileOnWay = (root: string, path: string): Refusal | undefined => {
@@ -201,7 +200,7 @@ export const precheck = (root: string, operations: readonly PlanOperation[]): Re
     const above = folderKeys(op.path);
     const nested = folders.has(key) || above.some((folder) => chains.has(folder));
     const chain = chains.get(key);
-    const problem = planProblem(root, op, position, nested) ?? fileProblem(root, op, chain);
+    const problem = planProblem(root, op, position, nested) ?? orDenied(op.path, () => fileProblem(root, op, chain));
     if (problem !== undefined) return problem;
     chains.set(key, { first: chain?.first ?? op.path, left: op.afterHash });
     for (const folder of above) folders.add(folder);

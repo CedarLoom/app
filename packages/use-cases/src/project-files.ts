@@ -131,16 +131,22 @@ export const writeNew = (path: string, bytes: Uint8Array, mode: number | undefin
   }
 };
 
-/**
- * Makes the missing folders of a path, at most `levels` of them, each flushed into its parent so a crash keeps them;
- * gives how many it made. Throws ENOENT where the folder above them is gone.
- */
+// A folder another process made meanwhile counts as made, as a recursive mkdir would take it.
+const makeFolder = (path: string, mode: number): void => {
+  try {
+    mkdirSync(path, { mode });
+  } catch (error) {
+    if (errorCode(error) !== 'EEXIST') throw error;
+  }
+};
+
+/** Makes the missing folders of a path, at most `levels`, each flushed into its parent; gives how many it made. */
 export const makeFolders = (path: string, mode = 0o777, levels = Number.POSITIVE_INFINITY): number => {
   const missing: string[] = [];
   for (let at = path; missing.length < levels && entryAt(at) === undefined && dirname(at) !== at; at = dirname(at))
     missing.push(at);
-  // One at a time from the top, never recursive, so a project root that is gone is not made again.
-  for (const folder of missing.toReversed()) mkdirSync(folder, { mode });
+  // One at a time from the top, never recursive, so a project root that is gone is not made again; ENOENT then.
+  for (const folder of missing.toReversed()) makeFolder(folder, mode);
   for (const folder of missing) flushFolder(dirname(folder));
   return missing.length;
 };
@@ -177,9 +183,8 @@ const linkedBack = (aside: string, path: string): boolean => {
 
 /** Puts a file, link or folder set aside back at its path; when another process put a file there meanwhile, both stay. */
 export const putBack = (aside: string, path: string): void => {
-  // Node.js has no rename that refuses a taken path: where no new name puts the aside back, as for a folder, a link on
-  // Windows or a file on a volume without hard links, a file put at the path between this check and the rename is
-  // replaced.
+  // Node.js has no rename that refuses a taken path: where no new name puts the aside back (a folder, a link on Windows,
+  // a file on a volume without hard links), a file put at the path between this check and the rename is replaced.
   if (!linkedBack(aside, path)) {
     if (entryAt(path) !== undefined) return;
     renameSync(aside, path);
@@ -230,8 +235,7 @@ export const removeEmptyFolder = (path: string): boolean => {
   return true;
 };
 
-// link() of a volume without hard links: ENOTSUP on exFAT and FAT, EISDIR there on Windows, EPERM or EXDEV on some
-// network shares.
+// link() without hard links: ENOTSUP, or EISDIR on Windows, on FAT and exFAT; EPERM or EXDEV on some network shares.
 const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EISDIR', 'EPERM', 'EXDEV']);
 
 const PROBE = '.cedarloom-probe-';
@@ -256,13 +260,20 @@ const removeEmpty = (folder: string): void => {
   removeEmptyFolder(folder);
 };
 
-// Removes the probes in a folder that a stopped process left: folders changed before `before` that hold only empty files.
+// A probe another process removes meanwhile, or one the app may not read, as another user's, stays.
+const KEPT_PROBE = new Set<unknown>(['ENOENT', 'EACCES', 'EPERM']);
+
+// Removes the probes a stopped process left in a folder: folders changed before `before` holding only empty files.
 const sweepProbes = (folder: string, before: number): void => {
   for (const name of readdirSync(folder)) {
     if (!name.startsWith(PROBE)) continue;
     const path = join(folder, name);
-    const entry = lstatSync(path);
-    if (entry.isDirectory() && entry.mtimeMs < before && onlyEmpty(path)) removeEmpty(path);
+    try {
+      const entry = lstatSync(path);
+      if (entry.isDirectory() && entry.mtimeMs < before && onlyEmpty(path)) removeEmpty(path);
+    } catch (error) {
+      if (!KEPT_PROBE.has(errorCode(error))) throw error;
+    }
   }
 };
 

@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { makesHardLinks } from './project-files.ts';
@@ -28,4 +28,22 @@ describe('the volume probe', () => {
     ]);
     expect(readdirSync(join(folder, '.cedarloom-probe-text')).toSorted()).toEqual(['a', 'b.md']);
   });
+
+  // A folder mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'keeps an old probe folder it may not read',
+    () => {
+      const folder = fresh();
+      const probe = join(folder, '.cedarloom-probe-theirs');
+      mkdirSync(probe);
+      utimesSync(probe, new Date('2000-01-01T00:00:00.000Z'), new Date('2000-01-01T00:00:00.000Z'));
+      chmodSync(probe, 0o000);
+      try {
+        expect(makesHardLinks(folder)).toBe(true);
+      } finally {
+        chmodSync(probe, 0o700);
+      }
+      expect(readdirSync(folder)).toEqual(['.cedarloom-probe-theirs']);
+    },
+  );
 });

@@ -568,23 +568,20 @@ describe('apply probes the volume', () => {
     expect([readdirSync(above), runs(state)]).toEqual([[], []]);
   });
 
-  // A folder mode keeps neither root nor any process on Windows out.
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-    'refuses a folder the link probe may not write, before any write',
-    () => {
-      const { root, state } = project();
-      const folder = join(root, '.claude');
-      chmodSync(folder, 0o500);
-      try {
-        expect(apply(store(state), request(root, [create('.claude/a.md', 'a\n')]))).toEqual(
-          refusedAt('plan.folder-denied', '.claude/a.md'),
-        );
-      } finally {
-        chmodSync(folder, 0o700);
-      }
-      expect([listing(root), runs(state)]).toEqual([[], []]);
-    },
-  );
+  // A mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).each([
+    ['a folder the link probe may not write', '.claude', 0o500, create('.claude/a.md', 'a\n')],
+    ['a file it may not read', '.claude/b.md', 0o000, replace('.claude/b.md', 'old\n', 'new\n')],
+  ] as const)('refuses %s, before any write', (_case, denied, mode, operation) => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    chmodSync(join(root, denied), mode);
+    try {
+      expect(apply(store(state), request(root, [operation]))).toEqual(refusedAt('plan.folder-denied', operation.path));
+    } finally {
+      chmodSync(join(root, denied), 0o700);
+    }
+    expect([listing(root), runs(state)]).toEqual([['b.md'], []]);
+  });
 });
 
 describe('apply makes no folder above the project', () => {
