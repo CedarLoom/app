@@ -4,7 +4,7 @@ import type { Code } from '@cedarloom/core';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 
 /** The URL token works once and for this long, so a printed link does not stay valid while the server runs. */
-const TOKEN_MS = 10 * 60_000;
+export const TOKEN_MS = 10 * 60_000;
 const CSRF_HEADER = 'x-cedarloom-csrf';
 /** Named per port: browsers send a 127.0.0.1 cookie to every port, so two servers must not take each other's. */
 export const cookieName = (port: number): string => `cedarloom_session_${port}`;

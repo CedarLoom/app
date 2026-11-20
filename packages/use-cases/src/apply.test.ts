@@ -15,9 +15,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import type { PlanOperation, Refusal } from '@cedarloom/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type Applied, type ApplyRequest, apply, type Boundary } from './apply.ts';
+import { type Applied, type ApplyRequest, apply, type Boundary, StepFailed } from './apply.ts';
 import { openRunView, openStore, type RunStore, type RunView } from './store.ts';
 import { type UndoRequest, undo } from './undo.ts';
 
@@ -207,10 +208,19 @@ describe('apply checks the whole plan first', () => {
 
 describe('apply checks the plan paths', () => {
   const long = `.claude/${'n'.repeat(180)}.md`;
+  // 260 bytes in UTF-8, 130 UTF-16 units.
+  const longFolder = `.claude/${'\u00e9'.repeat(130)}/a.md`;
+  // 80 bytes, 240 once decomposed, as HFS+ stores it.
+  const decomposed = `.claude/${'\u0390'.repeat(40)}.md`;
+  // Past PATH_MAX of every platform, each name within 255 bytes.
+  const deep = `.claude/${Array.from({ length: 22 }, () => 'n'.repeat(200)).join('/')}/a.md`;
   it.each([
     ['plan.file-changed', [create('.claude/a', 'a\n'), create('.claude/a/b', 'b\n')], '.claude/a/b'],
     ['plan.file-changed', [create('.claude/a/b', 'b\n'), create('.claude/a', 'a\n')], '.claude/a'],
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(long, 'x\n')], long],
+    ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(longFolder, 'x\n')], longFolder],
+    ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(decomposed, 'x\n')], decomposed],
+    ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(deep, 'x\n')], deep],
   ] as const)('refuses with %s a plan path its steps could not write, before any write', (code, plan, path) => {
     const { root, state } = project();
     expect(apply(store(state), request(root, [...plan]))).toEqual(refusedAt(code, path));
@@ -297,13 +307,45 @@ const failAtSetAside = (boundary: Boundary): void => {
   if (boundary === 'set-aside') throw new Error('disk gone');
 };
 
-describe('apply stops a run', () => {
-  it('puts the files in order and ends the run when a step throws', () => {
+// What `act` throws.
+const thrownBy = (act: () => unknown): unknown => {
+  try {
+    act();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+};
+
+describe('undo stops a run', () => {
+  it('names an undo it stops with what the recovery before its plan settled', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
-    const held = store(state);
-    expect(() => apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), failAtSetAside)).toThrow(
-      'disk gone',
+    const held = store(state, 'r1', 'r0', 'u1');
+    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
+    begin(held, root, '.claude/a.md');
+    writeFileSync(join(root, '.claude/.a.md.cedarloom-r0-0'), 'a\n');
+    expect(thrownBy(() => undo(held, { root, run: 'r1' }, failAt('linked', 0)))).toMatchObject({
+      run: 'u1',
+      findings: [recovered('.claude/a.md', 'r0'), recovered('.claude/b.md', 'u1')],
+    });
+  });
+});
+
+describe('apply stops a run', () => {
+  it('puts the files in order, ends the run and names it with what recovery settled before and after, when a step throws', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r0', 'r1');
+    begin(held, root, '.claude/a.md');
+    writeFileSync(join(root, '.claude/.a.md.cedarloom-r0-0'), 'a\n');
+    const thrown = thrownBy(() =>
+      apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), failAtSetAside),
     );
+    expect(thrown).toBeInstanceOf(StepFailed);
+    expect(thrown).toMatchObject({
+      run: 'r1',
+      findings: [recovered('.claude/a.md', 'r0'), recovered('.claude/b.md')],
+      cause: new Error('disk gone'),
+    });
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'old\n']);
     expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled'] });
   });
@@ -347,24 +389,61 @@ describe('apply after a step throws', () => {
     nextApplyRuns(held, root, state);
   });
 
-  // A folder mode does not keep a process out on Windows.
-  it.skipIf(process.platform === 'win32')('throws the step error first when the recovery after it fails too', () => {
+  // A folder mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'names a run the recovery after the step could not settle',
+    () => {
+      const { root, state } = project({ '.claude/c.md': 'gone\n' });
+      const folder = join(root, '.claude');
+      const readOnly = (boundary: Boundary): void => {
+        if (boundary !== 'set-aside') return;
+        chmodSync(folder, 0o500);
+        throw new Error('disk gone');
+      };
+      let thrown: unknown;
+      try {
+        thrown = thrownBy(() => apply(store(state), request(root, [remove('.claude/c.md', 'gone\n')]), readOnly));
+      } finally {
+        chmodSync(folder, 0o700);
+      }
+      expect(thrown).toMatchObject({
+        run: 'r1',
+        findings: [{ code: 'recovery.skipped', severity: 'warning', params: { run: 'r1', path: '.claude/c.md' } }],
+        cause: new Error('disk gone'),
+      });
+    },
+  );
+});
+
+describe('apply after a step and its recovery throw', () => {
+  it('throws the step error first when the recovery after it fails too', () => {
     const { root, state } = project({ '.claude/c.md': 'gone\n' });
-    const folder = join(root, '.claude');
-    const readOnly = (boundary: Boundary): void => {
+    const held = store(state);
+    const journalGone = (boundary: Boundary): void => {
       if (boundary !== 'set-aside') return;
-      chmodSync(folder, 0o500);
+      vi.spyOn(held, 'unfinished').mockImplementation(() => {
+        throw new Error('journal gone');
+      });
       throw new Error('disk gone');
     };
-    let thrown: unknown;
-    try {
-      apply(store(state), request(root, [remove('.claude/c.md', 'gone\n')]), readOnly);
-    } catch (error) {
-      thrown = error;
-    } finally {
-      chmodSync(folder, 0o700);
-    }
-    expect(thrown instanceof AggregateError ? thrown.errors[0] : thrown).toEqual(new Error('disk gone'));
+    const thrown = thrownBy(() => apply(held, request(root, [remove('.claude/c.md', 'gone\n')]), journalGone));
+    const cause = thrown instanceof StepFailed ? thrown.cause : thrown;
+    expect(cause instanceof AggregateError ? cause.errors : cause).toEqual([
+      new Error('disk gone'),
+      new Error('journal gone'),
+    ]);
+  });
+});
+
+describe('apply ends a run', () => {
+  it('ends the run with its last step, or leaves both open', () => {
+    const { root, state } = project();
+    const held = store(state);
+    const db = new DatabaseSync(join(state, 'runs.sqlite'));
+    db.exec(`CREATE TRIGGER no_end BEFORE UPDATE OF status ON runs BEGIN SELECT RAISE(ABORT, 'no end'); END`);
+    db.close();
+    expect(() => apply(held, request(root, [create('.claude/a.md', 'a\n')]))).toThrow(StepFailed);
+    expect(run(state, 'r1')).toEqual({ status: 'running', steps: ['pending'] });
   });
 });
 
@@ -468,6 +547,21 @@ describe('recovery of a delete and of a step not started', () => {
     nextApplyRuns(held, root, state);
   });
 
+  it('settles a run whose path is too long to exist, so the next apply runs', () => {
+    const { root, state } = project();
+    const held = store(state);
+    begin(held, root, `.claude/${'n'.repeat(256)}/a.md`);
+    nextApplyRuns(held, root, state);
+  });
+
+  it('throws what keeps it from settling a step other than a refusing filesystem', () => {
+    const { root, state } = project();
+    const held = store(state);
+    begin(held, root, '.claude/b.md');
+    mkdirSync(join(root, '.claude/.b.md.cedarloom-r1-0'));
+    expect(() => apply(held, request(root, []))).toThrow(expect.objectContaining({ code: 'ERR_FS_EISDIR' }));
+  });
+
   it('leaves a step the run never started pending, and reports nothing for it', async () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     const plan = request(root, [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]);
@@ -476,6 +570,35 @@ describe('recovery of a delete and of a step not started', () => {
     expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled', 'pending'] });
     expect(text(join(root, '.claude/b.md'))).toBe('old\n');
   }, 20_000);
+});
+
+describe('recovery blocked by the filesystem', () => {
+  // A folder mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).each([0o500, 0o000])(
+    'reports a run it cannot settle in a folder of mode %o, and refuses every change until it is settled',
+    (mode) => {
+      const { root, state } = project();
+      const held = store(state, 'r1', 'r2');
+      expect(apply(held, request(root, [create('.cedarloom/workflows/a.json', '{}\n')])).refusal).toBeNull();
+      begin(held, root, '.claude/b.md');
+      writeFileSync(join(root, '.claude/.b.md.cedarloom-r2-0'), 'a\n');
+      const folder = join(root, '.claude');
+      const params = { run: 'r2', path: '.claude/b.md' };
+      const skipped = { code: 'recovery.skipped', severity: 'warning', params };
+      const unsettled = { code: 'apply.unsettled', params };
+      chmodSync(folder, mode);
+      try {
+        const plan = request(root, [create('.cedarloom/workflows/c.json', '{}\n')]);
+        expect(apply(held, plan)).toEqual({ run: null, refusal: unsettled, findings: [skipped] });
+        expect(undo(held, { root, run: 'r1' })).toMatchObject({ refusal: unsettled, findings: [skipped] });
+        expect(undo(held, { root, run: 'r2' }).refusal).toEqual(unsettled);
+      } finally {
+        chmodSync(folder, 0o700);
+      }
+      expect(text(join(root, '.cedarloom/workflows/c.json'))).toBeNull();
+      expect(apply(held, request(root, [])).findings).toEqual([recovered('.claude/b.md', 'r2')]);
+    },
+  );
 });
 
 const undone = (state: string, id: string): string | null => {
@@ -488,12 +611,6 @@ const undone = (state: string, id: string): string | null => {
 const release = (held: RunStore): void => {
   opened.splice(opened.indexOf(held), 1);
   held.close();
-};
-
-// Undo of r1 refuses a folder link put at .claude/skills.
-const refusesLinkedSkills = (held: RunStore, root: string): void => {
-  symlinkSync(fresh(), join(root, '.claude/skills'), 'junction');
-  expect(undo(held, { root, run: 'r1' }).refusal).toEqual({ code: 'plan.symlink', params: { path: '.claude/skills' } });
 };
 
 describe('undo', () => {
@@ -575,7 +692,11 @@ describe('undo refuses', () => {
     const held = store(state, 'r1', 'u1');
     apply(held, request(root, [create('.claude/skills/a.md', 'a\n')]));
     renameSync(join(root, '.claude/skills'), join(root, '.claude/moved'));
-    refusesLinkedSkills(held, root);
+    symlinkSync(fresh(), join(root, '.claude/skills'), 'junction');
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+      code: 'plan.symlink',
+      params: { path: '.claude/skills' },
+    });
   });
 });
 
@@ -619,7 +740,11 @@ describe('undo of an undo', () => {
     const { root, state } = project();
     const held = store(state);
     begin(held, root, '.claude/skills/a.md');
-    refusesLinkedSkills(held, root);
+    symlinkSync(fresh(), join(root, '.claude/skills'), 'junction');
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+      code: 'apply.unsettled',
+      params: { run: 'r1', path: '.claude/skills/a.md' },
+    });
   });
 });
 

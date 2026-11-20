@@ -19,7 +19,7 @@ import {
   tempPath,
   writeNew,
 } from './project-files.ts';
-import { recover } from './recover.ts';
+import { recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
 import { inWriteRoots, linkOnWay } from './write-roots.ts';
 
@@ -34,13 +34,15 @@ export interface ApplyRequest {
   root: string;
   plan: PlanPreview;
   run: Pick<NewRun, 'kind' | 'action' | 'subject' | 'undoes' | 'generatedFrom'>;
+  /** What a recovery right before, on the same held store, reported; the apply's findings start with it. */
+  earlier?: Finding[];
 }
 
 export interface Applied {
   /** The run's id once it is recorded, also when it failed; null when nothing was recorded. */
   run: string | null;
   refusal: Refusal | null;
-  /** apply.recovered for each file an interrupted run left and this apply settled first. */
+  /** apply.recovered for each file an interrupted run left and this apply settled first, recovery.skipped for each it could not. */
   findings: Finding[];
 }
 
@@ -87,12 +89,26 @@ export const fileKey = (path: string): string => path.normalize('NFC').toLowerCa
 const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined =>
   after === null || sha256(Buffer.from(after)) === afterHash ? undefined : refusal('plan.text-mismatch', path);
 
-// RunId allows 64 characters, and most filesystems 255 bytes in a name.
+// RunId allows 64 characters.
 const LONGEST_RUN_ID = 'r'.repeat(64);
-const nameProblem = (path: string, position: number): Refusal | undefined =>
-  Buffer.byteLength(basename(asidePath(path, LONGEST_RUN_ID, position))) > 255
+// UTF-8 bytes, also of the decomposed form: never fewer than the bytes or UTF-16 units any volume counts.
+const size = (text: string): number => Math.max(Buffer.byteLength(text), Buffer.byteLength(text.normalize('NFD')));
+// NAME_MAX of Linux and macOS, and the usual component limit of Windows volumes.
+const NAME_MAX = 255;
+// PATH_MAX of Linux and macOS, and MAX_PATH of Windows and any other platform, each with the terminating NUL.
+const PATH_MAX =
+  new Map<string, number>([
+    ['linux', 4096],
+    ['darwin', 1024],
+  ]).get(process.platform) ?? 260;
+// Every folder of the path and the step's longest name beside it, and the whole path of that name.
+const nameProblem = (root: string, path: string, position: number): Refusal | undefined => {
+  const aside = join(root, asidePath(path, LONGEST_RUN_ID, position));
+  const names = [...path.split('/').slice(0, -1), basename(aside)];
+  return size(aside) >= PATH_MAX || names.some((name) => size(name) > NAME_MAX)
     ? refusal('plan.name-too-long', path)
     : undefined;
+};
 
 // The folders of a path, as keys: ".claude/a/b.md" has ".claude" and ".claude/a".
 const folderKeys = (path: string): string[] => {
@@ -102,8 +118,8 @@ const folderKeys = (path: string): string[] => {
 
 // What the plan alone shows wrong with an operation; a plan path that is a folder of another one would make a step
 // throw after the steps before it wrote.
-const planProblem = (op: PlanOperation, position: number, nested: boolean): Refusal | undefined =>
-  nameProblem(op.path, position) ?? (nested ? refusal('plan.file-changed', op.path) : textProblem(op));
+const planProblem = (root: string, op: PlanOperation, position: number, nested: boolean): Refusal | undefined =>
+  nameProblem(root, op.path, position) ?? (nested ? refusal('plan.file-changed', op.path) : textProblem(op));
 
 // Every operation is checked before the first write, each against what the ones before it leave: one problem writes none.
 export const precheck = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
@@ -115,7 +131,7 @@ export const precheck = (root: string, operations: readonly PlanOperation[]): Re
     const above = folderKeys(op.path);
     const nested = folders.has(key) || above.some((folder) => leaves.has(folder));
     const problem =
-      planProblem(op, position, nested) ??
+      planProblem(root, op, position, nested) ??
       linkRefusal(root, op.path) ??
       (leaves.has(key) ? chainProblem(op, leaves.get(key)) : diskProblem(root, op));
     if (problem !== undefined) return problem;
@@ -197,18 +213,31 @@ const step = (context: Step, position: number, op: PlanOperation): Refusal | und
   }
   if (hashAt(path) !== op.afterHash) return { code: 'apply.write-mismatch', params: { run, path: op.path } };
   at('written', position);
-  store.settle(run, position, 'done');
   return undefined;
 };
 
-// What a step's exception becomes once recovery ran: the step's own error, kept first when recovery fails too.
-const afterRecovery = (store: RunStore, root: string, error: unknown): unknown => {
-  try {
-    recover(store, root);
-  } catch (failure) {
-    return new AggregateError([error, failure], 'a step failed, and the recovery after it failed too');
+/** What a step's exception becomes: the run it stopped, what the recoveries around it reported, and the cause. */
+export class StepFailed extends Error {
+  readonly run: string;
+  readonly findings: Finding[];
+
+  constructor(run: string, findings: Finding[], cause: unknown) {
+    super(`run ${run} stopped: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    this.run = run;
+    this.findings = findings;
   }
-  return error;
+}
+
+// What recovery reports once a step threw, and the cause: the step's own error, kept first when recovery fails too.
+const afterRecovery = (store: RunStore, root: string, error: unknown): { findings: Finding[]; cause: unknown } => {
+  try {
+    return { findings: recover(store, root), cause: error };
+  } catch (failure) {
+    return {
+      findings: [],
+      cause: new AggregateError([error, failure], 'a step failed, and the recovery after it failed too'),
+    };
+  }
 };
 
 const journal = ({ before: _before, after: _after, ...hashes }: PlanOperation): NewRun['operations'][number] => ({
@@ -216,33 +245,42 @@ const journal = ({ before: _before, after: _after, ...hashes }: PlanOperation): 
   entries: null,
 });
 
+// Writes each step in order and ends the run with its last one: null when every step is done, else the step's refusal.
+const steps = (context: Step, operations: readonly PlanOperation[]): Refusal | null => {
+  const { store, run } = context;
+  const last = operations.length - 1;
+  for (const [position, op] of operations.entries()) {
+    const stopped = step(context, position, op);
+    if (stopped !== undefined) {
+      store.finish(run, 'failed', [position, 'failed']);
+      return stopped;
+    }
+    if (position < last) store.settle(run, position, 'done');
+  }
+  store.finish(run, 'done', [last, 'done']);
+  return null;
+};
+
 /**
- * Applies a plan as one run on the held store: settles what interrupted runs left, checks every operation, then writes
- * each one crash-ordered and stops at the first that fails. An empty plan records no run. `at` runs at each boundary.
+ * Applies a plan as one run on the held store: settles what interrupted runs left, refuses while one is unsettled,
+ * checks every operation, then writes each one crash-ordered and stops at the first that fails. An empty plan records
+ * no run. `at` runs at each boundary. A step that throws ends the run, or leaves it to a later recovery as the
+ * findings of StepFailed report, and throws StepFailed.
  */
-export const apply = (store: RunStore, { root, plan, run }: ApplyRequest, at: At = () => undefined): Applied => {
-  const findings = recover(store, root);
+export const apply = (store: RunStore, request: ApplyRequest, at: At = () => undefined): Applied => {
+  const { root, plan, run, earlier = [] } = request;
+  const findings = [...earlier, ...recover(store, root)];
   const { operations } = plan;
   if (operations.length === 0) return { run: null, refusal: null, findings };
-  const problem = precheck(root, operations);
+  const problem = unsettledBy(findings) ?? precheck(root, operations);
   if (problem !== undefined) return { run: null, refusal: problem, findings };
   const begun = store.begin({ ...run, planHash: plan.planHash, operations: operations.map(journal) });
   if (!begun.ok) return { run: null, refusal: begun.refusal, findings };
-  const id = begun.value;
-  for (const [position, op] of operations.entries()) {
-    let stopped: Refusal | undefined;
-    try {
-      stopped = step({ store, run: id, root, at }, position, op);
-    } catch (error) {
-      // Settled now, so the run is not listed as running while this process holds the store.
-      throw afterRecovery(store, root, error);
-    }
-    if (stopped !== undefined) {
-      store.settle(id, position, 'failed');
-      store.finish(id, 'failed');
-      return { run: id, refusal: stopped, findings };
-    }
+  try {
+    return { run: begun.value, refusal: steps({ store, run: begun.value, root, at }, operations), findings };
+  } catch (error) {
+    // Settled now where the filesystem allows, so the run is not listed as running while this process holds the store.
+    const after = afterRecovery(store, root, error);
+    throw new StepFailed(begun.value, [...findings, ...after.findings], after.cause);
   }
-  store.finish(id, 'done');
-  return { run: id, refusal: null, findings };
 };
