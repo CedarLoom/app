@@ -1,58 +1,38 @@
 import { parseArgs } from 'node:util';
 import type { Refusal } from '@cedarloom/core';
 
-/** The commands by their words; variadic takes its argument any number of times, the others name the flags taken. */
+/**
+ * A command's arguments in order, the last `optional` of them optional, or with `variadic` its one argument any number
+ * of times; and the flags it takes beside --json and --help.
+ */
+interface Command {
+  args: readonly string[];
+  optional?: number;
+  variadic?: boolean;
+  flags: readonly string[];
+}
+const EDIT = ['yes', 'plugin-root'];
+
+/** The commands by their words. */
 const COMMANDS = {
-  doctor: { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false, from: false },
-  'runs list': { argument: null, variadic: false, change: false, pluginRoot: false, shipped: false, from: false },
-  'runs show': { argument: '<run>', variadic: false, change: false, pluginRoot: false, shipped: false, from: false },
-  undo: { argument: '<run>', variadic: false, change: true, pluginRoot: false, shipped: false, from: false },
-  'workflows list': { argument: null, variadic: false, change: false, pluginRoot: true, shipped: false, from: false },
-  'workflows show': {
-    argument: '<name>',
-    variadic: false,
-    change: false,
-    pluginRoot: true,
-    shipped: true,
-    from: false,
-  },
-  'workflows validate': {
-    argument: '<name>',
-    variadic: true,
-    change: false,
-    pluginRoot: true,
-    shipped: true,
-    from: false,
-  },
-  'workflows generate': {
-    argument: '<name>',
-    variadic: true,
-    change: true,
-    pluginRoot: true,
-    shipped: false,
-    from: false,
-  },
-  'workflows new': { argument: '<name>', variadic: false, change: true, pluginRoot: true, shipped: false, from: true },
+  doctor: { args: [], flags: ['plugin-root'] },
+  'runs list': { args: [], flags: [] },
+  'runs show': { args: ['<run>'], flags: [] },
+  undo: { args: ['<run>'], flags: ['yes'] },
+  'workflows list': { args: [], flags: ['plugin-root'] },
+  'workflows show': { args: ['<name>'], flags: ['plugin-root', 'shipped'] },
+  'workflows validate': { args: ['<name>'], variadic: true, flags: ['plugin-root', 'shipped'] },
+  'workflows generate': { args: ['<name>'], variadic: true, flags: ['yes', 'plugin-root'] },
+  'workflows new': { args: ['<name>'], flags: ['yes', 'plugin-root', 'from'] },
+  'workflows add': { args: ['<name>', '<pointer>', '<value>'], flags: EDIT },
+  'workflows move': { args: ['<name>', '<from>', '<to>'], flags: EDIT },
+  'workflows remove': { args: ['<name>', '<pointer>'], flags: EDIT },
+  // set takes <value> or --unset; which one is the command's own check.
+  'workflows set': { args: ['<name>', '<pointer>', '<value>'], optional: 1, flags: [...EDIT, 'unset'] },
   // The switches check their own arguments, as <id> and --plugin rule each other out.
-  'workflows off': {
-    argument: '<id>',
-    variadic: true,
-    change: true,
-    pluginRoot: true,
-    shipped: false,
-    from: false,
-    flags: ['plugin', 'script-only'],
-  },
-  'workflows on': {
-    argument: '<id>',
-    variadic: true,
-    change: true,
-    pluginRoot: false,
-    shipped: false,
-    from: false,
-    flags: ['plugin'],
-  },
-} as const;
+  'workflows off': { args: ['<id>'], variadic: true, flags: [...EDIT, 'plugin', 'script-only'] },
+  'workflows on': { args: ['<id>'], variadic: true, flags: ['yes', 'plugin'] },
+} satisfies Record<string, Command>;
 type CommandName = keyof typeof COMMANDS;
 const NOUNS = ['runs', 'workflows'] as const;
 type Noun = (typeof NOUNS)[number];
@@ -70,6 +50,7 @@ export type Request =
       from: string | null;
       plugin: boolean;
       scriptOnly: boolean;
+      unset: boolean;
     }
   | { kind: 'help'; topic: CommandName | Noun | null }
   | { kind: 'version' };
@@ -120,6 +101,7 @@ const lineOf = (argv: readonly string[]): Line => {
 };
 
 const isCommand = (words: string): words is CommandName => Object.hasOwn(COMMANDS, words);
+const commandNamed = (name: CommandName): Command => COMMANDS[name];
 const isNoun = (word: string): word is Noun => (NOUNS as readonly string[]).includes(word);
 
 // The command the first words name and how many words that took, or with --help a usage topic that names none.
@@ -142,15 +124,8 @@ const commandOf = (
 };
 
 const allowedFlags = (name: CommandName | Noun | null): Set<string> => {
-  const allowed = new Set(['json', 'help']);
-  if (name === null || isNoun(name)) return allowed;
-  if (COMMANDS[name].change) allowed.add('yes');
-  if (COMMANDS[name].pluginRoot) allowed.add('plugin-root');
-  if (COMMANDS[name].shipped) allowed.add('shipped');
-  if (COMMANDS[name].from) allowed.add('from');
-  const command = COMMANDS[name];
-  if ('flags' in command) for (const flag of command.flags) allowed.add(flag);
-  return allowed;
+  const shared = ['json', 'help'];
+  return new Set(name === null || isNoun(name) ? shared : [...shared, ...commandNamed(name).flags]);
 };
 
 const VALUES = new Map([
@@ -181,14 +156,14 @@ const flagRefusal = ({ flags, help, json }: Line, name: CommandName | Noun | nul
 };
 
 const argumentsOf = (name: CommandName, rest: string[]): { args: string[] } | { refusal: Refusal } => {
-  const { argument: wanted, variadic } = COMMANDS[name];
+  const { args, optional = 0, variadic } = commandNamed(name);
   if (variadic) return { args: rest };
-  const [argument = null, extra] = rest;
-  if (wanted !== null && argument === null)
-    return usage('cli.missing-argument', { argument: wanted, command: `${BIN} ${name}` });
-  const surplus = wanted === null ? argument : extra;
-  if (surplus !== null && surplus !== undefined) return usage('cli.unknown-command', { command: surplus, bin: BIN });
-  return { args: argument === null ? [] : [argument] };
+  const missing = args[rest.length];
+  if (missing !== undefined && rest.length < args.length - optional)
+    return usage('cli.missing-argument', { argument: missing, command: `${BIN} ${name}` });
+  const surplus = rest[args.length];
+  if (surplus !== undefined) return usage('cli.unknown-command', { command: surplus, bin: BIN });
+  return { args: rest };
 };
 
 const isVersion = (argv: readonly string[]): boolean =>
@@ -222,6 +197,7 @@ export const parse = (argv: readonly string[]): Parsed => {
       from: valueOf('from'),
       plugin: has('plugin'),
       scriptOnly: has('script-only'),
+      unset: has('unset'),
     },
   };
 };

@@ -286,7 +286,9 @@ export class RunStore {
    * steps.
    */
   generations(): Run[] {
-    return this.#newestFirst(`r.status <> 'running' AND r.action IN ('workflow.generate', 'workflow.new')`);
+    return this.#newestFirst(
+      `r.status <> 'running' AND r.action IN ('workflow.generate', 'workflow.new', 'workflow.edit')`,
+    );
   }
 
   /** The done runs that switched off or on, newest first. */

@@ -1,5 +1,6 @@
 export { ApplyRefusal, DoctorReport, DoctorResult, RunList, UndoApplied, UndoApply, UndoPreview } from './api.ts';
 export { canonicalHash, canonicalJson, type Hasher, JsonValue } from './canonical-json.ts';
+export { type Edit, edited } from './edit.ts';
 export { Code, Finding, Params, Refusal } from './finding.ts';
 export { type CompiledMessage, messageText, printable, printableLines } from './message-text.ts';
 export type { MessagePlaceholders } from './messages/catalog.ts';

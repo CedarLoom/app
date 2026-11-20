@@ -21,11 +21,14 @@ export const MESSAGE_IDS = [
   'cli.missing-argument',
   'cli.unknown-command',
   'cli.unknown-flag',
+  'cli.value-not-json',
   'definition.invalid',
   'definition.name-mismatch',
   'definition.not-found',
   'definition.not-json',
   'definition.stale',
+  'edit.result-over-limits',
+  'edit.target-invalid',
   'generate.delete-skipped',
   'generator.failed',
   'generator.output-unknown',
@@ -92,11 +95,14 @@ export interface MessagePlaceholders {
   'cli.missing-argument': 'argument' | 'command';
   'cli.unknown-command': 'bin' | 'command';
   'cli.unknown-flag': 'command' | 'flag';
+  'cli.value-not-json': 'argument';
   'definition.invalid': 'count' | 'path';
   'definition.name-mismatch': 'file' | 'name';
   'definition.not-found': 'name' | 'source';
   'definition.not-json': 'path';
   'definition.stale': 'name' | 'paths';
+  'edit.result-over-limits': never;
+  'edit.target-invalid': 'operation' | 'pointer';
   'generate.delete-skipped': 'path';
   'generator.failed': 'exitCode' | 'signal' | 'stderr';
   'generator.output-unknown': 'output';

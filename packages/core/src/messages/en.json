@@ -38,6 +38,7 @@
     "cli.missing-argument": [["command"], " needs ", ["argument"], "."],
     "cli.unknown-command": ["Unknown command: ", ["command"], ". Run ", ["bin"], " --help for usage."],
     "cli.unknown-flag": [["command"], " has no option ", ["flag"], "."],
+    "cli.value-not-json": [["argument"], " must be JSON; write a text value in quotes, for example '\"opus\"'."],
     "definition.invalid": [
       "The workflow definition ",
       ["path"],
@@ -66,6 +67,16 @@
       " differ from what the plugin's generator writes now: ",
       ["paths"],
       ". Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete any other file of a definition that no longer exists yourself."
+    ],
+    "edit.result-over-limits": [
+      "The edited definition would be larger than 16 MiB or nested deeper than 100 levels, more than CedarLoom reads. Nothing was changed."
+    ],
+    "edit.target-invalid": [
+      "The pointer \"",
+      ["pointer"],
+      "\" is not a place where ",
+      ["operation"],
+      " can apply in this definition."
     ],
     "generate.delete-skipped": [
       ["path"],
