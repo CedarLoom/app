@@ -268,18 +268,90 @@ describe('errors', () => {
   });
 });
 
-describe('errors at the socket and inside routes', () => {
-  it('answers a malformed request at the socket with 400 api.bad-request', async () => {
+// Everything the server sends on one connection until it closes it.
+const received = async (app: App, request: string): Promise<string> => {
+  await app.listen({ host: '127.0.0.1', port: 0 });
+  const socket = connect(portOf(app.server), '127.0.0.1');
+  socket.end(request);
+  const text = (await socket.setEncoding('utf8').toArray()).join('');
+  await app.close();
+  return text;
+};
+
+describe('errors at the socket', () => {
+  const BAD_REQUEST = '{"code":"api.bad-request","params":{}}';
+
+  it.each([
+    ['a malformed request', () => 'NOT-HTTP\r\n\r\n', 'HTTP/1.1 400 Bad Request'],
+    [
+      'a header block over 16 KiB',
+      () => `GET / HTTP/1.1\r\nHost: ${HOST}\r\nX-Big: ${'a'.repeat(17_000)}\r\n\r\n`,
+      'HTTP/1.1 431 Request Header Fields Too Large',
+    ],
+    [
+      'chunk extensions over 16 KiB',
+      () => `GET / HTTP/1.1\r\nHost: ${HOST}\r\nTransfer-Encoding: chunked\r\n\r\n1;${'a'.repeat(17_000)}\r\n`,
+      'HTTP/1.1 413 Payload Too Large',
+    ],
+    [
+      // The timeout takes 30 s to come, so this row raises Node's error on the connection itself.
+      'a request timeout',
+      (app: App) => {
+        const timeout = Object.assign(new Error('timeout'), { code: 'ERR_HTTP_REQUEST_TIMEOUT' });
+        app.server.once('connection', (socket) => app.server.emit('clientError', timeout, socket));
+        return '';
+      },
+      'HTTP/1.1 408 Request Timeout',
+    ],
+  ])('answers %s with its status and api.bad-request', async (_case, request, status) => {
     const { app } = await server();
+    const text = await received(app, request(app));
+    expect([text.split('\r\n')[0], text.split('\r\n\r\n')[1]]).toEqual([status, BAD_REQUEST]);
+  });
+
+  it('writes no answer into a response whose headers are out and closes the connection', async () => {
+    const { app } = await server();
+    app.get('/streams', (_req, reply) => {
+      reply.hijack();
+      reply.raw.writeHead(200, { 'content-type': 'text/plain' });
+      reply.raw.write('partial');
+    });
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const socket = connect(portOf(app.server), '127.0.0.1').setEncoding('utf8');
+    socket.write(`GET /streams HTTP/1.1\r\nHost: 127.0.0.1:${portOf(app.server)}\r\n\r\n`);
+    let text = '';
+    socket.on('data', (chunk: string) => {
+      text += chunk;
+      if (text.includes('partial')) socket.write('NOT-HTTP\r\n\r\n');
+    });
+    await new Promise((resolve) => socket.on('close', resolve));
+    await app.close();
+    expect(text).toContain('partial');
+    expect(text).not.toContain(BAD_REQUEST);
+  });
+});
+
+describe('errors inside routes', () => {
+  it('answers a client gone mid-body with 400 api.bad-request and logs nothing', async () => {
+    const { app, log } = await server();
+    const answered = new Promise<number>((resolve) => {
+      app.addHook('onSend', async (_req, reply) => {
+        resolve(reply.statusCode);
+      });
+    });
+    // The client leaves once the server starts reading the body, 5 of its 100 bytes sent.
+    app.addHook('preParsing', async (_req, _reply, payload) => {
+      socket.destroy();
+      return payload;
+    });
     await app.listen({ host: '127.0.0.1', port: 0 });
     const socket = connect(portOf(app.server), '127.0.0.1');
-    socket.end('NOT-HTTP\r\n\r\n');
-    const text = (await socket.setEncoding('utf8').toArray()).join('');
+    socket.write(
+      `POST /api/session HTTP/1.1\r\nHost: 127.0.0.1:${portOf(app.server)}\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{"tok`,
+    );
+    const status = await answered;
     await app.close();
-    expect([text.split('\r\n')[0], text.split('\r\n\r\n')[1]]).toEqual([
-      'HTTP/1.1 400 Bad Request',
-      '{"code":"api.bad-request","params":{}}',
-    ]);
+    expect([status, log]).toEqual([400, []]);
   });
 
   const skipped: Finding = {

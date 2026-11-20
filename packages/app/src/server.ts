@@ -1,4 +1,4 @@
-import { STATUS_CODES } from 'node:http';
+import { type ServerResponse, STATUS_CODES } from 'node:http';
 import type { Socket } from 'node:net';
 import { inspect } from 'node:util';
 import helmet from '@fastify/helmet';
@@ -46,8 +46,10 @@ const requestError = (error: unknown): error is FastifyError & { statusCode: num
 
 // Anything else is internal, a thrown non-Error too; a failed step's 500 names its run, whose earlier steps may have written.
 const errors = (app: FastifyInstance, log: (text: string) => void): void => {
-  app.setErrorHandler((error: FastifyError, _req, reply) => {
+  app.setErrorHandler((error: FastifyError, req, reply) => {
     if (requestError(error)) return reply.code(error.statusCode).send(badRequest(error));
+    // The request stream's own error (a client gone mid-body), which Fastify's body reader passes on.
+    if (error instanceof Error && error === req.raw.errored) return reply.code(400).send(refusal('api.bad-request'));
     // depth null: the default hides a finding's params, such as the path of a recovery.skipped in StepFailed.
     log(`${inspect(error, { depth: null })}\n`);
     const run = error instanceof StepFailed ? { run: error.run } : {};
@@ -86,14 +88,20 @@ const SOCKET_STATUS: Readonly<Record<string, number>> = {
   HPE_CHUNK_EXTENSIONS_OVERFLOW: 413,
 };
 
+// The last response on each socket: Node keeps it only in a private field.
+const responses = new WeakMap<Socket, ServerResponse>();
+
 // Node's answers at the socket, before any route (a request timeout, a malformed request), with Node's statuses.
 const clientErrorHandler = (error: Error & { code?: string }, socket: Socket): void => {
   if (error.code === 'ECONNRESET' || socket.destroyed) return;
+  const response = responses.get(socket);
+  // As Node's own handler: an answer after a response's headers would land inside that response.
+  const inFlight = response !== undefined && response.headersSent && !response.writableFinished;
   const status = SOCKET_STATUS[error.code ?? ''] ?? 400;
   const body = JSON.stringify(refusal('api.bad-request'));
   const head = `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}`;
   const headers = 'Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close';
-  if (socket.writable) socket.write(`${head}\r\n${headers}\r\n\r\n${body}`);
+  if (socket.writable && !inFlight) socket.write(`${head}\r\n${headers}\r\n\r\n${body}`);
   socket.destroy(error);
 };
 
@@ -110,6 +118,7 @@ const SERVER = {
 /** The local server: session security on every request, Refusal bodies for every error, the API and the UI's files. */
 export const buildServer = async ({ session, log, project, ui }: ServerOptions): Promise<FastifyInstance> => {
   const app = Fastify(SERVER);
+  app.server.on('request', (req, res) => responses.set(req.socket, res));
   // Zod schemas validate requests and responses and make the OpenAPI document; swagger collects the routes added after it.
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);

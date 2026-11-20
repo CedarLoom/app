@@ -192,7 +192,7 @@ describe('undo apply refusals', () => {
     expect((await get(app, '/api/runs')).json()).toEqual({ runs: [r1] });
   });
 
-  it('refuses POST without a plan hash with 400 api.bad-request naming planHash', async () => {
+  it('refuses POST without a plan hash with 400 api.bad-fields naming planHash', async () => {
     const { app } = await served();
     const reply = await app.inject({
       method: 'POST',
