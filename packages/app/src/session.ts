@@ -132,5 +132,5 @@ export const frameworkErrors = (_error: FastifyError, req: FastifyRequest, reply
   void reply
     .code(status)
     .headers({ 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
-    .send({ code, params: code === 'api.bad-request' ? { issues: [] } : {} });
+    .send({ code, params: {} });
 };

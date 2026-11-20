@@ -1,4 +1,4 @@
-export { DoctorReport, DoctorResult, RunList, UndoApplied, UndoApply, UndoPreview } from './api.ts';
+export { ApplyRefusal, DoctorReport, DoctorResult, RunList, UndoApplied, UndoApply, UndoPreview } from './api.ts';
 export { canonicalHash, canonicalJson, type Hasher, JsonValue } from './canonical-json.ts';
 export { Code, Finding, Params, Refusal } from './finding.ts';
 export { type CompiledMessage, messageText, printable } from './message-text.ts';

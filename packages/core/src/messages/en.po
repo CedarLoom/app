@@ -201,6 +201,10 @@ msgstr "If the browser shows an error about a file instead of CedarLoom, open th
 
 #. js-lingui-explicit-id
 msgid "api.bad-request"
+msgstr "The request is not valid."
+
+#. js-lingui-explicit-id
+msgid "api.bad-fields"
 msgstr "The request is not valid. Fields with issues: {issues}"
 
 #. js-lingui-explicit-id

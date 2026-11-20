@@ -42,6 +42,7 @@
                 "code": {
                   "type": "string",
                   "enum": [
+                    "api.bad-fields",
                     "api.bad-request",
                     "api.internal",
                     "api.not-found",
@@ -392,6 +393,7 @@
                         "code": {
                           "type": "string",
                           "enum": [
+                            "api.bad-fields",
                             "api.bad-request",
                             "api.internal",
                             "api.not-found",
@@ -487,6 +489,7 @@
                 "code": {
                   "type": "string",
                   "enum": [
+                    "api.bad-fields",
                     "api.bad-request",
                     "api.internal",
                     "api.not-found",
@@ -625,6 +628,7 @@
           "code": {
             "type": "string",
             "enum": [
+              "api.bad-fields",
               "api.bad-request",
               "api.internal",
               "api.not-found",
@@ -703,6 +707,92 @@
         "required": ["code", "params"],
         "additionalProperties": false
       },
+      "ApplyRefusalInput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "api.bad-fields",
+              "api.bad-request",
+              "api.internal",
+              "api.not-found",
+              "apply.backup-failed",
+              "apply.recovered",
+              "apply.unsettled",
+              "apply.write-mismatch",
+              "cli.bad-value",
+              "cli.confirm-required",
+              "cli.flag-conflict",
+              "cli.internal",
+              "cli.missing-argument",
+              "cli.unknown-command",
+              "cli.unknown-flag",
+              "definition.invalid",
+              "definition.name-mismatch",
+              "definition.not-found",
+              "definition.not-json",
+              "definition.stale",
+              "generate.delete-skipped",
+              "generator.failed",
+              "generator.output-unknown",
+              "node.version-unsupported",
+              "plan.file-changed",
+              "plan.name-too-long",
+              "plan.not-text",
+              "plan.path-outside-roots",
+              "plan.stale",
+              "plan.symlink",
+              "plan.text-mismatch",
+              "plugin.disabled",
+              "plugin.found",
+              "plugin.marketplace-untrusted",
+              "plugin.not-found",
+              "plugin.record-unknown",
+              "plugin.too-old",
+              "plugin.trust-bypassed",
+              "plugin.untrusted",
+              "project.not-found",
+              "recovery.skipped",
+              "run.already-undone",
+              "run.not-found",
+              "server.open-hint",
+              "server.port-in-use",
+              "session.cookie",
+              "session.csrf",
+              "session.host",
+              "session.origin",
+              "session.token",
+              "settings.unreadable",
+              "store.locked",
+              "store.unreadable",
+              "store.version-unsupported",
+              "undo.backup-changed",
+              "undo.backup-missing",
+              "undo.file-changed",
+              "undo.replaced",
+              "undo.result-kept",
+              "workflow.name-invalid"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": { "type": "string" },
+            "additionalProperties": {
+              "anyOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" },
+                { "type": "array", "items": { "type": "string" } }
+              ]
+            }
+          },
+          "run": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }
+        },
+        "required": ["code", "params"],
+        "additionalProperties": false
+      },
       "SessionExchangeInput": {
         "type": "object",
         "properties": { "token": { "type": "string" } },
@@ -754,6 +844,7 @@
                 "code": {
                   "type": "string",
                   "enum": [
+                    "api.bad-fields",
                     "api.bad-request",
                     "api.internal",
                     "api.not-found",
@@ -1104,6 +1195,7 @@
                         "code": {
                           "type": "string",
                           "enum": [
+                            "api.bad-fields",
                             "api.bad-request",
                             "api.internal",
                             "api.not-found",
@@ -1199,6 +1291,7 @@
                 "code": {
                   "type": "string",
                   "enum": [
+                    "api.bad-fields",
                     "api.bad-request",
                     "api.internal",
                     "api.not-found",
@@ -1337,6 +1430,7 @@
           "code": {
             "type": "string",
             "enum": [
+              "api.bad-fields",
               "api.bad-request",
               "api.internal",
               "api.not-found",
@@ -1415,6 +1509,92 @@
         "required": ["code", "params"],
         "additionalProperties": false
       },
+      "ApplyRefusal": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "api.bad-fields",
+              "api.bad-request",
+              "api.internal",
+              "api.not-found",
+              "apply.backup-failed",
+              "apply.recovered",
+              "apply.unsettled",
+              "apply.write-mismatch",
+              "cli.bad-value",
+              "cli.confirm-required",
+              "cli.flag-conflict",
+              "cli.internal",
+              "cli.missing-argument",
+              "cli.unknown-command",
+              "cli.unknown-flag",
+              "definition.invalid",
+              "definition.name-mismatch",
+              "definition.not-found",
+              "definition.not-json",
+              "definition.stale",
+              "generate.delete-skipped",
+              "generator.failed",
+              "generator.output-unknown",
+              "node.version-unsupported",
+              "plan.file-changed",
+              "plan.name-too-long",
+              "plan.not-text",
+              "plan.path-outside-roots",
+              "plan.stale",
+              "plan.symlink",
+              "plan.text-mismatch",
+              "plugin.disabled",
+              "plugin.found",
+              "plugin.marketplace-untrusted",
+              "plugin.not-found",
+              "plugin.record-unknown",
+              "plugin.too-old",
+              "plugin.trust-bypassed",
+              "plugin.untrusted",
+              "project.not-found",
+              "recovery.skipped",
+              "run.already-undone",
+              "run.not-found",
+              "server.open-hint",
+              "server.port-in-use",
+              "session.cookie",
+              "session.csrf",
+              "session.host",
+              "session.origin",
+              "session.token",
+              "settings.unreadable",
+              "store.locked",
+              "store.unreadable",
+              "store.version-unsupported",
+              "undo.backup-changed",
+              "undo.backup-missing",
+              "undo.file-changed",
+              "undo.replaced",
+              "undo.result-kept",
+              "workflow.name-invalid"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": { "type": "string" },
+            "additionalProperties": {
+              "anyOf": [
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" },
+                { "type": "array", "items": { "type": "string" } }
+              ]
+            }
+          },
+          "run": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" }
+        },
+        "required": ["code", "params"],
+        "additionalProperties": false
+      },
       "SessionExchange": {
         "type": "object",
         "properties": { "token": { "type": "string" } },
@@ -1465,7 +1645,7 @@
           },
           "5XX": {
             "description": "Default Response",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
           }
         }
       },
@@ -1481,7 +1661,7 @@
           },
           "5XX": {
             "description": "Default Response",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
           }
         }
       }
@@ -1499,7 +1679,7 @@
           },
           "5XX": {
             "description": "Default Response",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
           }
         }
       }
@@ -1517,7 +1697,7 @@
           },
           "5XX": {
             "description": "Default Response",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
           }
         }
       }
@@ -1543,7 +1723,7 @@
           },
           "5XX": {
             "description": "Default Response",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
           }
         }
       }
@@ -1569,7 +1749,7 @@
           },
           "5XX": {
             "description": "Default Response",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
           }
         }
       },
@@ -1593,11 +1773,11 @@
           },
           "4XX": {
             "description": "Default Response",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
           },
           "5XX": {
             "description": "Default Response",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
           }
         }
       }

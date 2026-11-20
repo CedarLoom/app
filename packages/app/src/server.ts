@@ -1,6 +1,10 @@
+import { STATUS_CODES } from 'node:http';
+import type { Socket } from 'node:net';
+import { inspect } from 'node:util';
 import helmet from '@fastify/helmet';
 import swagger from '@fastify/swagger';
 import type { Code, Params } from '@cedarloom/core';
+import { StepFailed } from '@cedarloom/use-cases';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import {
   jsonSchemaTransform,
@@ -24,21 +28,30 @@ export interface ServerOptions {
 }
 
 const refusal = (code: Code, params: Params = {}): { code: Code; params: Params } => ({ code, params });
-const badRequest = (issues: string[]): ReturnType<typeof refusal> => refusal('api.bad-request', { issues });
 
 // A schema's issues by field; a root issue (not an object, an unknown key) names none.
-const fields = (error: FastifyError): string[] =>
-  (error.validation ?? []).flatMap(({ instancePath }) =>
+const badRequest = (error: FastifyError): ReturnType<typeof refusal> => {
+  const issues = (error.validation ?? []).flatMap(({ instancePath }) =>
     instancePath.length > 1 ? [instancePath.slice(1).replaceAll('/', '.')] : [],
   );
+  return issues.length === 0 ? refusal('api.bad-request') : refusal('api.bad-fields', { issues });
+};
 
-// Fastify's client errors (body over bodyLimit 413, wrong content type 415, malformed JSON 400) keep their status.
+// Fastify's own request errors (validation 400, body over bodyLimit 413, wrong content type 415, malformed JSON 400).
+const requestError = (error: unknown): error is FastifyError & { statusCode: number } => {
+  if (!(error instanceof Error) || !('code' in error) || !('statusCode' in error)) return false;
+  const { code, statusCode } = error;
+  return typeof code === 'string' && code.startsWith('FST_ERR_') && typeof statusCode === 'number' && statusCode < 500;
+};
+
+// Anything else is internal, a thrown non-Error too; a failed step's 500 names its run, whose earlier steps may have written.
 const errors = (app: FastifyInstance, log: (text: string) => void): void => {
   app.setErrorHandler((error: FastifyError, _req, reply) => {
-    const status = error.statusCode ?? 500;
-    if (status >= 400 && status < 500) return reply.code(status).send(badRequest(fields(error)));
-    log(`${error.stack ?? String(error)}\n`);
-    return reply.code(500).send(refusal('api.internal'));
+    if (requestError(error)) return reply.code(error.statusCode).send(badRequest(error));
+    // depth null: the default hides a finding's params, such as the path of a recovery.skipped in StepFailed.
+    log(`${inspect(error, { depth: null })}\n`);
+    const run = error instanceof StepFailed ? { run: error.run } : {};
+    return reply.code(500).send({ ...refusal('api.internal'), ...run });
   });
   app.setNotFoundHandler((_req, reply) => reply.code(404).send(refusal('api.not-found')));
 };
@@ -67,8 +80,26 @@ const sessionRoutes = (app: FastifyInstance, session: Session): void => {
   });
 };
 
+const SOCKET_STATUS: Readonly<Record<string, number>> = {
+  ERR_HTTP_REQUEST_TIMEOUT: 408,
+  HPE_HEADER_OVERFLOW: 431,
+  HPE_CHUNK_EXTENSIONS_OVERFLOW: 413,
+};
+
+// Node's answers at the socket, before any route (a request timeout, a malformed request), with Node's statuses.
+const clientErrorHandler = (error: Error & { code?: string }, socket: Socket): void => {
+  if (error.code === 'ECONNRESET' || socket.destroyed) return;
+  const status = SOCKET_STATUS[error.code ?? ''] ?? 400;
+  const body = JSON.stringify(refusal('api.bad-request'));
+  const head = `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}`;
+  const headers = 'Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close';
+  if (socket.writable) socket.write(`${head}\r\n${headers}\r\n\r\n${body}`);
+  socket.destroy(error);
+};
+
 const SERVER = {
   frameworkErrors,
+  clientErrorHandler,
   // Node answers an HTTP/1.1 request without Host with its own 400; the guard answers it with 421 session.host.
   http: { requireHostHeader: false },
   // Fastify's 0 also turns off Node's own limit, and no proxy sits in front.

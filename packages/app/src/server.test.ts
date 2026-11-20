@@ -1,9 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { connect } from 'node:net';
 import { join } from 'node:path';
+import type { Finding } from '@cedarloom/core';
+import { StepFailed } from '@cedarloom/use-cases';
 import { afterAll, describe, expect, it } from 'vitest';
 import { buildServer } from './server.ts';
-import { Session } from './session.ts';
+import { portOf, Session } from './session.ts';
 
 // Not listening, the server's port is 0: its Host is 127.0.0.1:0 and its cookie cedarloom_session_0.
 const HOST = '127.0.0.1:0';
@@ -42,11 +45,12 @@ const server = async (ui = join(base, 'missing')) => {
   let now = 0;
   let count = 0;
   const session = new Session({ now: () => now, secret: () => `secret-${count++}` });
-  const app = await buildServer({ session, log: () => undefined, project: PROJECT, ui });
+  const log: string[] = [];
+  const app = await buildServer({ session, log: (text) => void log.push(text), project: PROJECT, ui });
   const advance = (ms: number): void => {
     now += ms;
   };
-  return { app, advance };
+  return { app, advance, log };
 };
 
 type App = Awaited<ReturnType<typeof server>>['app'];
@@ -80,17 +84,17 @@ describe('session exchange', () => {
     expect((await exchange(early.app, 'secret-0')).statusCode).toBe(200);
   });
 
-  it('refuses a body without a token with 400 api.bad-request naming the field', async () => {
+  it('refuses a body without a token with 400 api.bad-fields naming the field', async () => {
     const { app } = await server();
     const reply = await app.inject({ method: 'POST', url: '/api/session', headers: { host: HOST }, payload: {} });
-    expect([reply.statusCode, reply.json()]).toEqual([400, { code: 'api.bad-request', params: { issues: ['token'] } }]);
+    expect([reply.statusCode, reply.json()]).toEqual([400, { code: 'api.bad-fields', params: { issues: ['token'] } }]);
   });
 
   it('refuses an unknown key with 400 api.bad-request naming no field', async () => {
     const { app } = await server();
     const payload = { token: 'secret-0', extra: 1 };
     const reply = await app.inject({ method: 'POST', url: '/api/session', headers: { host: HOST }, payload });
-    expect([reply.statusCode, reply.json()]).toEqual([400, { code: 'api.bad-request', params: { issues: [] } }]);
+    expect([reply.statusCode, reply.json()]).toEqual([400, { code: 'api.bad-request', params: {} }]);
   });
 });
 
@@ -248,7 +252,7 @@ describe('errors', () => {
   it('answers a body over the limit with 413 api.bad-request', async () => {
     const { app } = await server();
     const reply = await exchange(app, 'x'.repeat(1_048_577));
-    expect([reply.statusCode, reply.json()]).toEqual([413, { code: 'api.bad-request', params: { issues: [] } }]);
+    expect([reply.statusCode, reply.json()]).toEqual([413, { code: 'api.bad-request', params: {} }]);
   });
 
   it('answers a text/plain body with 415 api.bad-request', async () => {
@@ -260,7 +264,43 @@ describe('errors', () => {
       headers: { ...session, 'content-type': 'text/plain' },
       payload: '{"token":"secret-0"}',
     });
-    expect([reply.statusCode, reply.json()]).toEqual([415, { code: 'api.bad-request', params: { issues: [] } }]);
+    expect([reply.statusCode, reply.json()]).toEqual([415, { code: 'api.bad-request', params: {} }]);
+  });
+});
+
+describe('errors at the socket and inside routes', () => {
+  it('answers a malformed request at the socket with 400 api.bad-request', async () => {
+    const { app } = await server();
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const socket = connect(portOf(app.server), '127.0.0.1');
+    socket.end('NOT-HTTP\r\n\r\n');
+    const text = (await socket.setEncoding('utf8').toArray()).join('');
+    await app.close();
+    expect([text.split('\r\n')[0], text.split('\r\n\r\n')[1]]).toEqual([
+      'HTTP/1.1 400 Bad Request',
+      '{"code":"api.bad-request","params":{}}',
+    ]);
+  });
+
+  const skipped: Finding = {
+    code: 'recovery.skipped',
+    severity: 'error',
+    params: { path: '.claude/skipped.md', run: 'u1' },
+  };
+  it.each([
+    ['a 4xx error not of Fastify', Object.assign(new Error('teapot'), { statusCode: 418 }), {}, 'teapot'],
+    ['null', null, {}, 'null'],
+    ['an error with a cause', new Error('outer', { cause: new Error('the cause') }), {}, 'the cause'],
+    ['StepFailed', new StepFailed('u1', [skipped], new Error('step')), { run: 'u1' }, '.claude/skipped.md'],
+  ])('answers a route throwing %s with 500 api.internal and logs it', async (_case, thrown, run, logged) => {
+    const { app, log } = await server();
+    app.get('/api/throws', async () => {
+      throw thrown;
+    });
+    await exchange(app, 'secret-0');
+    const reply = await app.inject({ method: 'GET', url: '/api/throws', headers: withCookie });
+    expect([reply.statusCode, reply.json()]).toEqual([500, { code: 'api.internal', params: {}, ...run }]);
+    expect(log.join('')).toContain(logged);
   });
 });
 
