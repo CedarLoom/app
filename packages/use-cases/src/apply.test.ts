@@ -224,6 +224,17 @@ describe('apply checks the plan paths', () => {
     expect(listing(root)).toEqual([]);
   });
 
+  // "<" and U+0338 compose to U+226E, so a volume that normalizes reads both spellings as one file.
+  it('refuses a replace that would write < or > as the plan spells it', () => {
+    const { root, state } = project();
+    writeFileSync(join(root, '.claude/≮.md'), 'a\n');
+    const path = '.claude/≮.md';
+    expect(apply(store(state), request(root, [replace(path, 'a\n', 'b\n')]))).toEqual(
+      refusedAt('plan.name-not-portable', path),
+    );
+    expect(readdirSync(join(root, '.claude'))).toEqual(['≮.md']);
+  });
+
   it('refuses a plan path through a file before any write', () => {
     const { root, state } = project({ '.claude/a.md': 'a\n' });
     const plan = [create('.claude/b.md', 'b\n'), create('.claude/a.md/c.md', 'c\n')];
@@ -313,7 +324,7 @@ describe('apply probes two spellings in a private folder', () => {
       const plan = [replace('.claude/Sub/x.md', 'v1\n', 'v2\n'), replace('.claude/sub/x.md', 'v2\n', 'v3\n')];
       chmodSync(folder, 0o500);
       try {
-        expect(precheck(root, plan)).toBeUndefined();
+        expect(precheck(root, plan, false)).toBeUndefined();
       } finally {
         chmodSync(folder, 0o700);
       }

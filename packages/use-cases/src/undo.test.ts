@@ -120,6 +120,17 @@ describe('undo', () => {
   });
 });
 
+describe('undo restores a name Windows does not allow', () => {
+  // Windows refuses to create the file the test starts from.
+  it.skipIf(process.platform === 'win32')('undoes the delete of a file whose name Windows does not allow', () => {
+    const { root, state } = project({ '.claude/a?b.md': 'a\n' });
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [remove('.claude/a?b.md', 'a\n')]));
+    expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'u1', refusal: null });
+    expect(listing(root)).toEqual(['a?b.md']);
+  });
+});
+
 describe('undo refuses', () => {
   it('undo refuses a file a failed step of the run left changed', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });

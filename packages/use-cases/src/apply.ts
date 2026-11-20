@@ -202,18 +202,24 @@ const folderKeys = (path: string): string[] => {
 const planProblem = (root: string, op: PlanOperation, position: number, nested: boolean): Refusal | undefined =>
   nameProblem(root, op.path, position) ?? (nested ? refusal('plan.path-nested', op.path) : textProblem(op));
 
-// A file already on disk keeps its name: undo and generate must still replace or delete it.
-const whereProblem = (op: PlanOperation): Refusal | undefined => {
+// An undo restores names a run found on this disk, and a delete writes no name.
+const whereProblem = (op: PlanOperation, restores: boolean): Refusal | undefined => {
   if (!inWriteRoots(op.path)) return refusal('plan.path-outside-roots', op.path);
-  return op.beforeHash === null && !isPortable(op.path) ? refusal('plan.name-not-portable', op.path) : undefined;
+  return !restores && op.after !== null && !isPortable(op.path)
+    ? refusal('plan.name-not-portable', op.path)
+    : undefined;
 };
 
 // Every operation is checked before the first write, each against what the ones before it leave: one problem writes none.
-export const precheck = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
+export const precheck = (
+  root: string,
+  operations: readonly PlanOperation[],
+  restores: boolean,
+): Refusal | undefined => {
   const chains = new Map<string, Chain>();
   const folders = new Set<string>();
   for (const [position, op] of operations.entries()) {
-    const outside = whereProblem(op);
+    const outside = whereProblem(op, restores);
     if (outside !== undefined) return outside;
     const key = fileKey(op.path);
     const above = folderKeys(op.path);
@@ -413,7 +419,8 @@ export const apply = (store: RunStore, request: ApplyRequest, at: At = () => und
   const findings = [...earlier, ...recover(store, root)];
   const { operations } = plan;
   if (operations.length === 0) return { run: null, refusal: null, findings };
-  const problem = unsettledBy(findings) ?? precheck(root, operations) ?? linksProblem(root, operations);
+  const problem =
+    unsettledBy(findings) ?? precheck(root, operations, run.undoes !== null) ?? linksProblem(root, operations);
   if (problem !== undefined) return { run: null, refusal: problem, findings };
   const journaled = operations.map((op, position) => journal(op, request.entries?.get(position)));
   const begun = store.begin({ ...run, planHash: plan.planHash, operations: journaled });

@@ -185,7 +185,7 @@ const planned = (
   const skipped = changes.filter((change): change is Finding => 'severity' in change);
   // A plan apply would refuse for its paths or files is refused before it is shown. The hard-link probe stays with apply;
   // the spelling probe writes here only where a volume reads two spellings as two files, and the plan is then refused.
-  const unappliable = precheck(root, operations);
+  const unappliable = precheck(root, operations, false);
   if (unappliable !== undefined) return unappliable;
   return { planHash: planHash(operations, sha256), operations, skipped };
 };
