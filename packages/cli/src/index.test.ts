@@ -199,6 +199,13 @@ it('reports a crash as cli.internal with the stack on standard error, exit 5', (
   expect(crashed.stderr).toMatch(/^Error: disk gone\n\s+at /);
 });
 
+it('prints the cause of a crash with its stack', () => {
+  const { root } = project();
+  expect(ran(['runs', 'list', '--json'], root, { realpath: stoppedRun }).stderr).toMatch(
+    /\[cause\]: Error: disk gone\n\s+at /,
+  );
+});
+
 const bin = fileURLToPath(new URL('../bin/cedarloom.js', import.meta.url));
 
 // The entry in a child process whose standard input is closed at once.
@@ -214,6 +221,10 @@ const started = (args: string[], options: { cwd: string; env?: Record<string, st
 
 const lostDisk = (): string => {
   throw new Error('disk gone');
+};
+
+const stoppedRun = (): string => {
+  throw new Error('run r1 stopped', { cause: new Error('disk gone') });
 };
 
 describe('bin/cedarloom.js', () => {

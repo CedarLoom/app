@@ -216,7 +216,7 @@ const step = (context: Step, position: number, op: PlanOperation): Refusal | und
   return undefined;
 };
 
-/** What a step's exception becomes: the run it stopped and what the recovery before the run settled, with the cause. */
+/** What a step's exception becomes: the run it stopped, what the recoveries around it reported, and the cause. */
 export class StepFailed extends Error {
   readonly run: string;
   readonly findings: Finding[];
@@ -228,14 +228,16 @@ export class StepFailed extends Error {
   }
 }
 
-// The cause of a step's exception once recovery ran: the step's own error, kept first when recovery fails too.
-const afterRecovery = (store: RunStore, root: string, error: unknown): unknown => {
+// What recovery reports once a step threw, and the cause: the step's own error, kept first when recovery fails too.
+const afterRecovery = (store: RunStore, root: string, error: unknown): { findings: Finding[]; cause: unknown } => {
   try {
-    recover(store, root);
+    return { findings: recover(store, root), cause: error };
   } catch (failure) {
-    return new AggregateError([error, failure], 'a step failed, and the recovery after it failed too');
+    return {
+      findings: [],
+      cause: new AggregateError([error, failure], 'a step failed, and the recovery after it failed too'),
+    };
   }
-  return error;
 };
 
 const journal = ({ before: _before, after: _after, ...hashes }: PlanOperation): NewRun['operations'][number] => ({
@@ -262,7 +264,8 @@ const steps = (context: Step, operations: readonly PlanOperation[]): Refusal | n
 /**
  * Applies a plan as one run on the held store: settles what interrupted runs left, refuses while one is unsettled,
  * checks every operation, then writes each one crash-ordered and stops at the first that fails. An empty plan records
- * no run. `at` runs at each boundary. A step that throws ends the run and throws StepFailed.
+ * no run. `at` runs at each boundary. A step that throws ends the run, or leaves it to a later recovery as the
+ * findings of StepFailed report, and throws StepFailed.
  */
 export const apply = (store: RunStore, request: ApplyRequest, at: At = () => undefined): Applied => {
   const { root, plan, run, earlier = [] } = request;
@@ -276,7 +279,8 @@ export const apply = (store: RunStore, request: ApplyRequest, at: At = () => und
   try {
     return { run: begun.value, refusal: steps({ store, run: begun.value, root, at }, operations), findings };
   } catch (error) {
-    // Settled now, so the run is not listed as running while this process holds the store.
-    throw new StepFailed(begun.value, findings, afterRecovery(store, root, error));
+    // Settled now where the filesystem allows, so the run is not listed as running while this process holds the store.
+    const after = afterRecovery(store, root, error);
+    throw new StepFailed(begun.value, [...findings, ...after.findings], after.cause);
   }
 };
