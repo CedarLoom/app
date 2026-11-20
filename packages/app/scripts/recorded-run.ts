@@ -6,20 +6,20 @@ import { apply, openStore } from '@cedarloom/use-cases';
 
 const sha256 = (text: string | Uint8Array): string => createHash('sha256').update(text).digest('hex');
 
-/** Records run r1 in a project's store: it created .claude/notes.md with the text "notes". */
-export const recordRun = (root: string, storeDir: string): void => {
+/** Records a run in a project's store: it created .claude/<file> with the text "notes". */
+export const recordRun = (root: string, storeDir: string, id = 'r1', file = 'notes.md'): void => {
   mkdirSync(join(root, '.claude'), { recursive: true });
   const operations: PlanOperation[] = [
     {
       kind: 'create',
-      path: '.claude/notes.md',
+      path: `.claude/${file}`,
       beforeHash: null,
       afterHash: sha256('notes'),
       before: null,
       after: 'notes',
     },
   ];
-  const store = openStore(storeDir, { now: () => new Date('2026-11-19T06:00:00.000Z'), newRunId: () => 'r1' });
+  const store = openStore(storeDir, { now: () => new Date('2026-11-19T06:00:00.000Z'), newRunId: () => id });
   if (!store.ok) throw new Error(store.refusal.code);
   try {
     const plan = { planHash: planHash(operations, sha256), operations, skipped: [] };
