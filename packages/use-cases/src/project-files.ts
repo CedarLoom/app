@@ -10,7 +10,6 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
-  readdirSync,
   readFileSync,
   readlinkSync,
   readSync,
@@ -238,51 +237,10 @@ export const removeEmptyFolder = (path: string): boolean => {
 // link() without hard links: ENOTSUP, or EISDIR on Windows, on FAT and exFAT; EPERM or EXDEV on some network shares.
 const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EISDIR', 'EPERM', 'EXDEV']);
 
-const PROBE = '.cedarloom-probe-';
-// A probe lives for milliseconds; one an hour old was left by a process that stopped.
-const PROBE_AGE_MS = 60 * 60 * 1000;
-
-// Whether a folder holds nothing but empty files and folders that do, as a probe does.
-const onlyEmpty = (folder: string): boolean =>
-  readdirSync(folder).every((name) => {
-    const entry = lstatSync(join(folder, name));
-    return entry.isDirectory() ? onlyEmpty(join(folder, name)) : entry.isFile() && entry.size === 0;
-  });
-
-// Removes the empty files of a folder and then each folder once it is empty; a file written meanwhile stays.
-const removeEmpty = (folder: string): void => {
-  for (const name of readdirSync(folder)) {
-    const path = join(folder, name);
-    const entry = lstatSync(path);
-    if (entry.isDirectory()) removeEmpty(path);
-    else if (entry.isFile() && entry.size === 0) unlinkSync(path);
-  }
-  removeEmptyFolder(folder);
-};
-
-// A probe another process removes meanwhile, or one the app may not read, as another user's, stays.
-const KEPT_PROBE = new Set<unknown>(['ENOENT', 'EACCES', 'EPERM']);
-
-// Removes the probes a stopped process left in a folder: folders changed before `before` holding only empty files.
-const sweepProbes = (folder: string, before: number): void => {
-  for (const name of readdirSync(folder)) {
-    if (!name.startsWith(PROBE)) continue;
-    const path = join(folder, name);
-    try {
-      const entry = lstatSync(path);
-      if (entry.isDirectory() && entry.mtimeMs < before && onlyEmpty(path)) removeEmpty(path);
-    } catch (error) {
-      if (!KEPT_PROBE.has(errorCode(error))) throw error;
-    }
-  }
-};
-
 // What a probe in a private folder made in `folder` finds; the folder goes after.
 const probed = <T>(folder: string, find: (probe: string) => T): T => {
-  const probe = mkdtempSync(join(folder, PROBE));
+  const probe = mkdtempSync(join(folder, '.cedarloom-probe-'));
   try {
-    // Aged by the volume's clock, as the new probe's time reads it.
-    sweepProbes(folder, lstatSync(probe).mtimeMs - PROBE_AGE_MS);
     return find(probe);
   } finally {
     // A scanner that holds the new file on Windows makes a single try fail with EBUSY or EPERM.

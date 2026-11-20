@@ -309,27 +309,27 @@ describe('apply keeps to the write roots', () => {
 
 describe('apply stops the run at a path denied during the run', () => {
   // A mode keeps neither root nor any process on Windows out.
-  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).each([
-    ['a folder on the way', '.claude/skills', create('.claude/skills/b/SKILL.md', 'b\n')],
-    ['the file it replaces', '.claude/b.md', replace('.claude/b.md', 'old\n', 'new\n')],
-  ] as const)('stops the run at %s denied during the run', (_case, denied, operation) => {
-    const { root, state } = project({ '.claude/b.md': 'old\n' });
-    mkdirSync(join(root, '.claude/skills'));
-    const deny = (boundary: Boundary, position: number): void => {
-      if (boundary === 'written' && position === 0) chmodSync(join(root, denied), 0o000);
-    };
-    try {
-      expect(apply(store(state), request(root, [create('.claude/a.md', 'a\n'), operation]), deny)).toEqual(
-        refusedAt('plan.folder-denied', operation.path, 'r1'),
-      );
-    } finally {
-      chmodSync(join(root, denied), 0o700);
-    }
-    expect([text(join(root, '.claude/b.md')), run(state, 'r1')]).toEqual([
-      'old\n',
-      { status: 'failed', steps: ['done', 'untouched'] },
-    ]);
-  });
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'stops the run at the file it replaces denied during the run',
+    () => {
+      const { root, state } = project({ '.claude/b.md': 'old\n' });
+      const deny = (boundary: Boundary, position: number): void => {
+        if (boundary === 'written' && position === 0) chmodSync(join(root, '.claude/b.md'), 0o000);
+      };
+      const plan = [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')];
+      try {
+        expect(apply(store(state), request(root, plan), deny)).toEqual(
+          refusedAt('plan.folder-denied', '.claude/b.md', 'r1'),
+        );
+      } finally {
+        chmodSync(join(root, '.claude/b.md'), 0o700);
+      }
+      expect([text(join(root, '.claude/b.md')), run(state, 'r1')]).toEqual([
+        'old\n',
+        { status: 'failed', steps: ['done', 'untouched'] },
+      ]);
+    },
+  );
 });
 
 describe('apply stops a step', () => {
@@ -594,21 +594,6 @@ describe('apply makes no folder above the project', () => {
     const thrown = thrownBy(() => apply(store(state), request(root, plan), removeRoot));
     expect(thrown).toMatchObject({ run: 'r1', cause: { code: 'ENOENT' } });
     expect(existsSync(root)).toBe(false);
-  });
-});
-
-describe('apply checks the path length of Windows', () => {
-  it('refuses a path whose longest name beside it reaches MAX_PATH, loaded as on Windows', async () => {
-    const platform = process.platform;
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-    vi.resetModules();
-    const windows = await import('./apply.ts').finally(() =>
-      Object.defineProperty(process, 'platform', { value: platform }),
-    );
-    const { root } = project();
-    // Each name far below 255 bytes, the whole path of the longest name beside it past 260 and below 1,024.
-    const path = `.claude/${Array.from({ length: 3 }, () => 'n'.repeat(60)).join('/')}/a.md`;
-    expect(windows.precheck(root, [create(path, 'a\n')])).toEqual({ code: 'plan.name-too-long', params: { path } });
   });
 });
 

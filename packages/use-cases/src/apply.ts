@@ -351,7 +351,9 @@ const afterRecovery = (store: RunStore, root: string, error: unknown): { finding
   } catch (failure) {
     return {
       findings: [],
-      cause: new AggregateError([error, failure], 'a step failed, and the recovery after it failed too'),
+      cause: new AggregateError([error, failure], 'a step failed, and the recovery after it failed too', {
+        cause: failure,
+      }),
     };
   }
 };
