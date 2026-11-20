@@ -12,9 +12,14 @@ import {
   type WorkflowValidation,
 } from '@cedarloom/core';
 import { z } from 'zod';
-import { definitionBytes, definitionFileNames, PROJECT_FOLDER, SHIPPED_FOLDER } from './definition-files.ts';
-import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
-import { nestsBeyond } from './json-nesting.ts';
+import {
+  definitionBytes,
+  definitionFileNames,
+  nameMismatch,
+  PROJECT_FOLDER,
+  SHIPPED_FOLDER,
+} from './definition-files.ts';
+import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
 import { locatePlugin } from './plugin-locator.ts';
 import { type ClaudeDirInputs, pluginsRoot } from './plugins-root.ts';
 import { sha256 } from './project-files.ts';
@@ -44,8 +49,6 @@ export interface Place {
 const stopped = <T>(refusals: Refusal[], findings: Finding[] = []): Answer<T> => ({ result: null, findings, refusals });
 export const notJson = (path: string): Refusal => ({ code: 'definition.not-json', params: { path } });
 const Described = z.object({ description: z.string() });
-// zod's JSON schema and the "__proto__" check recurse once per level, so a deeper file could overflow the stack.
-const NESTING_LIMIT = 100;
 
 export const projectPlace = (project: string): Place => ({
   source: 'project',
@@ -85,12 +88,6 @@ export const invalidName = (names: readonly string[]): Refusal | undefined => {
   return name === undefined ? undefined : { code: 'workflow.name-invalid', params: { name } };
 };
 
-// A definition's bytes; one nested beyond the limit is unreadable in every verb, as no reader can take it.
-export const definitionAt = (place: Place, path: string): Buffer | 'absent' | 'unreadable' => {
-  const bytes = definitionBytes(place.base, path);
-  return typeof bytes === 'string' || !nestsBeyond(bytes, NESTING_LIMIT) ? bytes : 'unreadable';
-};
-
 const descriptionOf = (bytes: Buffer | 'absent' | 'unreadable'): string | null => {
   if (typeof bytes === 'string') return null;
   try {
@@ -109,7 +106,7 @@ const listed = (place: Place): { workflows: WorkflowList['workflows']; findings:
   }
   const read = files.map((file) => {
     const path = `${place.folder}/${file}`;
-    return { file, path: place.shown(path), bytes: definitionAt(place, path) };
+    return { file, path: place.shown(path), bytes: definitionBytes(place.base, path) };
   });
   const workflows = read.map(({ file, path, bytes }) => {
     const description = descriptionOf(bytes);
@@ -145,7 +142,7 @@ export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: b
   const { place, findings } = shipped ? pluginPlace(request, project) : { place: projectPlace(project), findings: [] };
   if (place === null) return stoppedOn(findings);
   const path = `${place.folder}/${name}.json`;
-  const bytes = definitionAt(place, path);
+  const bytes = definitionBytes(place.base, path);
   if (bytes === 'absent')
     return stopped([{ code: 'definition.not-found', params: { name, source: place.source } }], findings);
   if (bytes === 'unreadable') return stopped([notJson(place.shown(path))], findings);
@@ -184,16 +181,23 @@ export const chosen = (place: Place, names: readonly string[]): { name: string; 
 interface Entry {
   name: string;
   path: string;
-  /** Undefined when the app cannot read the file. */
+  /** Undefined when the app refuses the file before the generator runs. */
   bytes: Buffer | undefined;
+  refusals: Refusal[];
 }
 
-// Each chosen definition with its bytes; a file removed since the folder was listed is left out.
+// Each chosen definition with its bytes, or the app's refusal of it; a file removed since the folder was listed is left
+// out.
 const entriesOf = (place: Place, list: { name: string; path: string }[]): Entry[] =>
-  list.flatMap(({ name, path }) => {
-    const bytes = definitionAt(place, path);
+  list.flatMap(({ name, path }): Entry[] => {
+    const bytes = definitionBytes(place.base, path);
     if (bytes === 'absent') return [];
-    return [{ name, path, bytes: bytes === 'unreadable' ? undefined : bytes }];
+    const file = place.shown(path);
+    if (bytes === 'unreadable') return [{ name, path, bytes: undefined, refusals: [notJson(file)] }];
+    // A shipped definition is the plugin's to name, and no project run generates it.
+    const mismatch = place.source === 'project' ? nameMismatch(file, jsonOf(bytes.toString('utf8'))) : undefined;
+    if (mismatch !== undefined) return [{ name, path, bytes: undefined, refusals: [mismatch] }];
+    return [{ name, path, bytes, refusals: [] }];
   });
 
 // One generator run over the chosen readable definitions; each refusal names the file as shown, not the temporary copy.
@@ -208,14 +212,14 @@ const checked = (place: Place, root: string, entries: Entry[], env: WorkflowsReq
   }
   const refused = generated !== undefined && 'refusals' in generated ? generated.refusals : [];
   let index = 0;
-  return entries.map(({ name, path, bytes }) => {
+  return entries.map(({ name, path, bytes, refusals }) => {
     const file = place.shown(path);
     const own: GeneratorRefusal[] = bytes === undefined ? [] : (refused[index++] ?? []);
     return {
       name,
       source: place.source,
       generatorRefusals: own.map(({ field, rule }) => ({ file, field, rule })),
-      refusals: bytes === undefined ? [notJson(file)] : [],
+      refusals,
     };
   });
 };

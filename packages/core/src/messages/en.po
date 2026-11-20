@@ -148,6 +148,10 @@ msgid "definition.not-json"
 msgstr "{path} cannot be read, or is not valid JSON."
 
 #. js-lingui-explicit-id
+msgid "definition.name-mismatch"
+msgstr "The workflow definition {file} has the name {name}, which is not its file name without .json. Rename the file or change its name field so that both match."
+
+#. js-lingui-explicit-id
 msgid "generator.failed"
 msgstr "The workflow generator stopped with {signal, select, null {exit code {exitCode}} other {signal {signal}}}: {stderr}"
 

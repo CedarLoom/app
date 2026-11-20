@@ -1,5 +1,8 @@
 import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import type { Refusal } from '@cedarloom/core';
+import { z } from 'zod';
+import { nestsBeyond } from './json-nesting.ts';
 import { isUnreachable, reached } from './plugin-folder.ts';
 import { errorCode, readFound } from './project-files.ts';
 import { linkOnWay } from './write-roots.ts';
@@ -8,6 +11,21 @@ import { linkOnWay } from './write-roots.ts';
 export const PROJECT_FOLDER = '.cedarloom/workflows';
 /** The folder of a plugin's shipped definitions, relative to the plugin root. */
 export const SHIPPED_FOLDER = 'definitions';
+// Far above a written definition, and far below the 2 GiB Node.js reads into one buffer.
+const SIZE_LIMIT = 16 * 1024 * 1024;
+// zod's JSON schema and the "__proto__" check recurse once per level, so a deeper file could overflow the stack.
+const NESTING_LIMIT = 100;
+export const Named = z.object({ name: z.string() });
+
+/**
+ * The refusal of a definition whose name field is not its file name without `.json`: the generator writes the outputs
+ * under the name field, while a named run finds its definition, and the outputs it deletes, by the file name.
+ */
+export const nameMismatch = (file: string, json: unknown): Refusal | undefined => {
+  const named = Named.safeParse(json);
+  if (!named.success || named.data.name === basename(file, '.json')) return undefined;
+  return { code: 'definition.name-mismatch', params: { file, name: named.data.name } };
+};
 
 /** A folder's `*.json` files without dotfiles (an editor's lock link); unreadable when out of reach or behind a link. */
 export const definitionFileNames = (base: string, folder: string): string[] | 'unreadable' => {
@@ -23,13 +41,16 @@ export const definitionFileNames = (base: string, folder: string): string[] | 'u
   }
 };
 
-/** The bytes of the definition file at a "/"-separated path below base; unreadable when it is a link, a folder, a FIFO or out of reach. */
+/**
+ * The bytes of the definition file at a "/"-separated path below base; unreadable when it is a link, a folder, a FIFO,
+ * a socket, out of reach, larger than any reader takes or nested deeper.
+ */
 export const definitionBytes = (base: string, path: string): Buffer | 'absent' | 'unreadable' => {
   // Where Node.js has no O_NOFOLLOW, as on Windows, readFound alone would follow a link.
   if (reached(() => linkOnWay(base, path) ?? null) !== null) return 'unreadable';
   const found = reached(() => {
     try {
-      return readFound(join(base, path));
+      return readFound(join(base, path), SIZE_LIMIT + 1);
     } catch (error) {
       // A name too long to exist names no file.
       if (errorCode(error) === 'ENAMETOOLONG') return 'absent';
@@ -37,5 +58,6 @@ export const definitionBytes = (base: string, path: string): Buffer | 'absent' |
     }
   });
   if (found === 'absent') return 'absent';
-  return typeof found === 'object' ? found.bytes : 'unreadable';
+  if (typeof found !== 'object' || found.bytes.length > SIZE_LIMIT) return 'unreadable';
+  return nestsBeyond(found.bytes, NESTING_LIMIT) ? 'unreadable' : found.bytes;
 };

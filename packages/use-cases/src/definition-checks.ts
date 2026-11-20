@@ -1,6 +1,5 @@
 import type { Finding } from '@cedarloom/core';
-import { z } from 'zod';
-import { definitionBytes, definitionFileNames, PROJECT_FOLDER } from './definition-files.ts';
+import { definitionBytes, definitionFileNames, Named, nameMismatch, PROJECT_FOLDER } from './definition-files.ts';
 import { headerName } from './generated-header.ts';
 import { type GeneratorRun, generate, unknownOutput } from './generator-run.ts';
 import { generatedFiles, orphanedPaths, stalePaths } from './stale-paths.ts';
@@ -20,9 +19,8 @@ interface Definition {
 }
 
 const notJson = (path: string): Finding => ({ code: 'definition.not-json', severity: 'error', params: { path } });
-export const Named = z.object({ name: z.string() });
 
-// One definition file, or why it cannot be one: unreadable, or not JSON.
+// One definition file, or why it cannot be one: unreadable, not JSON, or named other than its file.
 const read = (project: string, file: string): Definition | Finding | undefined => {
   const path = `${PROJECT_FOLDER}/${file}`;
   const bytes = definitionBytes(project, path);
@@ -35,6 +33,8 @@ const read = (project: string, file: string): Definition | Finding | undefined =
   } catch {
     return notJson(path);
   }
+  const mismatch = nameMismatch(path, json);
+  if (mismatch !== undefined) return { ...mismatch, severity: 'error' };
   const named = Named.safeParse(json);
   return { path, bytes, name: named.success ? named.data.name : undefined };
 };
@@ -75,23 +75,23 @@ export const definitionFindings = (request: GeneratorRun & { project: string }):
   const files = definitionFileNames(request.project, PROJECT_FOLDER);
   if (files === 'unreadable') return { definitions: [notJson(PROJECT_FOLDER)], generated: [] };
   const found = files.map((file) => read(request.project, file)).filter((entry) => entry !== undefined);
-  const unreadable = found.filter((entry): entry is Finding => 'code' in entry);
+  const refused = found.filter((entry): entry is Finding => 'code' in entry);
   const definitions = found.filter((entry): entry is Definition => 'bytes' in entry);
-  if (unreadable.length > 0 && definitions.length === 0) return { definitions: unreadable, generated: [] };
+  if (refused.length > 0 && definitions.length === 0) return { definitions: refused, generated: [] };
   // Nothing to generate, but the files of removed definitions may be left.
   if (definitions.length === 0) return compared(request.project, [], new Map(), true);
   const generated = generate(
     definitions.map(({ bytes }) => bytes),
     request,
   );
-  if ('finding' in generated) return { definitions: [...unreadable, generated.finding], generated: [] };
+  if ('finding' in generated) return { definitions: [...refused, generated.finding], generated: [] };
   if ('refusals' in generated) {
     const invalid = definitions.flatMap(({ path }, index): Finding[] => {
       const count = generated.refusals[index]?.length ?? 0;
       return count === 0 ? [] : [{ code: 'definition.invalid', severity: 'error', params: { path, count } }];
     });
-    return { definitions: [...unreadable, ...invalid], generated: [] };
+    return { definitions: [...refused, ...invalid], generated: [] };
   }
-  const result = compared(request.project, definitions, generated.outputs, unreadable.length === 0);
-  return { definitions: [...unreadable, ...result.definitions], generated: result.generated };
+  const result = compared(request.project, definitions, generated.outputs, refused.length === 0);
+  return { definitions: [...refused, ...result.definitions], generated: result.generated };
 };
