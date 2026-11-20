@@ -1,4 +1,10 @@
-import { type JsonValue, printable, type WorkflowShown, type WorkflowValidation } from '@cedarloom/core';
+import {
+  type JsonValue,
+  printable,
+  printableLines,
+  type WorkflowShown,
+  type WorkflowValidation,
+} from '@cedarloom/core';
 import { listWorkflows, showWorkflow, validateWorkflows } from '@cedarloom/use-cases';
 import type { Io } from './io.ts';
 import { message } from './message.ts';
@@ -25,7 +31,7 @@ const outline = (definition: JsonValue): string[][] =>
 
 const shownText = ({ definition }: WorkflowShown): string => {
   const rows = outline(definition);
-  const file = JSON.stringify(definition, null, 2).split('\n').map(printable).join('\n');
+  const file = printableLines(JSON.stringify(definition, null, 2));
   return `${rows.length === 0 ? '' : `${columns(rows)}\n`}${file}\n`;
 };
 

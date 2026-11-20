@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { printable, printableLines } from '@cedarloom/core';
 import { stateDir, storeDir } from '@cedarloom/use-cases';
 import manifest from '../package.json' with { type: 'json' };
 import { opener } from './opener.ts';
@@ -15,12 +16,12 @@ const openFile = (path: string): void => {
     stdio: 'ignore',
     windowsVerbatimArguments: process.platform === 'win32',
   });
-  child.on('error', (error) => process.stderr.write(`${error.message}\n`));
+  child.on('error', (error) => process.stderr.write(`${printable(error.message)}\n`));
   child.unref();
 };
 
 const crashed = (error: unknown): void => {
-  process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
+  process.stderr.write(`${printableLines(String(error instanceof Error ? error.stack : error))}\n`);
   const refusal = { code: 'cli.internal', params: {} };
   if (process.argv.includes('--json'))
     process.stdout.write(`${JSON.stringify({ result: null, findings: [], refusals: [refusal] })}\n`);

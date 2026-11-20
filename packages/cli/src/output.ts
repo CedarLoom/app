@@ -34,9 +34,14 @@ export const exitCode = ({ findings, refusals, failed = false }: Outcome): numbe
 };
 
 /** Results on standard output and messages on standard error; with --json, the one document alone. */
-export const write = ({ result, findings, refusals, text }: Outcome, json: boolean, io: Io): void => {
+export const write = (
+  { result, findings, refusals, text }: Outcome,
+  json: boolean,
+  io: Pick<Io, 'stdout' | 'stderr'>,
+): void => {
   if (json) {
-    io.stdout(`${JSON.stringify({ result, findings, refusals })}\n`);
+    // stringify leaves DEL, C1, format and separator characters raw, only inside strings, where \u escapes parse equal.
+    io.stdout(`${printable(JSON.stringify({ result, findings, refusals }))}\n`);
     return;
   }
   io.stdout(text);

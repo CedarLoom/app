@@ -365,7 +365,7 @@ describe('errors inside routes', () => {
     params: { path: '.claude/skipped.md', run: 'u1' },
   };
   it.each([
-    ['a 4xx error not of Fastify', Object.assign(new Error('teapot'), { statusCode: 418 }), {}, 'teapot'],
+    ['a 4xx error not of Fastify', Object.assign(new Error('tea\u202epot'), { statusCode: 418 }), {}, 'tea\\u202epot'],
     ['null', null, {}, 'null'],
     ['an error with a cause', new Error('outer', { cause: new Error('the cause') }), {}, 'the cause'],
     ['StepFailed', new StepFailed('u1', [skipped], new Error('step')), { run: 'u1' }, '.claude/skipped.md'],
