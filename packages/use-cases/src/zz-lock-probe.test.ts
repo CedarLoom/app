@@ -1,12 +1,12 @@
 // Temporary probe of the store lock hand-off on CI; removed before the final push.
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { closeSync, fsyncSync, mkdtempSync, openSync, writeSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { closeSync, fsyncSync, mkdtempSync, openSync, writeFileSync, writeSync } from 'node:fs';
+import { cpus, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
-import { openStore } from './store.ts';
+import { describe, it } from 'vitest';
+import { openRunView, openStore } from './store.ts';
 
 const now = (): number => performance.timeOrigin + performance.now();
 const r = (n: number): number => Math.round(n);
@@ -29,107 +29,101 @@ const holderScript = `
   }, Number(holdMs));
 `;
 
-const stage = (path: string, work: (db: DatabaseSync) => void) => {
-  const t0 = now();
-  let db: DatabaseSync | undefined;
-  try {
-    db = new DatabaseSync(path, { timeout: 1000 });
-    work(db);
-    return { ok: true, t0, t1: now(), db };
-  } catch (error) {
-    db?.close();
-    return { ok: false, t0, t1: now(), err: String((error as { errcode?: number }).errcode), db: undefined };
-  }
-};
-
 describe('lock probe', () => {
-  it('hands off', async () => {
-    const rows: unknown[] = [];
-    let failures = 0;
-    for (let i = 0; i < 40; i += 1) {
-      const dir = mkdtempSync(join(tmpdir(), 'cedarloom-probe-'));
-      const child = spawn(process.execPath, ['--input-type=module', '--eval', holderScript, dir, '300'], {
-        stdio: ['ignore', 'pipe', 'inherit'],
-      });
-      let out = '';
-      child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()));
-      const spawned = now();
-      await once(child.stdout, 'data');
-      const recv = now();
-      const lock = stage(join(dir, 'lock.sqlite'), (db) => {
-        db.exec('PRAGMA journal_mode = MEMORY');
-        db.exec('BEGIN EXCLUSIVE');
-        db.exec('PRAGMA user_version = 0');
-      });
-      const runs = lock.ok
-        ? stage(join(dir, 'runs.sqlite'), (db) => {
-            db.prepare('PRAGMA user_version').get();
-            db.exec('BEGIN IMMEDIATE');
-            db.exec('ROLLBACK');
-          })
-        : undefined;
-      runs?.db?.close();
-      lock.db?.close();
-      await once(child, 'exit');
-      const lines = out
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line) as Record<string, number>);
-      const held = lines[0]?.['held'] ?? Number.NaN;
-      const c0 = lines[1]?.['c0'] ?? Number.NaN;
-      const c1 = lines[1]?.['c1'] ?? Number.NaN;
-      if (!lock.ok || runs?.ok === false) failures += 1;
-      rows.push({
-        i,
-        startup: r(held - spawned),
-        pipe: r(recv - held),
-        lock: lock.ok ? 'ok' : lock.err,
-        lockAt: r(lock.t1 - held),
-        runs: runs === undefined ? '-' : runs.ok ? 'ok' : runs.err,
-        runsMs: runs === undefined ? '-' : r(runs.t1 - runs.t0),
-        closeStart: r(c0 - held),
-        closeMs: r(c1 - c0),
-      });
+  it('hands off under load', async () => {
+    const burners = Array.from({ length: cpus().length + 2 }, () =>
+      spawn(process.execPath, ['--eval', 'for (;;) {}'], { stdio: 'ignore' }),
+    );
+    const rows: Record<string, number | string>[] = [];
+    try {
+      for (let i = 0; i < 60; i += 1) {
+        const dir = mkdtempSync(join(tmpdir(), 'cedarloom-probe-'));
+        const child = spawn(process.execPath, ['--input-type=module', '--eval', holderScript, dir, '300'], {
+          stdio: ['ignore', 'pipe', 'inherit'],
+        });
+        let out = '';
+        child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()));
+        const spawned = now();
+        await once(child.stdout, 'data');
+        const t0 = now();
+        const result = openStore(dir, clock);
+        const t1 = now();
+        if (result.ok) result.value.close();
+        await once(child, 'close');
+        const lines = out
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line) as Record<string, number>);
+        const held = lines[0]?.['held'] ?? Number.NaN;
+        const c0 = lines[1]?.['c0'] ?? Number.NaN;
+        const c1 = lines[1]?.['c1'] ?? Number.NaN;
+        rows.push({
+          i,
+          ok: result.ok ? 'ok' : result.refusal.code,
+          startup: r(held - spawned),
+          attemptAt: r(t0 - held),
+          doneAt: r(t1 - held),
+          closeStart: r(c0 - held),
+          closeEnd: r(c1 - held),
+        });
+      }
+    } finally {
+      for (const burner of burners) burner.kill();
     }
+    const max = (key: string) => Math.max(...rows.map((row) => Number(row[key])));
+    const odd = rows.filter(
+      (row) => row['ok'] !== 'ok' || Number(row['doneAt']) > 600 || Number(row['closeEnd']) > 400,
+    );
     throw new Error(
-      `PROBE handoff ${process.platform} failures=${failures}\n${rows.map((row) => JSON.stringify(row)).join('\n')}`,
+      `PROBE handoff ${process.platform} cpus=${cpus().length} failures=${rows.filter((row) => row['ok'] !== 'ok').length} ` +
+        `max startup=${max('startup')} doneAt=${max('doneAt')} closeStart=${max('closeStart')} closeEnd=${max('closeEnd')}\n` +
+        odd.map((row) => JSON.stringify(row)).join('\n'),
     );
   }, 300_000);
 
-  it('waits', async () => {
-    const waits: number[] = [];
-    for (let i = 0; i < 3; i += 1) {
-      const dir = mkdtempSync(join(tmpdir(), 'cedarloom-probe-'));
-      const child = spawn(process.execPath, ['--input-type=module', '--eval', holderScript, dir, 'forever'], {
-        stdio: ['ignore', 'pipe', 'inherit'],
-      });
-      await once(child.stdout, 'data');
-      const t0 = now();
-      const result = openStore(dir, clock);
-      waits.push(r(now() - t0));
-      expect(result.ok).toBe(false);
-      child.kill();
-      await once(child, 'exit');
-    }
-    throw new Error(`PROBE wait ${process.platform} ${JSON.stringify(waits)}`);
-  }, 60_000);
-
-  it('syncs', () => {
+  it('costs', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cedarloom-probe-'));
-    const fd = openSync(join(dir, 'f'), 'w');
+    const file = join(dir, 'f');
+    writeFileSync(file, 'x');
     const t0 = now();
+    for (let i = 0; i < 200; i += 1) closeSync(openSync(file, 'r'));
+    const openMs = (now() - t0) / 200;
+    const t1 = now();
+    for (let i = 0; i < 50; i += 1) closeSync(openSync(join(dir, `n${i}`), 'wx'));
+    const createMs = (now() - t1) / 50;
+    const fd = openSync(file, 'w');
+    const t2 = now();
     for (let i = 0; i < 50; i += 1) {
       writeSync(fd, 'x');
       fsyncSync(fd);
     }
-    const fsyncMs = (now() - t0) / 50;
+    const fsyncMs = (now() - t2) / 50;
     closeSync(fd);
+    const state = join(dir, 'state');
+    const t3 = now();
+    for (let i = 0; i < 20; i += 1) {
+      const held = openStore(state, clock);
+      if (held.ok) held.value.close();
+    }
+    const storeMs = (now() - t3) / 20;
+    const t4 = now();
+    for (let i = 0; i < 20; i += 1) {
+      const view = openRunView(state);
+      if (view.ok) {
+        view.value.runs();
+        view.value.close();
+      }
+    }
+    const viewMs = (now() - t4) / 20;
     const db = new DatabaseSync(join(dir, 'd.sqlite'));
     db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; CREATE TABLE t (x)');
-    const t1 = now();
+    const t5 = now();
     for (let i = 0; i < 50; i += 1) db.exec('INSERT INTO t VALUES (1)');
-    const commitMs = (now() - t1) / 50;
+    const commitMs = (now() - t5) / 50;
     db.close();
-    throw new Error(`PROBE sync ${process.platform} fsync=${fsyncMs.toFixed(1)}ms commit=${commitMs.toFixed(1)}ms`);
+    const f = (n: number) => n.toFixed(2);
+    throw new Error(
+      `PROBE costs ${process.platform} open=${f(openMs)} create=${f(createMs)} fsync=${f(fsyncMs)} commit=${f(commitMs)} store=${f(storeMs)} view=${f(viewMs)}`,
+    );
   });
 });
