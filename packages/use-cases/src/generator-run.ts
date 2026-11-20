@@ -41,11 +41,20 @@ export const jsonOf = (text: string): unknown => {
   }
 };
 
-const failed = ({ status, signal, stderr }: SpawnSyncReturns<string>): Generated => ({
+// The errors with which spawnSync ends a run past its time or output limit, by the reason generator.failed gives.
+const STOPPED: ReadonlyMap<unknown, string> = new Map([
+  ['ETIMEDOUT', 'timeout'],
+  ['ENOBUFS', 'outputLimit'],
+]);
+
+const reasonOf = ({ error, signal }: SpawnSyncReturns<string>) =>
+  STOPPED.get(errorCode(error)) ?? (signal === null ? 'exit' : 'signal');
+
+const failed = (run: SpawnSyncReturns<string>): Generated => ({
   finding: {
     code: 'generator.failed',
     severity: 'error',
-    params: { exitCode: status, signal, stderr: stderr.slice(0, LIMIT) },
+    params: { reason: reasonOf(run), exitCode: run.status, signal: run.signal, stderr: run.stderr.slice(0, LIMIT) },
   },
 });
 /** Output of the generator CedarLoom cannot read. */
@@ -66,7 +75,8 @@ const refusalsOf = (run: SpawnSyncReturns<string>, files: string[]): GeneratorRe
 };
 
 const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): Generated => {
-  if (run.signal !== null || (run.status !== 0 && run.status !== 1)) return failed(run);
+  // A run spawnSync stopped may have exited just then, with its output cut off.
+  if (run.error !== undefined || run.signal !== null || (run.status !== 0 && run.status !== 1)) return failed(run);
   const refusals = refusalsOf(run, files);
   if (!Array.isArray(refusals)) return refusals;
   if (run.status === 1) return { refusals };
@@ -75,11 +85,36 @@ const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): G
   return { outputs: new Map(filesBelow(out).map((path) => [path, readFileSync(join(out, path))])) };
 };
 
-/**
- * Runs the plugin's generator on the definitions' bytes in one run, as a project regenerates them, in a temporary
- * folder of its own that is removed afterwards.
- */
-export const generate = (definitions: Uint8Array[], request: GeneratorRun): Generated => {
+const SIGNALS = ['SIGINT', 'SIGTERM'] as const;
+// The calls whose hold on the signals is not released yet; raise is removed when none is left.
+let holds = 0;
+
+// Sends the signal again once nothing else listens, so that its default action ends the process.
+const raise = (signal: NodeJS.Signals): void => {
+  process.removeListener(signal, raise);
+  if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+};
+
+const release = (): void => {
+  holds -= 1;
+  if (holds === 0) for (const signal of SIGNALS) process.removeListener(signal, raise);
+};
+
+// Their default action would end the process while spawnSync blocks, before fn removes its folder.
+const holdingSignals = <T>(fn: () => T): T => {
+  for (const signal of SIGNALS) {
+    if (process.listenerCount(signal) === 0) process.on(signal, raise);
+  }
+  holds += 1;
+  try {
+    return fn();
+  } finally {
+    // A signal that came during fn reaches raise in a poll phase, which can come after one check phase but not two.
+    setImmediate(() => setImmediate(release));
+  }
+};
+
+const runGenerator = (definitions: Uint8Array[], request: GeneratorRun): Generated => {
   // Absolute, as the generator resolves the paths it gets from its own working folder.
   const folder = mkdtempSync(join(resolve(request.temp), 'cedarloom-generate-'));
   try {
@@ -103,12 +138,17 @@ export const generate = (definitions: Uint8Array[], request: GeneratorRun): Gene
       killSignal: 'SIGKILL',
       windowsHide: true,
     });
-    // ETIMEDOUT and ENOBUFS end the generator, which the outcome reports by its signal.
-    const code = errorCode(run.error);
-    if (run.error !== undefined && code !== 'ETIMEDOUT' && code !== 'ENOBUFS') throw run.error;
+    if (run.error !== undefined && !STOPPED.has(errorCode(run.error))) throw run.error;
     return outcome(run, files, out);
   } finally {
     // A virus scanner or indexer on Windows can hold a file just written for a moment.
     rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
   }
 };
+
+/**
+ * Runs the plugin's generator on the definitions' bytes in one run, as a project regenerates them, in a temporary
+ * folder of its own that is removed afterwards, also on SIGINT or SIGTERM.
+ */
+export const generate = (definitions: Uint8Array[], request: GeneratorRun): Generated =>
+  holdingSignals(() => runGenerator(definitions, request));

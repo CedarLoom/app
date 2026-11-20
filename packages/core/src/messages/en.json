@@ -66,7 +66,7 @@
       ["name"],
       " differ from what the plugin's generator writes now: ",
       ["paths"],
-      ". Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete any other file of a definition that no longer exists yourself."
+      ". Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete yourself any other listed file the generator does not write."
     ],
     "edit.result-over-limits": [
       "The edited definition would be larger than 16 MiB or nested deeper than 100 levels, more than CedarLoom reads. Nothing was changed."
@@ -82,9 +82,19 @@
       ["path"],
       " is no longer generated, but it changed since it was written, so CedarLoom kept it. Delete it yourself if it is not needed."
     ],
+    "generated.folder-unreadable": [["path"], " cannot be read, so the generated files in it were not checked."],
     "generator.failed": [
-      "The workflow generator stopped with ",
-      ["signal", "select", { "null": ["exit code ", ["exitCode"]], "other": ["signal ", ["signal"]] }],
+      "The workflow generator ",
+      [
+        "reason",
+        "select",
+        {
+          "timeout": ["did not end within its time limit and was stopped"],
+          "outputLimit": ["printed more than its output limit and was stopped"],
+          "signal": ["stopped with signal ", ["signal"]],
+          "other": ["stopped with exit code ", ["exitCode"]]
+        }
+      ],
       ": ",
       ["stderr"]
     ],
@@ -93,6 +103,13 @@
     "plan.file-changed": [
       ["path"],
       " changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
+    ],
+    "plan.folder-denied": [
+      "CedarLoom may not enter a folder on the way to ",
+      ["path"],
+      ", so it does not read or write ",
+      ["path"],
+      ". Check the permissions of the folders on the way, then try again."
     ],
     "plan.name-too-long": [
       "The path of ",
