@@ -121,8 +121,7 @@ const parse = (argv: readonly string[], cwd: string): Options | { refusal: Refus
   return options;
 };
 
-const message = (error: unknown): string =>
-  `${printableLines(error instanceof Error ? error.message : String(error))}\n`;
+const message = (error: unknown): string => `${printable(error instanceof Error ? error.message : String(error))}\n`;
 
 /**
  * Opens the redirect page, then removes the pages of earlier starts whose token has expired; the URL is printed already,

@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { printableLines } from '@cedarloom/core';
+import { printable, printableLines } from '@cedarloom/core';
 import { stateDir, storeDir } from '@cedarloom/use-cases';
 import manifest from '../package.json' with { type: 'json' };
 import { opener } from './opener.ts';
@@ -16,7 +16,7 @@ const openFile = (path: string): void => {
     stdio: 'ignore',
     windowsVerbatimArguments: process.platform === 'win32',
   });
-  child.on('error', (error) => process.stderr.write(`${printableLines(error.message)}\n`));
+  child.on('error', (error) => process.stderr.write(`${printable(error.message)}\n`));
   child.unref();
 };
 

@@ -201,9 +201,12 @@ describe('openPage', () => {
 describe('closed', () => {
   it('reports a failed close by its stack, escaped, on stderr and no second document, exit 5', async () => {
     const { io, out, errors } = appIo(['--json']);
-    const failure = new Error('close failed\u202e');
-    const stack = failure.stack?.replace('\u202e', '\\u202e');
-    expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([5, [], [`${stack}\n`]]);
+    const failure = Object.assign(new Error('close failed'), { stack: 'Error: close\u202e failed\n    at close' });
+    expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([
+      5,
+      [],
+      ['Error: close\\u202e failed\n    at close\n'],
+    ]);
   });
 });
 
