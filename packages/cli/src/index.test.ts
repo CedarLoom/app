@@ -162,7 +162,11 @@ it.each([
   [['workflows', 'off', 'dev', '--plugin'], 'cli.flag-conflict', { flags: '<id>, --plugin' }],
   [['workflows', 'off', '--plugin', '--script-only'], 'cli.flag-conflict', { flags: '--script-only, --plugin' }],
   [['workflows', 'off', '--plugin', '--plugin-root', 'x'], 'cli.flag-conflict', { flags: '--plugin-root, --plugin' }],
-  [['workflows', 'on', 'dev', 'plain'], 'cli.surplus-argument', { argument: 'plain', command: 'cedarloom workflows on' }],
+  [
+    ['workflows', 'on', 'dev', 'plain'],
+    'cli.surplus-argument',
+    { argument: 'plain', command: 'cedarloom workflows on' },
+  ],
   [
     ['workflows', 'on', 'dev', '--script-only'],
     'cli.unknown-flag',
@@ -199,7 +203,7 @@ it('refuses outside a Git working tree with project.not-found, exit 3', () => {
   expect(ran(['runs', 'list'], cwd).code).toBe(3);
 });
 
-it.each([['runs', 'show'], ['undo']])('checks the project before the run id with %s', (...words) => {
+it.each([[['runs', 'show']], [['undo']]])('checks the project before the run id with %j', (words) => {
   const cwd = fresh();
   expect(ran([...words, '../r1', '--json'], cwd).document.refusals).toEqual([
     { code: 'project.not-found', params: { cwd } },
