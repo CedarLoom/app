@@ -343,13 +343,14 @@ const stoppedRun = (): string => {
   throw new Error('run r1 stopped', { cause: new Error('disk gone') });
 };
 
-// A project with missing.mjs, which makes each import whose name starts with blocked throw, a line feed in the message.
-const blocking = (blocked: string): string => {
+// A project with missing.mjs, which makes each import whose name starts with blocked throw the value thrown, by default
+// an error with a line feed in the message.
+const blocking = (blocked: string, thrown = "new Error('missing\\n    at forged')"): string => {
   const { root } = project();
   writeFileSync(
     join(root, 'missing.mjs'),
     "import { registerHooks } from 'node:module';\n" +
-      `registerHooks({ resolve: (name, context, next) => { if (name.startsWith('${blocked}')) throw new Error('missing\\n    at forged'); return next(name, context); } });`,
+      `registerHooks({ resolve: (name, context, next) => { if (name.startsWith('${blocked}')) throw ${thrown}; return next(name, context); } });`,
   );
   return root;
 };
@@ -390,6 +391,12 @@ describe('bin/cedarloom.js', () => {
       true,
       false,
     ]);
+  });
+
+  it('ends with the code cli.internal, exit 5, when its packages do not load and the thrown value has no text', () => {
+    const root = blocking('@cedarloom/', 'Object.create(null)');
+    const { code, stderr } = started(['--import', './missing.mjs', bin, 'doctor'], { cwd: root });
+    expect([code, stderr]).toEqual([5, '[unreadable]\ncli.internal\n']);
   });
 
   it('escapes the message apart from the frames when core loads and the cli does not', () => {

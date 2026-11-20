@@ -63,19 +63,20 @@ const OUTCOMES: Record<Command['name'], (io: Io, command: Command, argument: str
 
 // Every command reads the working folder, which the process cannot read once it was removed. The shell's PWD may name
 // another folder when a program started the process, so the refusal names the folder ".".
-const workingFolder = (io: Io): string | Refusal => {
+const withFolder = (io: Io): Io | Refusal => {
   try {
-    return io.cwd;
+    // The copy reads the cwd getter once and holds its value.
+    return { ...io };
   } catch {
     return { code: 'project.not-found', params: { cwd: '.' } };
   }
 };
 
 const commandOutcome = (io: Io, command: Command): Outcome => {
-  const cwd = workingFolder(io);
-  if (typeof cwd !== 'string') return refused(cwd);
+  const folder = withFolder(io);
+  if ('code' in folder) return refused(folder);
   const [argument = ''] = command.args;
-  return OUTCOMES[command.name]({ ...io, cwd }, command, argument);
+  return OUTCOMES[command.name](folder, command, argument);
 };
 
 const textOf = (request: Exclude<Request, { kind: 'command' }>, io: Io): string => {

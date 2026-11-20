@@ -62,7 +62,12 @@ if (Number(found.split('.')[0]) < Number(required.replace('>=', ''))) {
           return core.printableStack(error);
         })
         .catch(function () {
-          return escaped(String((error && error.stack) || error));
+          // Any code may define what a thrown value holds, a getter that throws included.
+          try {
+            return escaped(String((error && error.stack) || error));
+          } catch {
+            return '[unreadable]';
+          }
         })
         .then(crashed);
     });

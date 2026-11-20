@@ -8,6 +8,8 @@ import { projectRoot } from './project-root.ts';
 const statFails = vi.hoisted(() => ({ code: '' }));
 // realpathSync.native fails with `realpathFails.code` while it is set.
 const realpathFails = vi.hoisted(() => ({ code: '' }));
+// openSync fails with `openFails.code` while it is set.
+const openFails = vi.hoisted(() => ({ code: '' }));
 vi.mock('node:fs', async (load) => {
   const fs = await load<typeof import('node:fs')>();
   const statSync = vi.fn(fs.statSync).mockImplementation((path, options) => {
@@ -20,7 +22,12 @@ vi.mock('node:fs', async (load) => {
     if (code !== '') throw Object.assign(new Error(`${code}: realpath failed`), { code });
     return fs.realpathSync.native(path);
   });
-  return { ...fs, statSync, realpathSync: Object.assign(vi.fn(fs.realpathSync), { native }) };
+  const openSync = vi.fn(fs.openSync).mockImplementation((path, flags, mode) => {
+    const { code } = openFails;
+    if (code !== '') throw Object.assign(new Error(`${code}: open failed`), { code });
+    return fs.openSync(path, flags, mode);
+  });
+  return { ...fs, statSync, openSync, realpathSync: Object.assign(vi.fn(fs.realpathSync), { native }) };
 });
 
 const folders: string[] = [];
@@ -122,5 +129,18 @@ it('refuses a .git file whose real path cannot be read with project.git-unreadab
     expect(projectRoot(inner)).toEqual({ code: 'project.git-unreadable', params: { path: join(inner, '.git') } });
   } finally {
     realpathFails.code = '';
+  }
+});
+
+it('refuses a .git file that cannot be opened with project.git-unreadable, not the tree above', () => {
+  const main = repository();
+  const inner = join(main, 'inner');
+  mkdirSync(inner);
+  writeFileSync(join(inner, '.git'), 'gitdir: ../.git\n');
+  openFails.code = 'EIO';
+  try {
+    expect(projectRoot(inner)).toEqual({ code: 'project.git-unreadable', params: { path: join(inner, '.git') } });
+  } finally {
+    openFails.code = '';
   }
 });

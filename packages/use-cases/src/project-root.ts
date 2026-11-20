@@ -17,16 +17,14 @@ const statAt = (path: string): BigIntStats | undefined => {
   }
 };
 
-// Whether the regular file at path, its links followed, starts with "gitdir: "; a file whose real path cannot be read is no root.
+// Whether the regular file at path, its links followed, starts with "gitdir: "; a file that cannot be read is no root.
 const isGitFile = (path: string): boolean => {
-  let real: string;
   try {
-    real = realpathSync.native(path);
+    const head = readFound(realpathSync.native(path), GITDIR.length);
+    return typeof head === 'object' && GITDIR.equals(head.bytes);
   } catch {
     return false;
   }
-  const head = readFound(real, GITDIR.length);
-  return typeof head === 'object' && GITDIR.equals(head.bytes);
 };
 
 /**
