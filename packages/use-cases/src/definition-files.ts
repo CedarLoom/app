@@ -18,6 +18,12 @@ const SIZE_LIMIT = 16 * 1024 * 1024;
 const NESTING_LIMIT = 100;
 export const Named = z.object({ name: z.string() });
 
+/** The refusal of a definition text the definition readers would not read, with their limits. */
+export const overLimits: Refusal = {
+  code: 'edit.result-over-limits',
+  params: { mebibytes: SIZE_LIMIT / (1024 * 1024), levels: NESTING_LIMIT },
+};
+
 /**
  * The refusal of a definition whose name field is not its file name without `.json`: the generator writes the outputs
  * under the name field, while a named run finds its definition, and the outputs it deletes, by the file name. A name

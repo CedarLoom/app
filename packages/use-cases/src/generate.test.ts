@@ -384,8 +384,8 @@ it('workflows new --from full copies the shipped definition under the new name w
 
 it.each([
   ['dev', 'full', { code: 'workflow.name-taken', params: { name: 'dev', path: '.cedarloom/workflows/dev.json' } }],
-  ['../x', 'full', { code: 'workflow.name-invalid', params: { name: '../x' } }],
-  ['mine', '../../x', { code: 'workflow.name-invalid', params: { name: '../../x' } }],
+  ['../x', 'full', { code: 'workflow.name-invalid', params: { name: '../x', longest: 166 } }],
+  ['mine', '../../x', { code: 'workflow.name-invalid', params: { name: '../../x', longest: 166 } }],
   ['mine', 'research', { code: 'definition.not-found', params: { name: 'research', source: 'shipped' } }],
 ])('refuses workflows new %s --from %s with a typed refusal and writes nothing', (name, from, refusal) => {
   const { project, created } = newSetup();
@@ -488,6 +488,46 @@ it('workflows set /name moves the definition and deletes the old outputs, as one
   ]);
 });
 
+it('keeps and reports the generated files of the old name that no recorded run wrote on a rename', () => {
+  const { project, store, request, define, text } = setup({ name: 'dev', skill: 'Run dev.\n' });
+  define({ name: 'mine', skill: 'Run.\n' }, 'mine');
+  const notes = '.claude/skills/mine/notes.md';
+  put(join(project, notes), '<!-- mine: edit the definition, not this file. -->\n');
+  const renamed = editWorkflow(
+    store,
+    { ...request, name: 'mine', edit: { operation: 'set', pointer: '/name', value: 'other' } },
+    true,
+  );
+  expect(renamed.findings).toContainEqual({
+    code: 'edit.outputs-left',
+    severity: 'warning',
+    params: { name: 'mine', paths: [notes] },
+  });
+  expect(text(notes)).toBe('<!-- mine: edit the definition, not this file. -->\n');
+});
+
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+  'reports a folder of the old name the app may not read on a rename',
+  () => {
+    const { project, store, request, define } = setup({ name: 'dev', skill: 'Run dev.\n' });
+    define({ name: 'mine', skill: 'Run.\n' }, 'mine');
+    const hidden = join(project, '.claude/skills/mine/sub');
+    mkdirSync(hidden, { recursive: true });
+    chmodSync(hidden, 0);
+    onTestFinished(() => chmodSync(hidden, 0o700));
+    const renamed = editWorkflow(
+      store,
+      { ...request, name: 'mine', edit: { operation: 'set', pointer: '/name', value: 'other' } },
+      false,
+    );
+    expect(renamed.findings).toContainEqual({
+      code: 'generated.folder-unreadable',
+      severity: 'warning',
+      params: { path: '.claude/skills/mine/sub' },
+    });
+  },
+);
+
 it("counts an edit's files as generated, so a later edit deletes a file the earlier one added", () => {
   const { project, edited } = editSetup();
   const notes = '.claude/skills/mine/notes.md';
@@ -506,7 +546,7 @@ it.each<[Edit, object]>([
   ],
   [
     { operation: 'set', pointer: '/name', value: '../x' },
-    { code: 'workflow.name-invalid', params: { name: '../x' } },
+    { code: 'workflow.name-invalid', params: { name: '../x', longest: 166 } },
   ],
   [
     { operation: 'remove', pointer: '/stages/0' },
@@ -566,7 +606,7 @@ it.each<[string, JsonValue]>([
   expect(edited({ operation: 'set', pointer: '/deep', value })).toMatchObject({
     plan: null,
     run: null,
-    refusals: [{ code: 'edit.result-over-limits', params: {} }],
+    refusals: [{ code: 'edit.result-over-limits', params: { mebibytes: 16, levels: 100 } }],
   });
   expect(text(MINE)).toBe(COPY);
 });

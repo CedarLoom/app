@@ -17,7 +17,7 @@ msgstr "The CedarLoom state store {path} cannot be read or written."
 
 #. js-lingui-explicit-id
 msgid "plan.file-changed"
-msgstr "{path} changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
+msgstr "{path} changed after CedarLoom read it, so CedarLoom did not overwrite it. Review the file, then run the command again."
 
 #. js-lingui-explicit-id
 msgid "plan.stale"
@@ -45,11 +45,11 @@ msgstr "The path of {path} leaves no room for the temporary names CedarLoom writ
 
 #. js-lingui-explicit-id
 msgid "plan.path-nested"
-msgstr "{path} and another path of the plan use one name as both a file and a folder, so the plan cannot be applied. Nothing was changed."
+msgstr "{path} and another path of the plan use one name as both a file and a folder, so the plan cannot be applied."
 
 #. js-lingui-explicit-id
 msgid "plan.path-through-file"
-msgstr "A folder on the way to {path} is a file, so CedarLoom cannot write {path}. Nothing was changed."
+msgstr "A folder on the way to {path} is a file, so CedarLoom cannot write {path}."
 
 #. js-lingui-explicit-id
 msgid "plan.folder-denied"
@@ -65,7 +65,7 @@ msgstr "{path} and {other} differ only in letter case or Unicode form, and this 
 
 #. js-lingui-explicit-id
 msgid "apply.no-hard-links"
-msgstr "{path} is on a volume without hard links, such as exFAT, FAT or some network shares. CedarLoom needs them to replace a file, or put one back, without leaving it half written. Nothing was changed. Move the project to a volume with hard links, such as APFS, NTFS or ext4."
+msgstr "{path} is on a volume without hard links, such as exFAT, FAT or some network shares. CedarLoom needs them to replace a file, or put one back, without leaving it half written. Move the project to a volume with hard links, such as APFS, NTFS or ext4."
 
 #. js-lingui-explicit-id
 msgid "apply.backup-failed"
@@ -161,7 +161,7 @@ msgstr "{path, select, null {No settings file enables cl-workflow@cedarloom} oth
 
 #. js-lingui-explicit-id
 msgid "settings.unreadable"
-msgstr "{path} cannot be read, is not a JSON object, has a duplicate key CedarLoom would change, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
+msgstr "{path} cannot be read, starts with a byte order mark, is not a JSON object, has a duplicate key CedarLoom would change, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
 
 #. js-lingui-explicit-id
 msgid "settings.owner-entry"
@@ -213,7 +213,7 @@ msgstr "No {source, select, shipped {shipped} other {project}} workflow definiti
 
 #. js-lingui-explicit-id
 msgid "workflow.name-invalid"
-msgstr "{name} is not a valid workflow name. Use lowercase letters, digits and single hyphens."
+msgstr "{name} is not a valid workflow name. Use at most {longest} lowercase letters, digits and single hyphens, and no name Windows keeps for a device, such as con, nul, com1 or lpt1."
 
 #. js-lingui-explicit-id
 msgid "workflow.name-taken"
@@ -224,8 +224,12 @@ msgid "edit.target-invalid"
 msgstr "The pointer \"{pointer}\" is not a place where {operation} can apply in this definition."
 
 #. js-lingui-explicit-id
+msgid "edit.outputs-left"
+msgstr "No CedarLoom run recorded the files generated for the old name {name}, so the rename keeps them: {paths}. Delete them yourself if they are not needed."
+
+#. js-lingui-explicit-id
 msgid "edit.result-over-limits"
-msgstr "The edited definition would be larger than 16 MiB or nested deeper than 100 levels, more than CedarLoom reads. Nothing was changed."
+msgstr "The edited definition would be larger than {mebibytes} MiB or nested deeper than {levels} levels, more than CedarLoom reads."
 
 #. js-lingui-explicit-id
 msgid "session.host"
@@ -254,10 +258,6 @@ msgstr "Port {port} is in use. Choose another with --port, or leave it out to us
 #. js-lingui-explicit-id
 msgid "server.listen-failed"
 msgstr "The server cannot listen on {port, plural, =0 {a free port} other {port #}} of 127.0.0.1: the system answered {error}."
-
-#. js-lingui-explicit-id
-msgid "server.open-hint"
-msgstr "If the browser shows an error about a file instead of CedarLoom, open the URL printed above."
 
 #. js-lingui-explicit-id
 msgid "api.bad-request"

@@ -28,6 +28,7 @@ export const MESSAGE_IDS = [
   'definition.not-found',
   'definition.not-json',
   'definition.stale',
+  'edit.outputs-left',
   'edit.result-over-limits',
   'edit.target-invalid',
   'generate.delete-skipped',
@@ -62,7 +63,6 @@ export const MESSAGE_IDS = [
   'run.already-undone',
   'run.not-found',
   'server.listen-failed',
-  'server.open-hint',
   'server.port-in-use',
   'session.cookie',
   'session.csrf',
@@ -109,7 +109,8 @@ export interface MessagePlaceholders {
   'definition.not-found': 'name' | 'source';
   'definition.not-json': 'path';
   'definition.stale': 'name' | 'paths';
-  'edit.result-over-limits': never;
+  'edit.outputs-left': 'name' | 'paths';
+  'edit.result-over-limits': 'levels' | 'mebibytes';
   'edit.target-invalid': 'operation' | 'pointer';
   'generate.delete-skipped': 'path';
   'generated.file-unreadable': 'path';
@@ -143,7 +144,6 @@ export interface MessagePlaceholders {
   'run.already-undone': 'by' | 'run';
   'run.not-found': 'run';
   'server.listen-failed': 'error' | 'port';
-  'server.open-hint': never;
   'server.port-in-use': 'port';
   'session.cookie': never;
   'session.csrf': never;
@@ -160,7 +160,7 @@ export interface MessagePlaceholders {
   'undo.file-changed': 'path';
   'undo.replaced': 'by' | 'run';
   'undo.result-kept': 'path' | 'run';
-  'workflow.name-invalid': 'name';
+  'workflow.name-invalid': 'longest' | 'name';
   'workflow.name-taken': 'name' | 'path';
   'workflow.no-script': 'name';
 }

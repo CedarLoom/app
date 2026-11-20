@@ -34,5 +34,5 @@ it('refuses a new workflow whose indented copy would be larger than 16 MiB', () 
   const zeros = `[${Array.from({ length: 600_000 }, () => '0').join(',')}]`;
   const nested = `${'{"a":'.repeat(19)}${zeros}${'}'.repeat(19)}`;
   const { generation } = created(`{ "schemaVersion": 2, "name": "full", "deep": ${nested} }`);
-  expect(generation).toMatchObject({ plan: null, refusals: [{ code: 'edit.result-over-limits', params: {} }] });
+  expect(generation).toMatchObject({ plan: null, refusals: [{ code: 'edit.result-over-limits' }] });
 });

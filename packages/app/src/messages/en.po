@@ -20,3 +20,7 @@ msgstr ""
 "  --json               Print one JSON document instead of text.\n"
 "  --help, -h           Show this usage.\n"
 "  --version, -V        Print the version of cedarloom-app."
+
+#. js-lingui-explicit-id
+msgid "server.open-hint"
+msgstr "If the browser shows an error about a file instead of CedarLoom, open the URL printed above."

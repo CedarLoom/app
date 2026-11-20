@@ -1,8 +1,10 @@
-import { type Edit, edited, JsonValue, type Refusal } from '@cedarloom/core';
-import { jsonWithin, Named, PROJECT_FOLDER } from './definition-files.ts';
+import { type Edit, edited, type Finding, JsonValue, type Refusal } from '@cedarloom/core';
+import { fileKey } from './apply.ts';
+import { jsonWithin, Named, overLimits, PROJECT_FOLDER } from './definition-files.ts';
 import { appliedAs, definitionOf, type Generation, generationOf, locatedAfter, start, stoppedBy } from './generate.ts';
 import { nameTaken } from './name-taken.ts';
 import { sha256 } from './project-files.ts';
+import { generatedFiles, isOwnPath } from './stale-paths.ts';
 import type { RunStore } from './store.ts';
 import { invalidName, projectPlace, type WorkflowsRequest } from './workflows.ts';
 
@@ -23,6 +25,23 @@ const renameRefusals = (request: EditRequest, next: string): Refusal[] => {
   return invalid === undefined ? nameTaken(request.cwd, request.root, next) : [invalid];
 };
 
+// The plan deletes only the old name's files a recorded run wrote; any other generated file of the old name stays.
+const withOutputsLeft = (root: string, name: string, generation: Generation): Generation => {
+  const { plan, generatedFrom } = generation;
+  if (plan === null || generatedFrom.every((each) => each.name === name)) return generation;
+  const handled = [...plan.operations.map(({ path }) => path), ...plan.skipped.map(({ params }) => params['path'])];
+  const keys = new Set(handled.filter((path) => typeof path === 'string').map(fileKey));
+  const { files, unreadable } = generatedFiles(root);
+  const paths = [...files.keys()].filter((path) => isOwnPath(path, name) && !keys.has(fileKey(path))).toSorted();
+  // A folder or file of the old name the app may not read can hide more of them.
+  const hidden = unreadable.filter(
+    ({ params: { path } }) => typeof path === 'string' && [path, `${path}/`].some((each) => isOwnPath(each, name)),
+  );
+  const left: Finding[] =
+    paths.length === 0 ? [] : [{ code: 'edit.outputs-left', severity: 'warning', params: { name, paths } }];
+  return { ...generation, findings: [...generation.findings, ...left, ...hidden] };
+};
+
 /**
  * Plans an edit of a project workflow: the definition with the edit applied, written together with its generated files
  * as one plan. A new name moves the definition file, takes the checks of a new workflow's name, and deletes the outputs
@@ -40,7 +59,7 @@ const planEdit = (store: RunStore, request: EditRequest): Generation => {
   const next = nameIn(result.definition, name);
   const text = `${JSON.stringify(result.definition, null, 2)}\n`;
   // The edited definition must read back as the definition readers read it.
-  if (jsonWithin(text) === undefined) return stoppedBy([{ code: 'edit.result-over-limits', params: {} }], recovered);
+  if (jsonWithin(text) === undefined) return stoppedBy([overLimits], recovered);
   const renamed = next !== name;
   const refusals = renamed ? renameRefusals(request, next) : [];
   if (refusals.length > 0) return stoppedBy(refusals, recovered);
@@ -48,7 +67,7 @@ const planEdit = (store: RunStore, request: EditRequest): Generation => {
   if (!('place' in plugin)) return plugin;
   const nextPath = `${PROJECT_FOLDER}/${next}.json`;
   const readHash = sha256(Buffer.from(read.text));
-  return generationOf(store, {
+  const generation = generationOf(store, {
     root,
     names: renamed ? [name, next] : [name],
     env: request.env,
@@ -63,6 +82,7 @@ const planEdit = (store: RunStore, request: EditRequest): Generation => {
     ]),
     findings: plugin.findings,
   });
+  return withOutputsLeft(root, name, generation);
 };
 
 /** Edits a project workflow: plans the edit, and with `yes` applies the plan as a run, crash-ordered. */

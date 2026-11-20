@@ -59,10 +59,12 @@ const unreadable = (): Refusal => ({ code: 'settings.unreadable', params: { path
 const nameOf = (id: string): string => (id.startsWith(SHIPPED) ? id.slice(SHIPPED.length) : id);
 
 // As start, with the name's refusal naming the id as typed.
-const started = (store: RunStore, root: string, id: string | null): ReturnType<typeof start> =>
-  id !== null && invalidName([nameOf(id)]) !== undefined
-    ? { recovered: [], stop: { code: 'workflow.name-invalid', params: { name: id } } }
-    : start(store, root, []);
+const started = (store: RunStore, root: string, id: string | null): ReturnType<typeof start> => {
+  const invalid = id === null ? undefined : invalidName([nameOf(id)]);
+  return invalid === undefined
+    ? start(store, root, [])
+    : { recovered: [], stop: { ...invalid, params: { ...invalid.params, name: id } } };
+};
 
 // The settings file's bytes and text, null when it does not exist.
 const settingsFile = (root: string): { bytes: Buffer; text: string } | null | Refusal => {

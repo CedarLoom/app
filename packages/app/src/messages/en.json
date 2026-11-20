@@ -2,6 +2,7 @@
   "messages": {
     "help.cedarloom-app": [
       "Usage: cedarloom-app [--port <n>] [--no-open] [--plugin-root <dir>] [--json]\n\nStarts the CedarLoom app for the project in the current folder: a local\nserver on 127.0.0.1 that runs until interrupted. Prints its URL with a\none-time token and opens it in the default browser.\n\nOptions:\n  --port <n>           Listen on port <n>. 0, the default, takes a free port.\n  --no-open            Print the URL without opening the browser.\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin. Its origin is not checked.\n  --json               Print one JSON document instead of text.\n  --help, -h           Show this usage.\n  --version, -V        Print the version of cedarloom-app."
-    ]
+    ],
+    "server.open-hint": ["If the browser shows an error about a file instead of CedarLoom, open the URL printed above."]
   }
 }
