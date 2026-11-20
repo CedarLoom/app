@@ -1,6 +1,7 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -10,13 +11,16 @@ import { z } from 'zod';
 import { recordRun } from './recorded-run.ts';
 
 // Runs Schemathesis against cedarloom-app started in a fixture project that holds run r1, with a session of its token.
+// Each undo case gets a run recorded for it (schemathesis_hooks.py asks the fixture server below), as an undo settles its run.
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'cedarloom-schemathesis-')));
 mkdirSync(join(root, '.git'));
 const env = { ...process.env, CEDARLOOM_STATE_DIR: join(root, '.state') };
 const machine = { env, platform: process.platform, home: homedir(), cwd: root };
-recordRun(root, storeDir({ ...machine, projectRoot: root, realpath: realpathSync.native }));
+const store = storeDir({ ...machine, projectRoot: root, realpath: realpathSync.native });
+recordRun(root, store);
 
 const path = (relative: string): string => fileURLToPath(new URL(relative, import.meta.url));
+const fixtures = createServer();
 const server = spawn(process.execPath, [path('../bin/cedarloom-app.js'), '--no-open', '--json', '--port', '0'], {
   cwd: root,
   env,
@@ -41,15 +45,34 @@ try {
   // Every operation documents its 4XX answers, so a run whose cookie the server refuses would still pass.
   const session = await fetch(`${base}/api/session`, { headers: { cookie: cookie ?? '' } });
   if (session.status !== 200) throw new Error(`GET /api/session with the cookie answered ${session.status}`);
+  // Gives each undo case a run of its own and the plan hash of its undo, since an undo settles the run it undoes.
+  let recorded = 0;
+  fixtures.on('request', async (_request, reply) => {
+    try {
+      const id = `u${++recorded}`;
+      recordRun(root, store, id, `${id}.md`);
+      const preview = await fetch(`${base}/api/runs/${id}/undo`, { headers: { cookie: cookie ?? '' } });
+      const { planHash } = z.object({ planHash: z.string() }).parse(await preview.json());
+      reply.end(JSON.stringify({ id, planHash }));
+    } catch (error) {
+      reply.writeHead(500).end(String(error));
+    }
+  });
+  fixtures.listen(0, '127.0.0.1');
+  await once(fixtures, 'listening');
+  const fixtureUrl = `http://127.0.0.1:${z.object({ port: z.number() }).parse(fixtures.address()).port}`;
   // unsupported_method expects 405 with Allow; the server answers every method it does not route with 404 api.not-found.
   const checks = ['--checks', 'all', '--exclude-checks', 'unsupported_method'];
   const headers = ['-H', `Cookie: ${cookie}`, '-H', `x-cedarloom-csrf: ${csrf}`, '-H', `Host: 127.0.0.1:${port}`];
-  const run = spawnSync('schemathesis', ['run', path('../openapi.json'), '--url', base, ...headers, ...checks], {
+  const hooked = { ...env, SCHEMATHESIS_HOOKS: path('schemathesis_hooks.py'), CEDARLOOM_FIXTURES: fixtureUrl };
+  const run = spawn('schemathesis', ['run', path('../openapi.json'), '--url', base, ...headers, ...checks], {
     cwd: root,
+    env: hooked,
     stdio: 'inherit',
   });
-  if (run.error !== undefined) throw run.error;
-  process.exitCode = run.status ?? 1;
+  const [code] = await once(run, 'exit');
+  process.exitCode = code ?? 1;
 } finally {
+  fixtures.close();
   server.kill();
 }
