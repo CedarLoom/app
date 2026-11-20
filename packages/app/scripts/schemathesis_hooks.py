@@ -19,13 +19,15 @@ answers = collections.Counter()
 def before_call(context, case, kwargs):
     # A malformed id or body is a negative case: it keeps its own 4xx answer.
     run = (case.path_parameters or {}).get("id")
-    if case.operation.path != UNDO or not isinstance(run, str) or not RUN_ID.fullmatch(run):
+    if case.method not in ("GET", "POST") or case.operation.path != UNDO:
         return
-    # An undo settles the run it undoes, so each case records its own, with the plan hash its preview shows.
+    if not isinstance(run, str) or not RUN_ID.fullmatch(run):
+        return
     with urllib.request.urlopen(os.environ["CEDARLOOM_FIXTURES"], timeout=30) as reply:
         fresh = json.load(reply)
     case.path_parameters["id"] = fresh["id"]
-    if isinstance(case.body, dict) and set(case.body) == {"planHash"} and HASH.fullmatch(str(case.body["planHash"])):
+    sent = case.body.get("planHash") if isinstance(case.body, dict) and set(case.body) == {"planHash"} else None
+    if isinstance(sent, str) and HASH.fullmatch(sent):
         case.body["planHash"] = fresh["planHash"]
 
 
