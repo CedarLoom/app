@@ -189,20 +189,15 @@ interface Entry {
 // Each chosen definition with its bytes, or the app's refusal of it; a file removed since the folder was listed is left
 // out.
 const entriesOf = (place: Place, list: { name: string; path: string }[]): Entry[] =>
-  list.flatMap(({ name, path }) => {
+  list.flatMap(({ name, path }): Entry[] => {
     const bytes = definitionBytes(place.base, path);
     if (bytes === 'absent') return [];
     const file = place.shown(path);
     if (bytes === 'unreadable') return [{ name, path, bytes: undefined, refusals: [notJson(file)] }];
-    const mismatch = nameMismatch(file, jsonOf(bytes.toString('utf8')));
-    return [
-      {
-        name,
-        path,
-        bytes: mismatch === undefined ? bytes : undefined,
-        refusals: mismatch === undefined ? [] : [mismatch],
-      },
-    ];
+    // A shipped definition is the plugin's to name, and no project run generates it.
+    const mismatch = place.source === 'project' ? nameMismatch(file, jsonOf(bytes.toString('utf8'))) : undefined;
+    if (mismatch !== undefined) return [{ name, path, bytes: undefined, refusals: [mismatch] }];
+    return [{ name, path, bytes, refusals: [] }];
   });
 
 // One generator run over the chosen readable definitions; each refusal names the file as shown, not the temporary copy.

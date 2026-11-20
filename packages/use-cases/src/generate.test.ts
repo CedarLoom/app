@@ -233,9 +233,14 @@ it('refuses a definition whose name is not its file name with definition.name-mi
   expect([existsSync(join(project, SKILL)), existsSync(join(project, '.claude/skills/mine'))]).toEqual([false, false]);
 });
 
-it("plans no delete of another definition's outputs in a named run of a definition that takes its name", () => {
+it("plans no delete of another definition's outputs in a named run, also of one that takes the other's name", () => {
   const { store, request, define, generated, text } = setup({ name: 'dev', skill: 'Run dev.\n', script: true });
+  define({ name: 'build', skill: 'Build.\n', script: true }, 'build');
   generated();
+  define({ name: 'build', skill: 'Build.\n' }, 'build');
+  expect(kinds(planGeneration(store, { ...request, names: ['build'] }).plan)).toEqual([
+    ['delete', '.claude/workflows/build.js'],
+  ]);
   define({ name: 'dev', skill: 'Build.\n' }, 'build');
   expect(planGeneration(store, { ...request, names: ['build'] })).toMatchObject({
     plan: null,
