@@ -13,7 +13,7 @@ const settleAside = (path: string, aside: string, op: Operation): void => {
   const moved = entryAt(aside);
   if (moved === undefined) return;
   const target = entryAt(path);
-  if (target === undefined) return putBack(aside, path, moved.isFile());
+  if (target === undefined) return putBack(aside, path);
   const same = target.dev === moved.dev && target.ino === moved.ino;
   if (same || hashAt(aside) === op.beforeHash) unlinkSync(aside);
 };

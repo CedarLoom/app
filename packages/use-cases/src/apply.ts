@@ -1,5 +1,5 @@
 import { isUtf8 } from 'node:buffer';
-import { rmSync } from 'node:fs';
+import { lstatSync, rmSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { Finding, PlanOperation, PlanPreview, Refusal } from '@cedarloom/core';
 import {
@@ -9,9 +9,11 @@ import {
   dropAside,
   errorCode,
   type Found,
+  entryAt,
   hashAt,
   linkIn,
   makeFolders,
+  makesHardLinks,
   putBack,
   readFound,
   setAside,
@@ -119,7 +121,7 @@ const folderKeys = (path: string): string[] => {
 // What the plan alone shows wrong with an operation; a plan path that is a folder of another one would make a step
 // throw after the steps before it wrote.
 const planProblem = (root: string, op: PlanOperation, position: number, nested: boolean): Refusal | undefined =>
-  nameProblem(root, op.path, position) ?? (nested ? refusal('plan.file-changed', op.path) : textProblem(op));
+  nameProblem(root, op.path, position) ?? (nested ? refusal('plan.path-nested', op.path) : textProblem(op));
 
 // Every operation is checked before the first write, each against what the ones before it leave: one problem writes none.
 export const precheck = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
@@ -141,6 +143,23 @@ export const precheck = (root: string, operations: readonly PlanOperation[]): Re
   return undefined;
 };
 
+// A step on a volume without hard links would stop after it set the old file aside, and so would the undo of a delete;
+// the probe goes in the deepest folder that exists, as the precheck found no link on its way.
+const linksProblem = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
+  const probed = new Set<bigint>();
+  for (const op of operations) {
+    let folder = dirname(join(root, op.path));
+    let entry = entryAt(folder);
+    for (; entry === undefined && dirname(folder) !== folder; entry = entryAt(folder)) folder = dirname(folder);
+    // Even the root is absent where its drive is gone; lstat then throws ENOENT.
+    entry ??= lstatSync(folder, { bigint: true });
+    if (probed.has(entry.dev)) continue;
+    probed.add(entry.dev);
+    if (!makesHardLinks(folder)) return refusal('apply.no-hard-links', op.path);
+  }
+  return undefined;
+};
+
 // The copy undo restores from, read back before the step may write.
 const backUp = (bytes: Buffer, dest: string): boolean => {
   try {
@@ -158,7 +177,7 @@ const linkNew = (temp: string, path: string, aside: string | null): void => {
     linkIn(temp, path);
   } catch (error) {
     if (aside !== null && error instanceof Changed) dropAside(aside);
-    else if (aside !== null) putBack(aside, path, true);
+    else if (aside !== null) putBack(aside, path);
     throw error;
   }
 };
@@ -263,7 +282,7 @@ const steps = (context: Step, operations: readonly PlanOperation[]): Refusal | n
 
 /**
  * Applies a plan as one run on the held store: settles what interrupted runs left, refuses while one is unsettled,
- * checks every operation, then writes each one crash-ordered and stops at the first that fails. An empty plan records
+ * checks every operation and that the volume makes hard links, then writes each one crash-ordered and stops at the first that fails. An empty plan records
  * no run. `at` runs at each boundary. A step that throws ends the run, or leaves it to a later recovery as the
  * findings of StepFailed report, and throws StepFailed.
  */
@@ -272,7 +291,7 @@ export const apply = (store: RunStore, request: ApplyRequest, at: At = () => und
   const findings = [...earlier, ...recover(store, root)];
   const { operations } = plan;
   if (operations.length === 0) return { run: null, refusal: null, findings };
-  const problem = unsettledBy(findings) ?? precheck(root, operations);
+  const problem = unsettledBy(findings) ?? precheck(root, operations) ?? linksProblem(root, operations);
   if (problem !== undefined) return { run: null, refusal: problem, findings };
   const begun = store.begin({ ...run, planHash: plan.planHash, operations: operations.map(journal) });
   if (!begun.ok) return { run: null, refusal: begun.refusal, findings };

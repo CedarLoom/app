@@ -10,6 +10,7 @@ export const MESSAGE_IDS = [
   'api.internal',
   'api.not-found',
   'apply.backup-failed',
+  'apply.no-hard-links',
   'apply.recovered',
   'apply.unsettled',
   'apply.write-mismatch',
@@ -32,6 +33,7 @@ export const MESSAGE_IDS = [
   'plan.file-changed',
   'plan.name-too-long',
   'plan.not-text',
+  'plan.path-nested',
   'plan.path-outside-roots',
   'plan.stale',
   'plan.symlink',
@@ -75,6 +77,7 @@ export interface MessagePlaceholders {
   'api.internal': never;
   'api.not-found': never;
   'apply.backup-failed': 'path' | 'run';
+  'apply.no-hard-links': 'path';
   'apply.recovered': 'path' | 'run';
   'apply.unsettled': 'path' | 'run';
   'apply.write-mismatch': 'path' | 'run';
@@ -97,6 +100,7 @@ export interface MessagePlaceholders {
   'plan.file-changed': 'path';
   'plan.name-too-long': 'path';
   'plan.not-text': 'path';
+  'plan.path-nested': 'path';
   'plan.path-outside-roots': 'path';
   'plan.stale': never;
   'plan.symlink': 'path';

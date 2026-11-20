@@ -8,11 +8,14 @@ import {
   linkSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   openSync,
   readFileSync,
+  readlinkSync,
   readSync,
   renameSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -147,11 +150,15 @@ export const copyAtomic = (bytes: Uint8Array, dest: string): void => {
   flushFolder(dirname(dest));
 };
 
-// Moves a file back by a hard link, which never overwrites; false when link() fails, as on a taken path or a
-// filesystem without hard links.
+// Puts an aside back by a new name, which never replaces what is at the path: a hard link for a file, a link with the
+// same target for a link; false when that fails, as on a taken path or a filesystem without hard links.
 const linkedBack = (aside: string, path: string): boolean => {
+  const entry = entryAt(aside);
   try {
-    linkSync(aside, path);
+    if (entry?.isFile()) linkSync(aside, path);
+    // A hard link to a link would follow it on macOS; Windows needs the link's kind to make it again.
+    else if (entry?.isSymbolicLink() && process.platform !== 'win32') symlinkSync(readlinkSync(aside, 'buffer'), path);
+    else return false;
   } catch {
     return false;
   }
@@ -159,11 +166,11 @@ const linkedBack = (aside: string, path: string): boolean => {
   return true;
 };
 
-/** Puts a file set aside back at its path; when another process put a file there meanwhile, both stay. */
-export const putBack = (aside: string, path: string, isFile: boolean): void => {
-  // A link or folder goes back by rename, as a hard link to a link would follow it on macOS, and only to a free path;
-  // so does a file a hard link cannot put back.
-  if (!(isFile && linkedBack(aside, path))) {
+/** Puts a file, link or folder set aside back at its path; when another process put a file there meanwhile, both stay. */
+export const putBack = (aside: string, path: string): void => {
+  // Node.js has no rename that refuses a taken path: where no new name puts the aside back, as for a link on Windows or
+  // a file on a volume without hard links, a file put at the path between this check and the rename is replaced.
+  if (!linkedBack(aside, path)) {
     if (entryAt(path) !== undefined) return;
     renameSync(aside, path);
   }
@@ -179,7 +186,7 @@ export const setAside = (path: string, aside: string, before: string): void => {
   }
   const found = readFound(aside);
   if (typeof found === 'object' && sha256(found.bytes) === before) return;
-  putBack(aside, path, typeof found === 'object');
+  putBack(aside, path);
   throw new Changed();
 };
 
@@ -196,4 +203,25 @@ export const linkIn = (temp: string, path: string): void => {
 export const dropAside = (aside: string): void => {
   unlinkSync(aside);
   flushFolder(dirname(aside));
+};
+
+// link() of a volume without hard links: ENOTSUP on exFAT and FAT, EPERM or EXDEV on some network shares.
+const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EPERM', 'EXDEV']);
+
+/** Whether the volume of a folder makes hard links, probed by a link in a private folder there, which goes after. */
+export const makesHardLinks = (folder: string): boolean => {
+  const probe = mkdtempSync(join(folder, '.cedarloom-probe-'));
+  try {
+    writeFileSync(join(probe, 'a'), '');
+    try {
+      linkSync(join(probe, 'a'), join(probe, 'b'));
+    } catch (error) {
+      if (NO_HARD_LINKS.has(errorCode(error))) return false;
+      throw error;
+    }
+    return true;
+  } finally {
+    // A scanner that holds the new file on Windows makes a single try fail with EBUSY or EPERM.
+    rmSync(probe, { recursive: true, force: true, maxRetries: 3 });
+  }
 };
