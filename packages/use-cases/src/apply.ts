@@ -155,8 +155,7 @@ const fileProblem = (root: string, op: PlanOperation, chain: Chain | undefined):
   fileOnWay(root, op.path) ??
   (chain === undefined ? diskProblem(root, op) : chainProblem(root, op, chain));
 
-// The text a step writes is the one its hash names and one the check after the write reads whole, so that check cannot
-// fail once the old file went.
+// A text the step writes that its hash does not name, or that a later plan or undo would not read, fails after the write.
 const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined => {
   if (after === null) return undefined;
   const bytes = Buffer.from(after);

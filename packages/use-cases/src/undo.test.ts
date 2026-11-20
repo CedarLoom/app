@@ -1,4 +1,14 @@
-import { chmodSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
@@ -99,7 +109,8 @@ describe('undo', () => {
   it.each([
     ['undo.backup-missing', (backup: string) => rmSync(backup)],
     ['undo.backup-changed', (backup: string) => writeFileSync(backup, 'other\n')],
-  ] as const)('undo refuses with %s when the backup is missing or changed', (code, spoil) => {
+    ['plan.not-text', (backup: string) => truncateSync(backup, 2 ** 31)],
+  ] as const)('undo refuses with %s when the backup is missing, changed or larger than undo reads', (code, spoil) => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     const held = store(state, 'r1', 'u1');
     apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));

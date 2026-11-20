@@ -47,7 +47,8 @@ class Denied extends Error {
   }
 }
 
-// A text file's text, null for nothing; undefined for anything no step leaves, such as a link or a binary file.
+// A text file's text, null for nothing; undefined for anything no step leaves, such as a link, a binary file or one
+// larger than a step writes.
 const textAt = (root: string, path: string): string | null | undefined => {
   let found: FileFound;
   try {
@@ -92,6 +93,7 @@ const textBefore = ({ store, run }: Walk, position: number, step: Operation): st
   if (step.beforeHash === null) return null;
   const found = fileAt(store.backupPath(run, position));
   if (found === 'absent') return refusal('undo.backup-missing', step.path);
+  if (found === 'too-large') return refusal('plan.not-text', step.path);
   if (typeof found !== 'object' || sha256(found.bytes) !== step.beforeHash) {
     return refusal('undo.backup-changed', step.path);
   }

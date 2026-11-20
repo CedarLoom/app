@@ -51,38 +51,35 @@ export type Found = { bytes: Buffer; mode: number } | 'absent' | 'link' | 'not-f
 /** What fileAt finds: as readFound, or a regular file larger than FILE_LIMIT. */
 export type FileFound = Found | 'too-large';
 
-/** The most bytes of a project file, a backup or a planned text CedarLoom reads or writes whole. */
+/** The most bytes of a project file, a backup or a planned text CedarLoom reads whole. */
 export const FILE_LIMIT = 16 * 1024 * 1024;
 
 // No link followed, and no wait on a FIFO.
 const READ = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-// Opening a socket: ENXIO on Linux, EOPNOTSUPP on macOS, which Node.js names by its number alone; elsewhere these
-// numbers mean another failure.
+// The number Node.js gives opening a socket, by platform; elsewhere it means another failure.
 const SOCKET = new Map<string, number>([
   ['linux', -os.errno.ENXIO],
   ['darwin', -os.errno.EOPNOTSUPP],
+  ['freebsd', -os.errno.EOPNOTSUPP],
+  ['openbsd', -os.errno.EOPNOTSUPP],
 ]).get(process.platform);
 const errorNumber = (error: unknown): unknown => (error instanceof Error && 'errno' in error ? error.errno : undefined);
-// Read in steps, so a small file takes no buffer of the limit's size.
+// Read in steps, so a small file takes no buffer of the limit's size and a large one is hashed in bounded memory.
 const CHUNK = 64 * 1024;
 
-// At most the first length bytes of the file open at fd, up to its end; the size fstat reports is not trusted, as a
-// file that grows meanwhile or one that reports 0, as on procfs, is read on past it.
-const headOf = (fd: number, length: number): Buffer => {
-  const chunks: Buffer[] = [];
-  let filled = 0;
-  while (filled < length) {
-    const chunk = Buffer.alloc(Math.min(CHUNK, length - filled));
-    const count = readSync(fd, chunk, 0, chunk.length, filled);
-    if (count === 0) break;
-    chunks.push(chunk.subarray(0, count));
-    filled += count;
+// Each chunk of the file open at fd up to its end or length bytes, never trusting the size fstat reports.
+const eachChunk = (fd: number, length: number, use: (chunk: Buffer) => void): void => {
+  const chunk = Buffer.alloc(CHUNK);
+  for (let at = 0; at < length; ) {
+    const count = readSync(fd, chunk, 0, Math.min(CHUNK, length - at), at);
+    if (count === 0) return;
+    use(chunk.subarray(0, count));
+    at += count;
   }
-  return Buffer.concat(chunks, filled);
 };
 
-/** Reads a regular file's first limit bytes from one open handle, so what is checked is what is read. */
-export const readFound = (path: string, limit: number): Found => {
+// What use makes of a regular file open at a path, from one handle, so what is checked is what is read.
+const opened = <T>(path: string, use: (fd: number, mode: number) => T): T | Exclude<Found, object> => {
   let fd: number;
   try {
     fd = openSync(path, READ);
@@ -99,23 +96,34 @@ export const readFound = (path: string, limit: number): Found => {
   try {
     const info = fstatSync(fd);
     // Permission bits only: like a write by the kernel, a replace drops setuid and setgid.
-    if (!info.isFile()) return 'not-file';
-    return { bytes: headOf(fd, limit), mode: info.mode & 0o777 };
+    return info.isFile() ? use(fd, info.mode & 0o777) : 'not-file';
   } finally {
     closeSync(fd);
   }
 };
 
-/** Reads a whole regular file of at most FILE_LIMIT bytes from one open handle; too-large for a larger one. */
+/** Reads a regular file's first limit bytes. */
+export const readFound = (path: string, limit: number): Found =>
+  opened(path, (fd, mode) => {
+    const chunks: Buffer[] = [];
+    eachChunk(fd, limit, (chunk) => chunks.push(Buffer.from(chunk)));
+    return { bytes: Buffer.concat(chunks), mode };
+  });
+
+/** Reads a whole regular file of at most FILE_LIMIT bytes; too-large for a larger one. */
 export const fileAt = (path: string): FileFound => {
   const found = readFound(path, FILE_LIMIT + 1);
   return typeof found === 'object' && found.bytes.length > FILE_LIMIT ? 'too-large' : found;
 };
 
-/** The hash of the regular file at a path; null for anything else, also for a file larger than FILE_LIMIT. */
+/** The hash of the whole regular file at a path, of any size; null for anything else. */
 export const hashAt = (path: string): string | null => {
-  const found = fileAt(path);
-  return typeof found === 'object' ? sha256(found.bytes) : null;
+  const hash = opened(path, (fd) => {
+    const running = createHash('sha256');
+    eachChunk(fd, Number.POSITIVE_INFINITY, (chunk) => running.update(chunk));
+    return running.digest('hex');
+  });
+  return hash === 'absent' || hash === 'link' || hash === 'not-file' ? null : hash;
 };
 
 /** The temporary file of one step, next to its target, so recovery finds it from the journal. */
@@ -218,8 +226,7 @@ export const setAside = (path: string, aside: string, before: string): void => {
   } catch (error) {
     throw errorCode(error) === 'ENOENT' ? new Changed() : error;
   }
-  const found = fileAt(aside);
-  if (typeof found === 'object' && sha256(found.bytes) === before) return;
+  if (hashAt(aside) === before) return;
   putBack(aside, path);
   throw new Changed();
 };
