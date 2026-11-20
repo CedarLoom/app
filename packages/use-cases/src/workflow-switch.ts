@@ -92,11 +92,18 @@ const recordOf = (store: RunStore, run: Run): SwitchRecord => {
   };
 };
 
-// Whether an undo down the run's undoneBy chain did not finish, as its write may have taken back what the run wrote.
-const undoing = (store: RunStore, run: Run): boolean => {
-  const by = run.undoneBy === null ? undefined : store.run(run.undoneBy);
-  return store.unfinishedUndos(run.id).length > 0 || (by !== undefined && undoing(store, by));
+const chain = (store: RunStore, run: Run, link: 'undoes' | 'undoneBy'): Run[] => {
+  const id = run[link];
+  const next = id === null ? undefined : store.run(id);
+  return next === undefined ? [run] : [run, ...chain(store, next, link)];
 };
+
+// Whether an undo did not finish of the run, of a run down its undoes chain or of an undo up its undoneBy chain, as its
+// write may have changed the entries the run's record holds.
+const undoing = (store: RunStore, run: Run): boolean =>
+  [...chain(store, run, 'undoes'), ...chain(store, run, 'undoneBy')].some(
+    ({ id }) => store.unfinishedUndos(id).length > 0,
+  );
 
 // The first later run on the file planned from the hash, as every planner hashes what it reads; with none, the file now.
 const shownAt = (store: RunStore, run: Run, hash: string | null, now: string | null): boolean => {

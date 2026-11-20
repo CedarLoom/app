@@ -182,12 +182,21 @@ describe('workflows on after an off run that is not in effect', () => {
   it.each([
     ['the off run', [], 'r1'],
     ['an undo of the undo of the off run', ['r1', 'r2'], 'r3'],
-  ])('an off run owns nothing while an undo of %s stopped after its write', (_, done, last) => {
+    ['the off run after an undo of its undo', ['r1', 'r2'], 'r1'],
+  ])('no run owns the rules while an undo of %s stopped after its write', (_, done, last) => {
     const context = setup(OWNER);
     const { root, held, off } = context;
     off('dev');
     for (const run of done) expect(undo(held, { root, run }).refusal).toBeNull();
     expect(() => undo(held, { root, run: last }, failAt('written', 0))).toThrow('disk gone');
+    ownerRuleStays(context);
+  });
+
+  it('a rule the owner adds stays after a second undo of the off run done over an undo of its undo', () => {
+    const context = setup(OWNER);
+    context.off('dev');
+    for (const run of ['r1', 'r2', 'r1']) expect(undo(context.held, { root: context.root, run }).refusal).toBeNull();
+    expect(context.read()).toBe(OWNER);
     ownerRuleStays(context);
   });
 });
@@ -329,6 +338,13 @@ describe('workflows on after an undo of the undo of an on run', () => {
         on('dev');
         off('dev');
         expect(undo(held, { root, run: 'r3' })).toMatchObject({ run: 'r6', refusal: null });
+      },
+    ],
+    [
+      'undone twice down its chain and then stopped after its write',
+      ({ root, held }: Context) => {
+        for (const run of ['r3', 'r4']) expect(undo(held, { root, run }).refusal).toBeNull();
+        expect(() => undo(held, { root, run: 'r3' }, failAt('written', 0))).toThrow('disk gone');
       },
     ],
   ])('a rule the owner adds stays after the undo %s', (_, last) => {
