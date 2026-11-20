@@ -17,14 +17,16 @@ describe('recovery', () => {
 
   // Recovery puts a link back by a new link only off Windows.
   it.skipIf(process.platform === 'win32')(
-    'keeps one link where a put-back was killed between the new link and the removal of the aside',
+    'keeps one link and settles the step as untouched where a put-back was killed before the aside went',
     () => {
       const { root, state } = project();
       const held = store(state);
       begin(held, root, '.claude/l.md', hash('old\n'));
+      writeFileSync(join(root, '.claude/.l.md.cedarloom-r1-0'), 'a\n');
       symlinkSync('target.md', join(root, '.claude/l.md'));
       symlinkSync('target.md', join(root, '.claude/.l.md.cedarloom-r1-0.old'));
-      recover(held, root);
+      expect(recover(held, root)).toEqual([recovered('.claude/l.md')]);
+      expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['untouched'] });
       expect(readdirSync(join(root, '.claude'))).toEqual(['l.md']);
       expect(readlinkSync(join(root, '.claude/l.md'))).toBe('target.md');
     },

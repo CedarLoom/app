@@ -1,7 +1,7 @@
 import { readlinkSync, rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding, Refusal, Run } from '@cedarloom/core';
-import { asidePath, entryAt, errorCode, hashAt, putBack, tempPath } from './project-files.ts';
+import { asidePath, dropAside, entryAt, errorCode, hashAt, putBack, tempPath } from './project-files.ts';
 import type { RunStore } from './store.ts';
 import { linkOnWay } from './write-roots.ts';
 
@@ -55,11 +55,14 @@ const settleStep = ({ store, root, run }: Unsettled, position: number, op: Opera
 };
 
 // A put-back of a link killed between the new link and the removal of the aside leaves the link twice; the aside goes.
-const dropTwinLink = ({ root, run }: Unsettled, position: number, op: Operation): void => {
+// True when it went: the step set a link aside, which never hashes as the file it replaces, so it changed nothing.
+const droppedTwinLink = ({ root, run }: Unsettled, position: number, op: Operation): boolean => {
   const path = join(root, op.path);
   const aside = asidePath(path, run, position);
-  if (entryAt(aside)?.isSymbolicLink() !== true) return;
-  if (readlinkSync(aside, 'buffer').equals(readlinkSync(path, 'buffer'))) unlinkSync(aside);
+  if (entryAt(aside)?.isSymbolicLink() !== true) return false;
+  if (!readlinkSync(aside, 'buffer').equals(readlinkSync(path, 'buffer'))) return false;
+  dropAside(aside);
+  return true;
 };
 
 // The codes of a filesystem that refuses a change for now: no permission, a read-only volume, a file another process holds.
@@ -67,12 +70,11 @@ const REFUSED = new Set(['EACCES', 'EPERM', 'EROFS', 'EBUSY']);
 
 // How the step ended once its files were put in order, null when it never started: undefined when a link is on the way
 // since the run, so nothing is moved through it, or when the filesystem refused, as in a folder this user may not enter
-// or write.
+// or write. A link at the path whose twin went is the one the step put back; nothing settling the step follows it.
 const settled = (unsettled: Unsettled, position: number, op: Operation): Ended | null | undefined => {
   try {
     const link = linkOnWay(unsettled.root, op.path);
-    if (link === op.path) dropTwinLink(unsettled, position, op);
-    if (link !== undefined) return undefined;
+    if (link !== undefined && (link !== op.path || !droppedTwinLink(unsettled, position, op))) return undefined;
     return settleStep(unsettled, position, op) ?? null;
   } catch (error) {
     if (REFUSED.has(String(errorCode(error)))) return undefined;

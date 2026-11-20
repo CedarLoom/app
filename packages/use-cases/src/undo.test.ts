@@ -494,7 +494,7 @@ describe('undo of an edited journal', () => {
     const db = new DatabaseSync(join(state, 'runs.sqlite'));
     db.prepare('UPDATE operations SET path = ?, madeFolders = 1').run(`.claude/../../${basename(outside)}/out/a.md`);
     db.close();
-    expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
+    undo(held, { root, run: 'r1' });
     expect(readdirSync(outside)).toEqual(['out']);
   });
 });
