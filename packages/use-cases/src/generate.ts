@@ -13,6 +13,7 @@ import {
 } from '@cedarloom/core';
 import { apply, fileKey, linkRefusal, precheck, refusal } from './apply.ts';
 import { Named } from './definition-checks.ts';
+import { definitionBytes } from './definition-files.ts';
 import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
 import { type Found, readFound, sha256 } from './project-files.ts';
@@ -22,7 +23,6 @@ import type { RunStore } from './store.ts';
 import { inEffect } from './undo.ts';
 import {
   chosen,
-  definitionAt,
   invalidName,
   notJson,
   type Place,
@@ -70,7 +70,7 @@ const stoppedBy = (refusals: Refusal[], findings: Finding[]): Generation => ({
 
 // A definition's text; one that is not UTF-8 JSON stops the generation before the generator runs.
 const definitionOf = (place: Place, { name, path }: { name: string; path: string }): Definition | Refusal => {
-  const bytes = definitionAt(place, path);
+  const bytes = definitionBytes(place.base, path);
   if (bytes === 'absent') return { code: 'definition.not-found', params: { name, source: place.source } };
   if (bytes === 'unreadable' || !isUtf8(bytes)) return notJson(path);
   const text = bytes.toString('utf8');

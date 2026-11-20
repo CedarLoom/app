@@ -367,9 +367,9 @@ describe('reports each definition it cannot use with its finding', () => {
 describe('reports a definition no reader can take with definition.not-json', () => {
   it.skipIf(isWindows)('a socket', () => {
     const { project, check } = setup();
-    // Bound by a relative name, as a socket path is limited to about 100 bytes.
-    const bind = 'import os, socket, sys; os.chdir(sys.argv[1]); socket.socket(socket.AF_UNIX).bind("socket.json")';
-    execFileSync('python3', ['-c', bind, join(project, '.cedarloom', 'workflows')]);
+    // Bound by a relative name, as a socket path is limited to about 100 bytes; exit leaves the socket file.
+    const bind = "require('node:net').createServer().listen('socket.json', () => process.exit())";
+    execFileSync(process.execPath, ['-e', bind], { cwd: join(project, '.cedarloom', 'workflows') });
     expect(check().definitions).toEqual(notJson('.cedarloom/workflows/socket.json').definitions);
   });
 

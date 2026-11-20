@@ -82,9 +82,6 @@ export const invalidName = (names: readonly string[]): Refusal | undefined => {
   return name === undefined ? undefined : { code: 'workflow.name-invalid', params: { name } };
 };
 
-export const definitionAt = (place: Place, path: string): Buffer | 'absent' | 'unreadable' =>
-  definitionBytes(place.base, path);
-
 const descriptionOf = (bytes: Buffer | 'absent' | 'unreadable'): string | null => {
   if (typeof bytes === 'string') return null;
   try {
@@ -103,7 +100,7 @@ const listed = (place: Place): { workflows: WorkflowList['workflows']; findings:
   }
   const read = files.map((file) => {
     const path = `${place.folder}/${file}`;
-    return { file, path: place.shown(path), bytes: definitionAt(place, path) };
+    return { file, path: place.shown(path), bytes: definitionBytes(place.base, path) };
   });
   const workflows = read.map(({ file, path, bytes }) => {
     const description = descriptionOf(bytes);
@@ -139,7 +136,7 @@ export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: b
   const { place, findings } = shipped ? pluginPlace(request, project) : { place: projectPlace(project), findings: [] };
   if (place === null) return stoppedOn(findings);
   const path = `${place.folder}/${name}.json`;
-  const bytes = definitionAt(place, path);
+  const bytes = definitionBytes(place.base, path);
   if (bytes === 'absent')
     return stopped([{ code: 'definition.not-found', params: { name, source: place.source } }], findings);
   if (bytes === 'unreadable') return stopped([notJson(place.shown(path))], findings);
@@ -185,7 +182,7 @@ interface Entry {
 // Each chosen definition with its bytes; a file removed since the folder was listed is left out.
 const entriesOf = (place: Place, list: { name: string; path: string }[]): Entry[] =>
   list.flatMap(({ name, path }) => {
-    const bytes = definitionAt(place, path);
+    const bytes = definitionBytes(place.base, path);
     if (bytes === 'absent') return [];
     return [{ name, path, bytes: bytes === 'unreadable' ? undefined : bytes }];
   });
