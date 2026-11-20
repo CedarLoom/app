@@ -16,7 +16,7 @@ import { Named } from './definition-checks.ts';
 import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
 import { type Found, readFound, sha256 } from './project-files.ts';
-import { afterEarlierRecovery, recover } from './recover.ts';
+import { recover, unsettledBy } from './recover.ts';
 import { isOwnPath, withLf } from './stale-paths.ts';
 import type { RunStore } from './store.ts';
 import { inEffect } from './undo.ts';
@@ -169,15 +169,23 @@ const planned = (root: string, outputs: Map<string, Buffer>, previous: Map<strin
   return { planHash: planHash(operations, sha256), operations, skipped };
 };
 
+// A name's refusal before recovery runs; then a run recovery left unsettled stops the generation, as apply would refuse
+// its plan.
+const start = (store: RunStore, request: GenerateRequest): { recovered: Finding[]; stop: Refusal | undefined } => {
+  const invalid = invalidName(request.names);
+  if (invalid !== undefined) return { recovered: [], stop: invalid };
+  const recovered = recover(store, request.root);
+  return { recovered, stop: unsettledBy(recovered) };
+};
+
 /**
  * Plans the generation of the project's definitions into `.claude/`: the plugin's generator writes their outputs into
  * a temporary folder, and the plan creates or replaces each project file that differs and deletes each file the last
  * generation wrote that no output holds any more, while it is unchanged. Recovery runs first.
  */
 export const planGeneration = (store: RunStore, request: GenerateRequest): Generation => {
-  const invalid = invalidName(request.names);
-  if (invalid !== undefined) return stoppedBy([invalid], []);
-  const recovered = recover(store, request.root);
+  const { recovered, stop: first } = start(store, request);
+  if (first !== undefined) return stoppedBy([first], recovered);
   const plugin = pluginPlace(request, request.root);
   if (plugin.place === null) {
     const stop = stoppedOn(plugin.findings);
@@ -230,11 +238,12 @@ export const generateWorkflows = (store: RunStore, request: GenerateRequest, yes
       undoes: null,
       generatedFrom,
     },
+    earlier: generation.findings,
   });
   return {
     ...generation,
     run: applied.run,
     refusals: applied.refusal === null ? [] : [applied.refusal],
-    findings: [...generation.findings, ...afterEarlierRecovery(applied.findings)],
+    findings: applied.findings,
   };
 };

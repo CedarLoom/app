@@ -316,6 +316,20 @@ const thrownBy = (act: () => unknown): unknown => {
   return undefined;
 };
 
+describe('undo stops a run', () => {
+  it('names an undo it stops with what the recovery before its plan settled', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'r0', 'u1');
+    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
+    begin(held, root, '.claude/a.md');
+    writeFileSync(join(root, '.claude/.a.md.cedarloom-r0-0'), 'a\n');
+    expect(thrownBy(() => undo(held, { root, run: 'r1' }, failAt('linked', 0)))).toMatchObject({
+      run: 'u1',
+      findings: [recovered('.claude/a.md', 'r0')],
+    });
+  });
+});
+
 describe('apply stops a run', () => {
   it('puts the files in order, ends the run and names it with what recovery settled before, when a step throws', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });

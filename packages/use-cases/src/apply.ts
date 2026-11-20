@@ -19,7 +19,7 @@ import {
   tempPath,
   writeNew,
 } from './project-files.ts';
-import { recover } from './recover.ts';
+import { recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
 import { inWriteRoots, linkOnWay } from './write-roots.ts';
 
@@ -34,6 +34,8 @@ export interface ApplyRequest {
   root: string;
   plan: PlanPreview;
   run: Pick<NewRun, 'kind' | 'action' | 'subject' | 'undoes' | 'generatedFrom'>;
+  /** What a recovery right before, on the same held store, reported; the apply's findings start with it. */
+  earlier?: Finding[];
 }
 
 export interface Applied {
@@ -241,10 +243,20 @@ const journal = ({ before: _before, after: _after, ...hashes }: PlanOperation): 
   entries: null,
 });
 
-// A run recovery left unsettled may have left a file on the plan's paths, and would be settled after this run.
-const startProblem = (root: string, operations: readonly PlanOperation[], findings: Finding[]): Refusal | undefined => {
-  const skipped = findings.find((finding) => finding.code === 'recovery.skipped');
-  return skipped === undefined ? precheck(root, operations) : { code: 'apply.unsettled', params: skipped.params };
+// Writes each step in order and ends the run with its last one: null when every step is done, else the step's refusal.
+const steps = (context: Step, operations: readonly PlanOperation[]): Refusal | null => {
+  const { store, run } = context;
+  const last = operations.length - 1;
+  for (const [position, op] of operations.entries()) {
+    const stopped = step(context, position, op);
+    if (stopped !== undefined) {
+      store.finish(run, 'failed', [position, 'failed']);
+      return stopped;
+    }
+    if (position < last) store.settle(run, position, 'done');
+  }
+  store.finish(run, 'done', [last, 'done']);
+  return null;
 };
 
 /**
@@ -252,30 +264,19 @@ const startProblem = (root: string, operations: readonly PlanOperation[], findin
  * checks every operation, then writes each one crash-ordered and stops at the first that fails. An empty plan records
  * no run. `at` runs at each boundary. A step that throws ends the run and throws StepFailed.
  */
-export const apply = (store: RunStore, { root, plan, run }: ApplyRequest, at: At = () => undefined): Applied => {
-  const findings = recover(store, root);
+export const apply = (store: RunStore, request: ApplyRequest, at: At = () => undefined): Applied => {
+  const { root, plan, run, earlier = [] } = request;
+  const findings = [...earlier, ...recover(store, root)];
   const { operations } = plan;
   if (operations.length === 0) return { run: null, refusal: null, findings };
-  const problem = startProblem(root, operations, findings);
+  const problem = unsettledBy(findings) ?? precheck(root, operations);
   if (problem !== undefined) return { run: null, refusal: problem, findings };
   const begun = store.begin({ ...run, planHash: plan.planHash, operations: operations.map(journal) });
   if (!begun.ok) return { run: null, refusal: begun.refusal, findings };
-  const id = begun.value;
-  const last = operations.length - 1;
-  for (const [position, op] of operations.entries()) {
-    let stopped: Refusal | undefined;
-    try {
-      stopped = step({ store, run: id, root, at }, position, op);
-      if (stopped === undefined && position < last) store.settle(id, position, 'done');
-    } catch (error) {
-      // Settled now, so the run is not listed as running while this process holds the store.
-      throw new StepFailed(id, findings, afterRecovery(store, root, error));
-    }
-    if (stopped !== undefined) {
-      store.finish(id, 'failed', [position, 'failed']);
-      return { run: id, refusal: stopped, findings };
-    }
+  try {
+    return { run: begun.value, refusal: steps({ store, run: begun.value, root, at }, operations), findings };
+  } catch (error) {
+    // Settled now, so the run is not listed as running while this process holds the store.
+    throw new StepFailed(begun.value, findings, afterRecovery(store, root, error));
   }
-  store.finish(id, 'done', [last, 'done']);
-  return { run: id, refusal: null, findings };
 };

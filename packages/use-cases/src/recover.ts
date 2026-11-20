@@ -1,6 +1,6 @@
 import { rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Finding, Run } from '@cedarloom/core';
+import type { Finding, Refusal, Run } from '@cedarloom/core';
 import { asidePath, entryAt, errorCode, hashAt, putBack, tempPath } from './project-files.ts';
 import type { RunStore } from './store.ts';
 import { linkOnWay } from './write-roots.ts';
@@ -50,9 +50,11 @@ const settled = (unsettled: Unsettled, position: number, op: Operation): boolean
   }
 };
 
-/** The findings of a recovery right after another on the same held store, which reported the runs both skip. */
-export const afterEarlierRecovery = (findings: Finding[]): Finding[] =>
-  findings.filter((finding) => finding.code !== 'recovery.skipped');
+/** The refusal of any change while a run the recovery skipped is unsettled, as its files may lie on the change's paths. */
+export const unsettledBy = (findings: Finding[]): Refusal | undefined => {
+  const skipped = findings.find((finding) => finding.code === 'recovery.skipped');
+  return skipped && { code: 'apply.unsettled', params: skipped.params };
+};
 
 /**
  * Settles the steps of runs whose process stopped without an end, on the held store: a started step's files are put

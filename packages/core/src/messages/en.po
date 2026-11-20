@@ -57,11 +57,11 @@ msgstr "{path} was left from the interrupted run {run} and was settled."
 
 #. js-lingui-explicit-id
 msgid "apply.unsettled"
-msgstr "The interrupted run {run} is not settled yet at {path}, so nothing was changed. Check that CedarLoom may write there and that no link is on the way, then try again."
+msgstr "The interrupted run {run} is not settled yet at {path}, so nothing was changed. Check that CedarLoom may change the files there and that no link is on the way, then try again."
 
 #. js-lingui-explicit-id
 msgid "recovery.skipped"
-msgstr "{path} was left from the interrupted run {run} and could not be settled: CedarLoom may not write there, or a link is on the way. No change is made until it is settled."
+msgstr "{path} was left from the interrupted run {run} and could not be settled: the filesystem refused a change there, or a link is on the way. No change is made until it is settled."
 
 #. js-lingui-explicit-id
 msgid "run.not-found"

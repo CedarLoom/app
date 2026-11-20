@@ -16,7 +16,7 @@
       ["run"],
       " is not settled yet at ",
       ["path"],
-      ", so nothing was changed. Check that CedarLoom may write there and that no link is on the way, then try again."
+      ", so nothing was changed. Check that CedarLoom may change the files there and that no link is on the way, then try again."
     ],
     "apply.write-mismatch": [
       ["path"],
@@ -146,7 +146,7 @@
       ["path"],
       " was left from the interrupted run ",
       ["run"],
-      " and could not be settled: CedarLoom may not write there, or a link is on the way. No change is made until it is settled."
+      " and could not be settled: the filesystem refused a change there, or a link is on the way. No change is made until it is settled."
     ],
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],

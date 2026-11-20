@@ -11,7 +11,7 @@ import {
 } from '@cedarloom/core';
 import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
 import { entryAt, readFound, sha256 } from './project-files.ts';
-import { afterEarlierRecovery, type Operation, recover } from './recover.ts';
+import { type Operation, recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
 
 export interface UndoRequest {
@@ -23,7 +23,7 @@ export interface UndoRequest {
   planHash?: Hash;
 }
 
-/** The undo plan, or the refusal that stops it; findings: apply.recovered for what recovery settled first. */
+/** The undo plan, or the refusal that stops it; findings: what recovery settled first, or could not. */
 export type UndoPlan =
   | { plan: PlanPreview; refusal: null; findings: Finding[] }
   | { plan: null; refusal: Refusal; findings: Finding[] };
@@ -122,11 +122,10 @@ const replaced = (store: RunStore, run: Run, wanted = true, belowUnfinished = fa
   return replaced(store, target, want, belowUnfinished || !done);
 };
 
-// Recovery leaves a run running while it cannot settle its step; undo waits until that step is settled.
+// Recovery leaves a run running while a link is on the way of its step; undo waits until that step is settled.
 const unsettled = (root: string, run: Run): Refusal | undefined => {
   const step = run.status === 'running' ? run.operations.find((op) => op.status === 'pending') : undefined;
-  if (step === undefined) return undefined;
-  return linkRefusal(root, step.path) ?? { code: 'apply.unsettled', params: { run: run.id, path: step.path } };
+  return step === undefined ? undefined : linkRefusal(root, step.path);
 };
 
 // A failed step with a backup may have dropped the old file before it stopped.
@@ -185,7 +184,7 @@ export const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoP
   const run = store.run(id);
   if (run === undefined) return refused({ code: 'run.not-found', params: { run: id } });
   if (!inEffect(store, run)) return refused({ code: 'run.already-undone', params: { run: run.id, by: run.undoneBy } });
-  const blocked = replaced(store, run) ?? unsettled(root, run);
+  const blocked = replaced(store, run) ?? unsettled(root, run) ?? unsettledBy(findings);
   if (blocked !== undefined) return refused(blocked);
   const walk: Walk = { root, store, run: run.id, started: startedOf(store, run), now: new Map(), operations: [] };
   const stop = walked(walk, run);
@@ -220,6 +219,5 @@ export const undo = (store: RunStore, request: UndoRequest, at?: At): Undone => 
   if (plan.operations.length === 0) {
     return { ...recordDone(store, { ...run, planHash: plan.planHash }), findings, plan };
   }
-  const applied = apply(store, { root: request.root, plan, run }, at);
-  return { ...applied, findings: [...findings, ...afterEarlierRecovery(applied.findings)], plan };
+  return { ...apply(store, { root: request.root, plan, run, earlier: findings }, at), plan };
 };

@@ -266,3 +266,31 @@ it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     expect(generated()).toMatchObject({ plan: null, refusals: [{ code: 'plan.not-text', params: { path: SKILL } }] });
   },
 );
+
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+  'refuses with apply.unsettled while a run recovery could not settle is left',
+  () => {
+    const { store, request, project } = setup({ name: 'dev', skill: 'Run dev.\n' });
+    const path = '.claude/a.md';
+    const begun = store.begin({
+      kind: 'apply',
+      action: 'workflow.generate',
+      subject: null,
+      undoes: null,
+      generatedFrom: [],
+      planHash: 'a'.repeat(64),
+      operations: [{ kind: 'create', path, beforeHash: null, afterHash: hash('a\n'), entries: null }],
+    });
+    if (!begun.ok) throw new Error(begun.refusal.code);
+    put(join(project, `.claude/.a.md.cedarloom-${begun.value}-0`), 'a\n');
+    chmodSync(join(project, '.claude'), 0o500);
+    try {
+      expect(planGeneration(store, request)).toMatchObject({
+        plan: null,
+        refusals: [{ code: 'apply.unsettled', params: { run: begun.value, path } }],
+      });
+    } finally {
+      chmodSync(join(project, '.claude'), 0o700);
+    }
+  },
+);
