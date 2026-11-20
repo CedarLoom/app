@@ -21,6 +21,10 @@ catalog:
   vitest: 5.1.0
   zod: 4.6.7
 
+# lefthook's postinstall would install git hooks; `pnpm exec lefthook install` does that on request.
+allowBuilds:
+  lefthook: false
+
 catalogMode: strict
 strictPeerDependencies: true
 savePrefix: ""
