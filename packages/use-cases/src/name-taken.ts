@@ -1,4 +1,4 @@
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { Refusal } from '@cedarloom/core';
 import { PROJECT_FOLDER } from './definition-files.ts';
 import { reached } from './plugin-folder.ts';
@@ -6,6 +6,9 @@ import { entryAt } from './project-files.ts';
 
 // The folders from cwd up to the project root, each of which may hold a .claude folder Claude Code reads.
 const foldersUp = (cwd: string, root: string): string[] => {
+  const below = relative(root, resolve(cwd));
+  // A cwd outside the project leaves only the root's, so no path outside the project is named.
+  if (below === '..' || below.startsWith(`..${sep}`) || isAbsolute(below)) return [root];
   const folders: string[] = [];
   for (let folder = resolve(cwd); ; folder = dirname(folder)) {
     folders.push(folder);

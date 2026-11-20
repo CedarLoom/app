@@ -41,3 +41,8 @@ it('refuses with one workflow.name-taken per path, and not for a folder beside t
     { code: 'workflow.name-taken', params: { name: 'mine', path: '.claude/workflows/mine.js' } },
   ]);
 });
+
+it('looks only in the project root when cwd is outside it', () => {
+  const base = projectWith('.claude/commands/mine.md', 'project/.claude/commands/other.md', 'elsewhere/notes.md');
+  expect(nameTaken(join(base, 'elsewhere'), join(base, 'project'), 'mine')).toEqual([]);
+});
