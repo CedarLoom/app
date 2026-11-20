@@ -132,6 +132,24 @@ const chainBelow = (runs: Recorded[], id: string): string[] => {
   const below = runs.find((other) => other.id === id)?.undoes;
   return below ? [below, ...chainBelow(runs, below)] : [];
 };
+// The first run down the target's chain that does not stand as the runs above it say, or null. While every run above it
+// is done, a run stands when its newest done undo is the run just above; from an unfinished undo down, a run stands when
+// it is in effect exactly as the run just above says: out of effect under a done undo that stands in effect.
+const outOfStep = (runs: Recorded[], id: string): string | null => {
+  let above = runs.find((other) => other.id === id);
+  let aboveInEffect = true;
+  let unfinished = false;
+  while (above?.undoes) {
+    const below: string = above.undoes;
+    unfinished ||= !above.done;
+    const belowInEffect: boolean = !(above.done && aboveInEffect);
+    const stands = unfinished ? inEffect(runs, below) === belowInEffect : undoneBy(runs, below) === above.id;
+    if (!stands) return below;
+    above = runs.find((other) => other.id === below);
+    aboveInEffect = belowInEffect;
+  }
+  return null;
+};
 // An unfinished undo with a done undo recorded after it.
 const nestedIn = (runs: Recorded[]): boolean =>
   runs.some((r, at) => r.undoes !== null && !r.done && runs.slice(at + 1).some((later) => later.done));
@@ -161,10 +179,46 @@ interface Target {
   /** The paths of its started steps that hold a text none of them found or left. */
   foreign: string[];
   effect: boolean;
+  /** The run down its chain that stands at odds with the undo, as outOfStep gives it. */
+  outOfStep: string | null;
+  /** Each path and run that would still hold a result once the undo brought back the undos below it. */
+  kept: { path: string; run: string }[];
 }
 
-const targetOf = ({ root, held, runs }: History, id: string): Target => {
-  const started = (held.run(id)?.operations ?? []).filter((op) => !['pending', 'untouched'].includes(op.status));
+const startedOf = (held: History['held'], id: string): Run['operations'] =>
+  (held.run(id)?.operations ?? []).filter((op) => !['pending', 'untouched'].includes(op.status));
+
+// Undoing the target brings back the done undo just below it, and with it that undo's word that the run it undid left no
+// result; so on for every second run down the chain while the undo brought back is done. A path that undo's started steps
+// did not touch breaks the word while it holds the text a started step of the undone run left, not as before that run's
+// first step there, unless an unfinished undo of the same run, still in effect, left that text as well.
+const keptOf = ({ held, runs }: History, id: string, before: Map<string, string | null>): Target['kept'] => {
+  const chain = chainBelow(runs, id);
+  for (let at = 0; at + 1 < chain.length && runs.find((r) => r.id === chain[at])?.done; at += 2) {
+    const [back, undid] = [String(chain[at]), String(chain[at + 1])];
+    const touched = new Set(startedOf(held, back).map((op) => op.path));
+    const steps = startedOf(held, undid);
+    const below = runs.find((r) => r.id === undid)?.undoes;
+    const alike = runs
+      .filter((r) => r.undoes === below && r.id !== undid && !r.done && inEffect(runs, r.id))
+      .flatMap((r) => startedOf(held, r.id));
+    const left = steps.filter((op) => {
+      const now = before.get(op.path) ?? null;
+      return (
+        !touched.has(op.path) &&
+        op.afterHash === now &&
+        steps.find((first) => first.path === op.path)?.beforeHash !== now &&
+        !alike.some((other) => other.path === op.path && other.afterHash === now)
+      );
+    });
+    if (left.length > 0) return left.map((op) => ({ path: op.path, run: undid }));
+  }
+  return [];
+};
+
+const targetOf = (history: History, id: string): Target => {
+  const { root, held, runs } = history;
+  const started = startedOf(held, id);
   const before = hashes(root);
   const foreign = [...new Set(started.map((op) => op.path))].filter(
     (path) =>
@@ -172,11 +226,23 @@ const targetOf = ({ root, held, runs }: History, id: string): Target => {
         .flatMap((op) => (op.path === path ? [op.beforeHash, op.afterHash] : []))
         .includes(before.get(path) ?? null),
   );
-  return { id, started, before, foreign, effect: inEffect(runs, id) };
+  return {
+    id,
+    started,
+    before,
+    foreign,
+    effect: inEffect(runs, id),
+    outOfStep: outOfStep(runs, id),
+    kept: keptOf(history, id, before),
+  };
 };
 
-const checkStopped = ({ state, runs, label }: History, target: Target, thrown: unknown): string => {
-  if (!(thrown instanceof StepFailed)) throw thrown;
+// An undo that goes ahead, done or stopped, is one no refusal was due for.
+const checkUnrefused = (target: Target, label: string): void =>
+  expect([target.effect, target.outOfStep, target.foreign, target.kept], label).toEqual([true, null, [], []]);
+
+const checkStopped = ({ state, runs, label }: History, target: Target, thrown: StepFailed): string => {
+  checkUnrefused(target, label);
   expect(run(state, thrown.run).status, label).toBe('interrupted');
   runs.push({ id: thrown.run, undoes: target.id, done: false });
   return 'stopped';
@@ -184,7 +250,7 @@ const checkStopped = ({ state, runs, label }: History, target: Target, thrown: u
 
 // Each path the target touched is back as before the target's first started step on it.
 const checkDone = ({ root, state, runs, label }: History, target: Target, id: string): string => {
-  expect([target.effect, target.foreign], label).toEqual([true, []]);
+  checkUnrefused(target, label);
   const after = hashes(root);
   for (const path of PATHS) {
     const first = target.started.find((op) => op.path === path);
@@ -195,31 +261,24 @@ const checkDone = ({ root, state, runs, label }: History, target: Target, id: st
   return 'done';
 };
 
-// A refusal changes no file, and names what the journal and the files show.
-const checkRefused = ({ root, held, runs, label }: History, target: Target, { code, params }: Refusal): string => {
+// A refusal changes no file, and is the first one the journal and the files call for, naming what they show.
+const checkRefused = ({ root, runs, label }: History, target: Target, { code, params }: Refusal): string => {
   expect(hashes(root), label).toEqual(target.before);
-  const { path, run: named, by } = params as { path?: string; run?: string; by?: string };
+  const { path } = params as { path?: string };
   if (!target.effect) {
     expect({ code, params }, label).toEqual({
       code: 'run.already-undone',
       params: { run: target.id, by: undoneBy(runs, target.id) },
     });
-  } else if (code === 'undo.file-changed') {
-    expect(target.foreign, label).toContain(path);
-  } else if (code === 'undo.result-kept') {
-    // The path holds a text the named run left there.
-    const left = held.run(String(named))?.operations.filter((op) => op.path === path);
-    expect(
-      left?.map((op) => op.afterHash),
-      label,
-    ).toContain(target.before.get(String(path)));
-  } else {
-    // The run named sits below the target in its chain, and the undo named is its newest done one.
+  } else if (target.outOfStep !== null) {
+    // The run out of step, named with its newest done undo.
     expect(['run.already-undone', 'undo.replaced'], label).toContain(code);
-    expect([chainBelow(runs, target.id), by], label).toEqual([
-      expect.arrayContaining([named]),
-      undoneBy(runs, String(named)),
-    ]);
+    expect(params, label).toEqual({ run: target.outOfStep, by: undoneBy(runs, target.outOfStep) });
+  } else if (target.foreign.length > 0) {
+    expect([code, target.foreign], label).toEqual(['undo.file-changed', expect.arrayContaining([path])]);
+  } else {
+    expect(code, label).toBe('undo.result-kept');
+    expect(target.kept, label).toContainEqual(params);
   }
   return code;
 };
@@ -241,7 +300,8 @@ const checkedUndo = (history: History, id: string, stop: boolean): string => {
   const after = hashes(root);
   for (const path of PATHS.filter((p) => !touched.has(p))) expect(after.get(path), label).toBe(target.before.get(path));
   if (undone === undefined) {
-    expect(stop, label).toBe(true);
+    // Only an undo asked to stop throws, and only where it stopped.
+    if (!stop || !(thrown instanceof StepFailed)) throw new Error(label, { cause: thrown });
     return checkStopped(history, target, thrown);
   }
   if (undone.refusal !== null) {
