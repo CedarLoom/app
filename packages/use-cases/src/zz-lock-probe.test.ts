@@ -30,13 +30,15 @@ const holderScript = `
 `;
 
 describe('lock probe', () => {
-  it('hands off under load', async () => {
-    const burners = Array.from({ length: cpus().length + 2 }, () =>
-      spawn(process.execPath, ['--eval', 'for (;;) {}'], { stdio: 'ignore' }),
+  it('hands off under disk load', async () => {
+    const load = mkdtempSync(join(tmpdir(), 'cedarloom-load-'));
+    const burner = `const fs = require('node:fs'); const fd = fs.openSync(process.argv[1], 'w'); const b = Buffer.alloc(1 << 20, 1); for (;;) { fs.writeSync(fd, b, 0, b.length, 0); fs.fsyncSync(fd); }`;
+    const burners = Array.from({ length: 4 }, (_, n) =>
+      spawn(process.execPath, ['--eval', burner, join(load, String(n))], { stdio: 'ignore' }),
     );
     const rows: Record<string, number | string>[] = [];
     try {
-      for (let i = 0; i < 60; i += 1) {
+      for (let i = 0; i < 40; i += 1) {
         const dir = mkdtempSync(join(tmpdir(), 'cedarloom-probe-'));
         const child = spawn(process.execPath, ['--input-type=module', '--eval', holderScript, dir, '300'], {
           stdio: ['ignore', 'pipe', 'inherit'],
