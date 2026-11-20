@@ -374,6 +374,28 @@ it("reports in workflows validate the generator's file, field and rule of an inv
   });
 });
 
+it('refuses in workflows validate a definition whose name is not its file name, without generating it, exit 1', () => {
+  const { workflows } = workflowsSetup({ mine: '{"name":"dev","refusals":["stages"]}' });
+  expect(workflows('validate', 'mine')).toMatchObject({
+    code: 1,
+    document: {
+      result: {
+        definitions: [
+          {
+            name: 'mine',
+            source: 'project',
+            generatorRefusals: [],
+            refusals: [
+              { code: 'definition.name-mismatch', params: { file: '.cedarloom/workflows/mine.json', name: 'dev' } },
+            ],
+          },
+        ],
+      },
+      refusals: [],
+    },
+  });
+});
+
 it('refuses validate without a generator with plugin.too-old, exit 3, and lists the project definitions, exit 1', () => {
   const { plugin, workflows } = workflowsSetup({ mine: '{}' }, false);
   const tooOld = { code: 'plugin.too-old', params: { root: plugin, version: null } };

@@ -12,8 +12,7 @@ import {
   type Run,
 } from '@cedarloom/core';
 import { apply, fileKey, linkRefusal, precheck, refusal } from './apply.ts';
-import { Named } from './definition-checks.ts';
-import { definitionBytes } from './definition-files.ts';
+import { definitionBytes, nameMismatch } from './definition-files.ts';
 import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
 import { type Found, readFound, sha256 } from './project-files.ts';
@@ -68,14 +67,17 @@ const stoppedBy = (refusals: Refusal[], findings: Finding[]): Generation => ({
   findings,
 });
 
-// A definition's text; one that is not UTF-8 JSON stops the generation before the generator runs.
+// A definition's text; one that is not UTF-8 JSON or is named other than its file stops the generation before the
+// generator runs.
 const definitionOf = (place: Place, { name, path }: { name: string; path: string }): Definition | Refusal => {
   const bytes = definitionBytes(place.base, path);
   if (bytes === 'absent') return { code: 'definition.not-found', params: { name, source: place.source } };
   if (bytes === 'unreadable' || !isUtf8(bytes)) return notJson(path);
   const text = bytes.toString('utf8');
+  const json = jsonOf(text);
   // JsonValue also refuses a __proto__ member, as the definition readers do.
-  return JsonValue.safeParse(jsonOf(text)).success ? { name, path, text } : notJson(path);
+  if (!JsonValue.safeParse(json).success) return notJson(path);
+  return nameMismatch(path, json) ?? { name, path, text };
 };
 
 // The generator's outputs by their project path; a file that is not UTF-8 is output the app cannot read.
@@ -86,8 +88,8 @@ const projectOutputs = (outputs: Map<string, Buffer>): Map<string, Buffer> | Ref
 };
 
 // The hash each file had when the newest generation in effect wrote it, for the files below the names the generator
-// writes under (all files, for undefined).
-const previousFiles = (store: RunStore, names: readonly string[] | undefined): Map<string, string> => {
+// writes under (all files, for none).
+const previousFiles = (store: RunStore, names: readonly string[]): Map<string, string> => {
   const hashes = new Map<string, string | null>();
   for (const generation of store.generations().filter((each) => inEffect(store, each))) {
     for (const { path, afterHash, status } of generation.operations) {
@@ -97,20 +99,10 @@ const previousFiles = (store: RunStore, names: readonly string[] | undefined): M
   }
   return new Map(
     [...hashes].flatMap(([path, hash]): [string, string][] =>
-      hash !== null && (names === undefined || names.some((name) => isOwnPath(path, name))) ? [[path, hash]] : [],
+      hash !== null && (names.length === 0 || names.some((name) => isOwnPath(path, name))) ? [[path, hash]] : [],
     ),
   );
 };
-
-// The names the generator writes the definitions named on the command line under: their name field, which may differ
-// from the file name; undefined, for every file, when none was named.
-const scopeOf = (names: readonly string[], definitions: Definition[]): string[] | undefined =>
-  names.length === 0
-    ? undefined
-    : definitions.flatMap(({ text }) => {
-        const named = Named.safeParse(jsonOf(text));
-        return named.success ? [named.data.name] : [];
-      });
 
 // The project's file at a planned path; a path outside the write roots, through a link or that the app may not read
 // is refused.
@@ -209,7 +201,7 @@ export const planGeneration = (store: RunStore, request: GenerateRequest): Gener
   }
   const outputs = projectOutputs(generated.outputs);
   if (!(outputs instanceof Map)) return stoppedBy([outputs], findings);
-  const plan = planned(request.root, outputs, previousFiles(store, scopeOf(request.names, definitions)));
+  const plan = planned(request.root, outputs, previousFiles(store, request.names));
   if (!('operations' in plan)) return stoppedBy([plan], findings);
   return { plan, generatorRefusals: [], generatedFrom, run: null, refusals: [], findings };
 };

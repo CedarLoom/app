@@ -1,5 +1,7 @@
 import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import type { Refusal } from '@cedarloom/core';
+import { z } from 'zod';
 import { nestsBeyond } from './json-nesting.ts';
 import { isUnreachable, reached } from './plugin-folder.ts';
 import { errorCode, readFound } from './project-files.ts';
@@ -13,6 +15,17 @@ export const SHIPPED_FOLDER = 'definitions';
 const SIZE_LIMIT = 16 * 1024 * 1024;
 // zod's JSON schema and the "__proto__" check recurse once per level, so a deeper file could overflow the stack.
 const NESTING_LIMIT = 100;
+export const Named = z.object({ name: z.string() });
+
+/**
+ * The refusal of a definition whose name field is not its file name without `.json`: the generator writes the outputs
+ * under the name field, while a named run finds its definition, and the outputs it deletes, by the file name.
+ */
+export const nameMismatch = (file: string, json: unknown): Refusal | undefined => {
+  const named = Named.safeParse(json);
+  if (!named.success || named.data.name === basename(file, '.json')) return undefined;
+  return { code: 'definition.name-mismatch', params: { file, name: named.data.name } };
+};
 
 /** A folder's `*.json` files without dotfiles (an editor's lock link); unreadable when out of reach or behind a link. */
 export const definitionFileNames = (base: string, folder: string): string[] | 'unreadable' => {

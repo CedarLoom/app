@@ -222,18 +222,26 @@ it.skipIf(process.platform === 'win32')('refuses a planned path through a link w
   expect(existsSync(join(outside, 'dev'))).toBe(false);
 });
 
-it('scopes a named generation by the name field its outputs go under, not by the file name', () => {
-  const { store, request, define, generated } = setup({ name: 'dev', skill: 'Run dev.\n' });
-  define({ name: 'mine', skill: 'Build.\n', script: true }, 'build');
+it('refuses a definition whose name is not its file name with definition.name-mismatch before the generator runs', () => {
+  const { define, generated, project } = setup({ name: 'dev', skill: 'Run dev.\n' });
+  define({ name: 'mine', skill: 'Build.\n' }, 'build');
+  expect(generated()).toMatchObject({
+    plan: null,
+    run: null,
+    refusals: [{ code: 'definition.name-mismatch', params: { file: '.cedarloom/workflows/build.json', name: 'mine' } }],
+  });
+  expect([existsSync(join(project, SKILL)), existsSync(join(project, '.claude/skills/mine'))]).toEqual([false, false]);
+});
+
+it("plans no delete of another definition's outputs in a named run of a definition that takes its name", () => {
+  const { store, request, define, generated, text } = setup({ name: 'dev', skill: 'Run dev.\n', script: true });
   generated();
-  define({ name: 'mine', skill: 'Build.\n', script: false }, 'build');
-  expect(kinds(planGeneration(store, { ...request, names: ['build'] }).plan)).toEqual([
-    ['delete', '.claude/workflows/mine.js'],
-  ]);
-  define({ name: 'elsewhere', skill: 'Elsewhere.\n' }, 'mine');
-  expect(kinds(planGeneration(store, { ...request, names: ['mine'] }).plan)).toEqual([
-    ['create', '.claude/skills/elsewhere/SKILL.md'],
-  ]);
+  define({ name: 'dev', skill: 'Build.\n' }, 'build');
+  expect(planGeneration(store, { ...request, names: ['build'] })).toMatchObject({
+    plan: null,
+    refusals: [{ code: 'definition.name-mismatch', params: { file: '.cedarloom/workflows/build.json', name: 'dev' } }],
+  });
+  expect(text(SCRIPT)).toBe(STUB_SCRIPT);
 });
 
 it('counts a generation over no definition, so its deletes end what the older generation wrote', () => {
