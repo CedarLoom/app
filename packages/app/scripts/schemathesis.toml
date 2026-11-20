@@ -1,0 +1,3 @@
+# openapi.json declares no security scheme, so only this warning fails a run whose cookie or CSRF header the server refuses.
+[warnings]
+fail-on = ["missing_auth"]

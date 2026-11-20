@@ -249,11 +249,12 @@ it("plans no delete of another definition's outputs in a named run, also of one 
     ['delete', '.claude/workflows/build.js'],
   ]);
   define({ name: 'dev', skill: 'Build.\n' }, 'build');
-  expect(planGeneration(store, { ...request, names: ['build'] })).toMatchObject({
+  expect(generateWorkflows(store, { ...request, names: ['build'] }, true)).toMatchObject({
     plan: null,
+    run: null,
     refusals: [{ code: 'definition.name-mismatch', params: { file: '.cedarloom/workflows/build.json', name: 'dev' } }],
   });
-  expect(text(SCRIPT)).toBe(STUB_SCRIPT);
+  expect([text(SKILL), text(SCRIPT)]).toEqual(['Run dev.\n', STUB_SCRIPT]);
 });
 
 it('counts a generation over no definition, so its deletes end what the older generation wrote', () => {

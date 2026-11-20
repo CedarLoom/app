@@ -13,7 +13,7 @@ import {
   type SettingsEntry,
 } from '@cedarloom/core';
 import { apply, fileKey, linkRefusal, precheck, refusal } from './apply.ts';
-import { definitionBytes, jsonWithin, nameMismatch } from './definition-files.ts';
+import { definitionBytes, isListed, jsonWithin } from './definition-files.ts';
 import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
 import { type Found, readFound, sha256 } from './project-files.ts';
@@ -24,6 +24,7 @@ import { inEffect } from './undo.ts';
 import {
   chosen,
   invalidName,
+  mismatchOf,
   notJson,
   type Place,
   pluginPlace,
@@ -68,17 +69,17 @@ export const stoppedBy = (refusals: Refusal[], findings: Finding[]): Generation 
   findings,
 });
 
-// A definition's text; one that is not UTF-8 JSON, or a project one named other than its file, stops the generation
-// before the generator runs.
+// A definition's text, of a file its folder lists by that name; a project one named other than its file, or one that is
+// not UTF-8 JSON, stops the generation before the generator runs.
 export const definitionOf = (place: Place, { name, path }: { name: string; path: string }): Definition | Refusal => {
-  const bytes = definitionBytes(place.base, path);
+  const bytes = isListed(place.base, path) ? definitionBytes(place.base, path) : 'absent';
   if (bytes === 'absent') return { code: 'definition.not-found', params: { name, source: place.source } };
   const shown = place.shown(path);
-  if (bytes === 'unreadable' || !isUtf8(bytes)) return notJson(shown);
+  if (bytes === 'unreadable') return notJson(shown);
+  const mismatch = mismatchOf(place, shown, bytes);
+  if (mismatch !== undefined) return mismatch;
   const text = bytes.toString('utf8');
-  const json = jsonWithin(text);
-  if (json === undefined) return notJson(shown);
-  return (place.source === 'project' ? nameMismatch(shown, json) : undefined) ?? { name, path, text };
+  return isUtf8(bytes) && jsonWithin(text) !== undefined ? { name, path, text } : notJson(shown);
 };
 
 // The generator's outputs by their project path; a file that is not UTF-8 is output the app cannot read.

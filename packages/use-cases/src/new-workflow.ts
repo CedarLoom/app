@@ -1,4 +1,4 @@
-import { PROJECT_FOLDER, SHIPPED_FOLDER } from './definition-files.ts';
+import { jsonWithin, PROJECT_FOLDER, SHIPPED_FOLDER } from './definition-files.ts';
 import { appliedAs, definitionOf, type Generation, generationOf, locatedAfter, start, stoppedBy } from './generate.ts';
 import { nameTaken } from './name-taken.ts';
 import type { RunStore } from './store.ts';
@@ -37,12 +37,15 @@ const planNewWorkflow = (store: RunStore, request: NewRequest): Generation => {
   if (!isObject(definition)) return stoppedBy([notJson(plugin.place.shown(shippedPath))], findings);
   const path = `${PROJECT_FOLDER}/${name}.json`;
   const text = `${JSON.stringify({ ...definition, name }, null, 2)}\n`;
+  // The copy must read back as the definition readers read it.
+  if (jsonWithin(text) === undefined) return stoppedBy([{ code: 'edit.result-over-limits', params: {} }], findings);
   return generationOf(store, {
     root,
     names: [name],
     env: request.env,
     generator: plugin.place.base,
-    definitions: [{ name, path, text }],
+    // The generator's refusals name the shipped definition the copy comes from; the project file is not written yet.
+    definitions: [{ name, path: plugin.place.shown(shippedPath), text }],
     files: new Map([[path, Buffer.from(text)]]),
     read: new Map([[path, null]]),
     findings,
