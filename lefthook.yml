@@ -1,0 +1,30 @@
+# Fast checks on the changed files; `pnpm run check` runs every gate on all files.
+no_auto_install: true
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: format
+      glob: "*.{js,ts,json,yml,yaml,md}"
+      run: pnpm exec biome ci --no-errors-on-unmatched {staged_files}
+    - name: lint
+      glob: "*.{js,ts}"
+      run: pnpm exec oxlint {staged_files}
+    # The pattern of forbidden_characters in scripts/check.sh.
+    - name: characters
+      exclude:
+        - pnpm-lock.yaml
+        - "*package-lock.json"
+      run: |
+        LC_ALL=C.UTF-8 git grep -nIP '\x{2014}|[\x{1F000}-\x{1FAFF}\x{2300}-\x{23FF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}]|\x{FE0F}' -- {staged_files}
+        test $? -eq 1
+
+pre-push:
+  piped: true
+  jobs:
+    # No glob: a change that only deletes files still needs a typecheck.
+    - name: typecheck
+      run: pnpm run typecheck
+    - name: test
+      glob: "*.{js,ts}"
+      run: pnpm exec vitest related --run {push_files}
