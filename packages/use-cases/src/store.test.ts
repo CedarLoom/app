@@ -124,20 +124,18 @@ const view = (dir: string) => {
 
 const unreadable = (path: string) => ({ ok: false, refusal: { code: 'store.unreadable', params: { path } } });
 
-// Another process that opens the store, starts a run and holds the store for `holdMs` (or until it is killed).
-const holder = async (dir: string, holdMs: number | 'forever'): Promise<ChildProcess> => {
+// Another process that opens the store, starts a run and holds the store until it is killed.
+const holder = async (dir: string): Promise<ChildProcess> => {
   const script = `
     import { randomUUID } from 'node:crypto';
     import { openStore } from ${JSON.stringify(new URL('store.ts', import.meta.url).href)};
-    const [dir, holdMs] = process.argv.slice(1);
-    const store = openStore(dir, { now: () => new Date('2026-11-18T22:00:00.000Z'), newRunId: randomUUID });
+    const store = openStore(process.argv[1], { now: () => new Date('2026-11-18T22:00:00.000Z'), newRunId: randomUUID });
     if (!store.ok) throw new Error(store.refusal.code);
     store.value.begin(${JSON.stringify(newRun)});
     process.stdout.write('held\\n');
-    if (holdMs === 'forever') setInterval(() => store, 60_000);
-    else setTimeout(() => store.value.close(), Number(holdMs));
+    setInterval(() => store, 60_000);
   `;
-  const child = spawn(process.execPath, ['--input-type=module', '--eval', script, dir, String(holdMs)], {
+  const child = spawn(process.execPath, ['--input-type=module', '--eval', script, dir], {
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   children.push(child);
@@ -149,16 +147,46 @@ const holder = async (dir: string, holdMs: number | 'forever'): Promise<ChildPro
   return child;
 };
 
+// Another process that says it is about to open the store, opens it and writes what it got. writeSync, as openStore
+// blocks the event loop and process.stdout writes to a pipe asynchronously on POSIX.
+const waiter = (dir: string) => {
+  const script = `
+    import { writeSync } from 'node:fs';
+    import { openStore } from ${JSON.stringify(new URL('store.ts', import.meta.url).href)};
+    writeSync(1, 'opening\\n');
+    const store = openStore(process.argv[1], { now: () => new Date('2026-11-18T22:00:00.000Z'), newRunId: () => 'r1' });
+    writeSync(1, (store.ok ? 'taken' : store.refusal.code) + '\\n');
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '--eval', script, dir], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  children.push(child);
+  return child;
+};
+
 describe('the store lock', () => {
   it('lets a second process wait for the store and take it once the first releases it', async () => {
     const dir = fresh();
-    await holder(dir, 300);
-    expect(store(dir)).toBeDefined();
+    // Opened once before, so the held store has nothing to write back when it is released.
+    store(dir).close();
+    opened.length = 0;
+    const held = store(dir);
+    const child = waiter(dir);
+    let out = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      out += chunk.toString();
+    });
+    // Released when the other process starts opening, not after a set time that a slow machine can overrun.
+    await once(child.stdout, 'data');
+    opened.length = 0;
+    held.close();
+    await once(child, 'close');
+    expect(out).toBe('opening\ntaken\n');
   }, 20_000);
 
   it('stops a second process with store.locked while another holds the store past the wait', async () => {
     const dir = fresh();
-    await holder(dir, 'forever');
+    await holder(dir);
     expect(openStore(dir, clock)).toEqual({
       ok: false,
       refusal: { code: 'store.locked', params: { path: join(dir, 'runs.sqlite') } },
@@ -167,7 +195,7 @@ describe('the store lock', () => {
 
   it('shows a run as running while its process holds the store, and as interrupted once that process is gone', async () => {
     const dir = fresh();
-    const child = await holder(dir, 'forever');
+    const child = await holder(dir);
     expect(value(view(dir).runs()).map((run) => run.status)).toEqual(['running']);
     child.kill();
     await once(child, 'exit');
