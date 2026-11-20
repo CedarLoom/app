@@ -16,7 +16,7 @@ done
 
 # zod comes from the installed workspace, the version the lockfile pins, so npm needs no registry lookup for it.
 zod=$(pnpm --filter @cedarloom/core exec node -p "require('node:path').dirname(require.resolve('zod/package.json'))")
-npm pack --ignore-scripts --pack-destination "$work" "$zod"
+(cd "$zod" && pnpm pack --pack-destination "$work")
 
 cd "$work"
 echo '{ "private": true }' >package.json
