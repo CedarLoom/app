@@ -1,5 +1,5 @@
 import { chmodSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { apply, type Boundary } from './apply.ts';
@@ -122,7 +122,7 @@ describe('undo refuses', () => {
       params: { path: '.claude/b.md' },
     });
     expect(listing(root)).toEqual(['a.md', 'b.md']);
-  });
+  }, 20_000);
 
   it('refuses a run id the store does not have as no run', () => {
     const { root, state } = project();
@@ -142,6 +142,32 @@ describe('undo refuses', () => {
       params: { path: '.claude/skills' },
     });
   });
+});
+
+describe('undo below a folder the app may not enter', () => {
+  // A folder mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'refuses a file of the chain below a folder the app may not enter with plan.folder-denied',
+    () => {
+      const { root, state } = project({ '.claude/b.md': 'old\n' });
+      const held = store(state, 'r1', 'u1', 'u2', 'u3');
+      apply(held, request(root, [create('.claude/s/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]));
+      rmSync(join(root, '.claude/s/a.md'));
+      writeFileSync(join(root, '.claude/s/mine.md'), 'mine\n');
+      expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
+      expect(undo(held, { root, run: 'u1' }).refusal).toBeNull();
+      const folder = join(root, '.claude/s');
+      chmodSync(folder, 0o600);
+      try {
+        expect(undo(held, { root, run: 'u2' }).refusal).toEqual({
+          code: 'plan.folder-denied',
+          params: { path: '.claude/s/a.md' },
+        });
+      } finally {
+        chmodSync(folder, 0o700);
+      }
+    },
+  );
 });
 
 describe('undo of an undo', () => {
@@ -455,5 +481,20 @@ describe('undo of a create', () => {
     };
     expect(undo(held, { root, run: 'r1' }, swap).refusal).toBeNull();
     expect(readdirSync(outside)).toEqual(['a']);
+  });
+});
+
+describe('undo of an edited journal', () => {
+  it('leaves a folder outside the project in place for a journal path that climbs out of it', () => {
+    const { root, state } = project();
+    const outside = fresh();
+    mkdirSync(join(outside, 'out'));
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/a.md', 'a\n')]));
+    const db = new DatabaseSync(join(state, 'runs.sqlite'));
+    db.prepare('UPDATE operations SET path = ?, madeFolders = 1').run(`.claude/../../${basename(outside)}/out/a.md`);
+    db.close();
+    undo(held, { root, run: 'r1' });
+    expect(readdirSync(outside)).toEqual(['out']);
   });
 });

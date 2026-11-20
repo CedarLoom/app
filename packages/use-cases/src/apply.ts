@@ -119,6 +119,17 @@ interface Chain {
   left: string | null;
 }
 
+// A read or a probe the app may not make: EACCES, or EPERM, as Windows reports a denied access.
+const DENIED = new Set<unknown>(['EACCES', 'EPERM']);
+const orDenied = <T>(path: string, act: () => T): T | Refusal => {
+  try {
+    return act();
+  } catch (error) {
+    if (DENIED.has(errorCode(error))) return refusal('plan.folder-denied', path);
+    throw error;
+  }
+};
+
 // A later operation on a path starts from what the one before it leaves, at the file the chain began with.
 const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined =>
   op.beforeHash === left && sameFile(root, first, op.path) ? undefined : refusal('plan.file-changed', op.path);
@@ -189,7 +200,7 @@ export const precheck = (root: string, operations: readonly PlanOperation[]): Re
     const above = folderKeys(op.path);
     const nested = folders.has(key) || above.some((folder) => chains.has(folder));
     const chain = chains.get(key);
-    const problem = planProblem(root, op, position, nested) ?? fileProblem(root, op, chain);
+    const problem = planProblem(root, op, position, nested) ?? orDenied(op.path, () => fileProblem(root, op, chain));
     if (problem !== undefined) return problem;
     chains.set(key, { first: chain?.first ?? op.path, left: op.afterHash });
     for (const folder of above) folders.add(folder);
@@ -197,19 +208,28 @@ export const precheck = (root: string, operations: readonly PlanOperation[]): Re
   return undefined;
 };
 
-// A step on a volume without hard links would stop after it set the old file aside, and so would the undo of a delete;
-// the probe goes in the deepest folder that exists, as the precheck found no link on its way.
+// The folders of a plan path below the root: ".claude/a/b.md" has two.
+const levels = (path: string): number => path.split('/').length - 1;
+
+// The probe goes in the deepest folder that exists, the root at most, as the precheck found no link on its way.
+const linksAt = (root: string, op: PlanOperation, probed: Set<bigint>): Refusal | undefined => {
+  let folder = dirname(join(root, op.path));
+  let entry = entryAt(folder);
+  for (let up = levels(op.path); entry === undefined && up > 0; up -= 1, entry = entryAt(folder))
+    folder = dirname(folder);
+  // The root is absent where it was removed or its drive is gone; lstat then throws ENOENT.
+  entry ??= lstatSync(folder, { bigint: true });
+  if (probed.has(entry.dev)) return undefined;
+  probed.add(entry.dev);
+  return makesHardLinks(folder) ? undefined : refusal('apply.no-hard-links', op.path);
+};
+
+// A step on a volume without hard links would stop after it set the old file aside, and so would the undo of a delete.
 const linksProblem = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
   const probed = new Set<bigint>();
   for (const op of operations) {
-    let folder = dirname(join(root, op.path));
-    let entry = entryAt(folder);
-    for (; entry === undefined && dirname(folder) !== folder; entry = entryAt(folder)) folder = dirname(folder);
-    // Even the root is absent where its drive is gone; lstat then throws ENOENT.
-    entry ??= lstatSync(folder, { bigint: true });
-    if (probed.has(entry.dev)) continue;
-    probed.add(entry.dev);
-    if (!makesHardLinks(folder)) return refusal('apply.no-hard-links', op.path);
+    const problem = orDenied(op.path, () => linksAt(root, op, probed));
+    if (problem !== undefined) return problem;
   }
   return undefined;
 };
@@ -262,8 +282,16 @@ const change = ({ run, root, at }: Step, position: number, op: PlanOperation, mo
       dropAside(temp);
     }
     if (op.beforeHash !== null) dropAside(aside);
-  } finally {
-    rmSync(temp, { force: true });
+  } catch (error) {
+    // The temporary file goes next to a failed step too; where it cannot, the step's error stays first.
+    try {
+      rmSync(temp, { force: true });
+    } catch (failure) {
+      throw new AggregateError([error, failure], 'a step failed, and removing its temporary file failed too', {
+        cause: failure,
+      });
+    }
+    throw error;
   }
 };
 
@@ -287,7 +315,7 @@ const step = (context: Step, position: number, op: PlanOperation): Stop | undefi
   if (linked !== undefined) return untouched(linked);
   let mode = context.modes.get(position);
   if (op.beforeHash !== null) {
-    const file = expected(op.path, op.beforeHash, readFound(path));
+    const file = orDenied(op.path, () => expected(op.path, op.beforeHash, readFound(path)));
     if ('code' in file) return untouched(file);
     if (!backUp(file.bytes, store.backupPath(run, position))) {
       return untouched({ code: 'apply.backup-failed', params: { run, path: op.path } });
@@ -295,7 +323,7 @@ const step = (context: Step, position: number, op: PlanOperation): Stop | undefi
     mode = file.mode;
     if (op.afterHash === null) store.deleting(run, position, mode);
   }
-  const made = makeFolders(dirname(path));
+  const made = makeFolders(dirname(path), 0o777, levels(op.path));
   if (made > 0) store.madeFolders(run, position, made);
   const relinked = linkRefusal(root, op.path);
   if (relinked !== undefined) return untouched(relinked);
@@ -323,7 +351,9 @@ const afterRecovery = (store: RunStore, root: string, error: unknown): { finding
   } catch (failure) {
     return {
       findings: [],
-      cause: new AggregateError([error, failure], 'a step failed, and the recovery after it failed too'),
+      cause: new AggregateError([error, failure], 'a step failed, and the recovery after it failed too', {
+        cause: failure,
+      }),
     };
   }
 };
