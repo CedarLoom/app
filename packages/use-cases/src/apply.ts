@@ -16,6 +16,7 @@ import {
   makesHardLinks,
   putBack,
   readFound,
+  readsAsOne,
   setAside,
   sha256,
   tempPath,
@@ -94,12 +95,16 @@ const diskProblem = (root: string, { path, beforeHash }: PlanOperation): Refusal
   return 'code' in file ? file : undefined;
 };
 
-// Whether two spellings name one existing file: on a volume that tells them apart, or before a create makes it, the
-// second spelling's step would stop the run after the first one wrote.
+// Two spellings are one file where they reach one existing folder and a probe there reads the rest as one file.
 const sameFile = (root: string, first: string, path: string): boolean => {
   if (first === path) return true;
-  const [a, b] = [entryAt(join(root, first)), entryAt(join(root, path))];
-  return a !== undefined && b !== undefined && a.dev === b.dev && a.ino === b.ino;
+  const [a, b] = [first.split('/'), path.split('/')];
+  let depth = a.length - 1;
+  while (depth > 0 && entryAt(join(root, ...a.slice(0, depth))) === undefined) depth -= 1;
+  const folder = join(root, ...a.slice(0, depth));
+  const [one, two] = [entryAt(folder), entryAt(join(root, ...b.slice(0, depth)))];
+  if (one === undefined || two === undefined || one.dev !== two.dev || one.ino !== two.ino) return false;
+  return readsAsOne(folder, a.slice(depth).join('/'), b.slice(depth).join('/'));
 };
 
 /** The operations on one file so far: the path the first one named, and the hash the last one leaves. */
@@ -123,8 +128,7 @@ const fileOnWay = (root: string, path: string): Refusal | undefined => {
   return undefined;
 };
 
-// Paths macOS and Windows may read as one file chain as one where they name one existing file; any other two such
-// paths are refused before the first write.
+// Paths the volume reads as one file chain as one; elsewhere two such paths are refused before the first write.
 export const fileKey = (path: string): string => path.normalize('NFC').toLowerCase();
 
 // What the disk shows wrong with an operation, as the operations before it on the same file leave it.

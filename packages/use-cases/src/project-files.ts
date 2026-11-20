@@ -227,6 +227,24 @@ export const removeEmptyFolder = (path: string): boolean => {
 // link() of a volume without hard links: ENOTSUP on exFAT and FAT, EPERM or EXDEV on some network shares.
 const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EPERM', 'EXDEV']);
 
+/** Whether a folder reads two relative paths as one file, probed in a private folder there, which goes after. */
+export const readsAsOne = (folder: string, path: string, other: string): boolean => {
+  let probe: string | undefined;
+  try {
+    probe = mkdtempSync(join(folder, '.cedarloom-probe-'));
+    const made = join(probe, path);
+    mkdirSync(dirname(made), { recursive: true });
+    writeFileSync(made, '');
+    const [one, two] = [entryAt(made), entryAt(join(probe, other))];
+    return one !== undefined && two !== undefined && one.dev === two.dev && one.ino === two.ino;
+  } catch (error) {
+    if (errorCode(error) !== undefined) return false;
+    throw error;
+  } finally {
+    if (probe !== undefined) rmSync(probe, { recursive: true, force: true, maxRetries: 3 });
+  }
+};
+
 /** Whether the volume of a folder makes hard links, probed by a link in a private folder there, which goes after. */
 export const makesHardLinks = (folder: string): boolean => {
   const probe = mkdtempSync(join(folder, '.cedarloom-probe-'));
