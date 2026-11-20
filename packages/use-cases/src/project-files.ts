@@ -227,10 +227,30 @@ export const removeEmptyFolder = (path: string): boolean => {
 // link() of a volume without hard links: ENOTSUP on exFAT and FAT, EPERM or EXDEV on some network shares.
 const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EPERM', 'EXDEV']);
 
-/** Whether the volume of a folder makes hard links, probed by a link in a private folder there, which goes after. */
-export const makesHardLinks = (folder: string): boolean => {
+// What a probe in a private folder made in `folder` finds; the folder goes after.
+const probed = <T>(folder: string, find: (probe: string) => T): T => {
   const probe = mkdtempSync(join(folder, '.cedarloom-probe-'));
   try {
+    return find(probe);
+  } finally {
+    // A scanner that holds the new file on Windows makes a single try fail with EBUSY or EPERM.
+    rmSync(probe, { recursive: true, force: true, maxRetries: 3 });
+  }
+};
+
+/** Whether a folder reads two relative paths as one file, probed in a private folder there, which goes after. */
+export const readsAsOne = (folder: string, path: string, other: string): boolean =>
+  probed(folder, (probe) => {
+    const made = join(probe, path);
+    mkdirSync(dirname(made), { recursive: true });
+    writeFileSync(made, '');
+    const [one, two] = [entryAt(made), entryAt(join(probe, other))];
+    return one !== undefined && two !== undefined && one.dev === two.dev && one.ino === two.ino;
+  });
+
+/** Whether the volume of a folder makes hard links, probed by a link in a private folder there, which goes after. */
+export const makesHardLinks = (folder: string): boolean =>
+  probed(folder, (probe) => {
     writeFileSync(join(probe, 'a'), '');
     try {
       linkSync(join(probe, 'a'), join(probe, 'b'));
@@ -239,8 +259,4 @@ export const makesHardLinks = (folder: string): boolean => {
       throw error;
     }
     return true;
-  } finally {
-    // A scanner that holds the new file on Windows makes a single try fail with EBUSY or EPERM.
-    rmSync(probe, { recursive: true, force: true, maxRetries: 3 });
-  }
-};
+  });

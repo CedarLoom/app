@@ -158,7 +158,8 @@ const planned = (root: string, outputs: Map<string, Buffer>, previous: Map<strin
   if (stop !== undefined) return stop;
   const operations = changes.filter((change) => 'kind' in change).toSorted((a, b) => (a.path < b.path ? -1 : 1));
   const skipped = changes.filter((change): change is Finding => 'severity' in change);
-  // A plan apply would refuse for its paths or files is refused before it is shown; the volume check writes, so apply runs it.
+  // A plan apply would refuse for its paths or files is refused before it is shown. The hard-link probe stays with apply;
+  // the spelling probe writes here only where a volume reads two spellings as two files, and the plan is then refused.
   const unappliable = precheck(root, operations);
   if (unappliable !== undefined) return unappliable;
   return { planHash: planHash(operations, sha256), operations, skipped };
