@@ -30,6 +30,7 @@ export const MESSAGE_IDS = [
   'edit.result-over-limits',
   'edit.target-invalid',
   'generate.delete-skipped',
+  'generated.folder-unreadable',
   'generator.failed',
   'generator.output-unknown',
   'node.version-unsupported',
@@ -103,7 +104,8 @@ export interface MessagePlaceholders {
   'edit.result-over-limits': never;
   'edit.target-invalid': 'operation' | 'pointer';
   'generate.delete-skipped': 'path';
-  'generator.failed': 'exitCode' | 'signal' | 'stderr';
+  'generated.folder-unreadable': 'path';
+  'generator.failed': 'exitCode' | 'reason' | 'signal' | 'stderr';
   'generator.output-unknown': 'output';
   'node.version-unsupported': 'found' | 'required';
   'plan.file-changed': 'path';
