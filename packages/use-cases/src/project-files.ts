@@ -221,6 +221,7 @@ export const makesHardLinks = (folder: string): boolean => {
     }
     return true;
   } finally {
-    rmSync(probe, { recursive: true, force: true });
+    // A scanner that holds the new file on Windows makes a single try fail with EBUSY or EPERM.
+    rmSync(probe, { recursive: true, force: true, maxRetries: 3 });
   }
 };

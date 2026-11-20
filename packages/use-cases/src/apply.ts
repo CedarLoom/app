@@ -1,5 +1,5 @@
 import { isUtf8 } from 'node:buffer';
-import { rmSync } from 'node:fs';
+import { lstatSync, rmSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { Finding, PlanOperation, PlanPreview, Refusal } from '@cedarloom/core';
 import {
@@ -143,15 +143,16 @@ export const precheck = (root: string, operations: readonly PlanOperation[]): Re
   return undefined;
 };
 
-// A step that links a new file in on a volume without hard links would stop after it set the old file aside; each
-// volume is probed once, in the deepest folder of a plan path that exists, as the precheck found no link on its way.
+// A step on a volume without hard links would stop after it set the old file aside, and so would the undo of a delete;
+// the probe goes in the deepest folder that exists, as the precheck found no link on its way.
 const linksProblem = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
   const probed = new Set<bigint>();
   for (const op of operations) {
-    if (op.after === null) continue;
     let folder = dirname(join(root, op.path));
     let entry = entryAt(folder);
-    for (; entry === undefined; entry = entryAt(folder)) folder = dirname(folder);
+    for (; entry === undefined && dirname(folder) !== folder; entry = entryAt(folder)) folder = dirname(folder);
+    // Even the root is absent where its drive is gone; lstat then throws ENOENT.
+    entry ??= lstatSync(folder, { bigint: true });
     if (probed.has(entry.dev)) continue;
     probed.add(entry.dev);
     if (!makesHardLinks(folder)) return refusal('apply.no-hard-links', op.path);

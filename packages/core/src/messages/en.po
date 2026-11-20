@@ -49,7 +49,7 @@ msgstr "{path} and another path of the plan use one name as both a file and a fo
 
 #. js-lingui-explicit-id
 msgid "apply.no-hard-links"
-msgstr "{path} is on a volume without hard links, such as exFAT, FAT or some network shares. CedarLoom needs them to replace a file without leaving it half written. Nothing was changed. Move the project to a volume with hard links, such as APFS, NTFS or ext4."
+msgstr "{path} is on a volume without hard links, such as exFAT, FAT or some network shares. CedarLoom needs them to replace a file, or put one back, without leaving it half written. Nothing was changed. Move the project to a volume with hard links, such as APFS, NTFS or ext4."
 
 #. js-lingui-explicit-id
 msgid "apply.backup-failed"

@@ -22,19 +22,31 @@ import { type Applied, type ApplyRequest, apply, type Boundary, StepFailed } fro
 import { openRunView, openStore, type RunStore, type RunView } from './store.ts';
 import { type UndoRequest, undo } from './undo.ts';
 
-// link() refused as on a filesystem without hard links, such as exFAT, while `refuseLinks.on`.
-const refuseLinks = vi.hoisted(() => ({ on: false }));
+// link() refused with `refuseLinks.code`, EPERM as on a filesystem without hard links, while `refuseLinks.on`.
+const refuseLinks = vi.hoisted(() => ({ on: false, code: 'EPERM' }));
 // Another process writes `racing.path` right before a rename or a new link puts something there.
 const racing = vi.hoisted(() => ({ path: '' }));
+// Every path reads as absent while `driveGone.on`, as on a drive that was unplugged; `calls` ends a walk without end.
+const driveGone = vi.hoisted(() => ({ on: false, calls: 0 }));
 vi.mock('node:fs', async (load) => {
   const fs = await load<typeof import('node:fs')>();
   const raceAt = (to: unknown): void => {
     if (to === racing.path) fs.writeFileSync(racing.path, 'theirs\n');
   };
   const linkSync: typeof fs.linkSync = (from, to) => {
-    if (refuseLinks.on) throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' });
+    if (refuseLinks.on) {
+      const { code } = refuseLinks;
+      throw Object.assign(new Error(`${code}: link refused`), { code });
+    }
     fs.linkSync(from, to);
   };
+  const lstatSync = vi.fn(fs.lstatSync).mockImplementation((path, options) => {
+    if (!driveGone.on) return fs.lstatSync(path, options);
+    driveGone.calls += 1;
+    if (driveGone.calls > 1000) throw new Error('lstat called without end');
+    if (options?.throwIfNoEntry === false) return undefined;
+    throw Object.assign(new Error(`ENOENT: no such file or directory, lstat '${String(path)}'`), { code: 'ENOENT' });
+  });
   const renamed: typeof fs.renameSync = (from, to) => {
     raceAt(to);
     fs.renameSync(from, to);
@@ -43,7 +55,7 @@ vi.mock('node:fs', async (load) => {
     raceAt(path);
     fs.symlinkSync(target, path, type);
   };
-  return { ...fs, linkSync, renameSync: renamed, symlinkSync: linked };
+  return { ...fs, linkSync, lstatSync, renameSync: renamed, symlinkSync: linked };
 });
 
 const folders: string[] = [];
@@ -446,6 +458,20 @@ describe('apply on a volume without hard links, and a link put back', () => {
     expect([listing(root), text(join(root, '.claude/b.md')), runs(state)]).toEqual([['b.md'], 'old\n', []]);
   });
 
+  // Its undo links the file back in.
+  it('refuses a plan that only deletes on a volume without hard links', () => {
+    const { root, state } = project({ '.claude/c.md': 'gone\n' });
+    refuseLinks.on = true;
+    try {
+      expect(apply(store(state), request(root, [remove('.claude/c.md', 'gone\n')]))).toEqual(
+        refusedAt('apply.no-hard-links', '.claude/c.md'),
+      );
+    } finally {
+      refuseLinks.on = false;
+    }
+    expect([listing(root), text(join(root, '.claude/c.md')), runs(state)]).toEqual([['c.md'], 'gone\n', []]);
+  });
+
   // Windows makes a file link only with a privilege.
   it.skipIf(process.platform === 'win32')(
     'keeps a file another process writes while a link swapped in during the step goes back',
@@ -468,6 +494,34 @@ describe('apply on a volume without hard links, and a link put back', () => {
       expect(text(path)).toBe('theirs\n');
     },
   );
+});
+
+describe('apply probes the volume', () => {
+  it('throws a link error that does not mean a volume without hard links, before any write', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    refuseLinks.on = true;
+    refuseLinks.code = 'EIO';
+    try {
+      expect(() => apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toThrow('EIO');
+    } finally {
+      refuseLinks.on = false;
+      refuseLinks.code = 'EPERM';
+    }
+    expect([listing(root), text(join(root, '.claude/b.md')), runs(state)]).toEqual([['b.md'], 'old\n', []]);
+  });
+
+  it('throws ENOENT when nothing on the way to a plan path exists, before a run is recorded', () => {
+    const { root, state } = project();
+    const held = store(state);
+    driveGone.on = true;
+    driveGone.calls = 0;
+    try {
+      expect(() => apply(held, request(root, [create('.claude/a.md', 'a\n')]))).toThrow('ENOENT');
+    } finally {
+      driveGone.on = false;
+    }
+    expect([listing(root), runs(state)]).toEqual([[], []]);
+  });
 });
 
 describe('apply after a step and its recovery throw', () => {
