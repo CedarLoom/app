@@ -2,10 +2,10 @@ import { readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { JsonValue, type Refusal } from '@cedarloom/core';
 import { z } from 'zod';
-import { jsonOf } from './generator-run.ts';
+import { cut, jsonOf } from './generator-run.ts';
 import { nestsBeyond } from './json-nesting.ts';
 import { isUnreachable, reached } from './plugin-folder.ts';
-import { errorCode, readFound } from './project-files.ts';
+import { entryAt, errorCode, readFound } from './project-files.ts';
 import { linkOnWay } from './write-roots.ts';
 
 /** The folder of a project's definitions, relative to the project root. */
@@ -20,12 +20,15 @@ export const Named = z.object({ name: z.string() });
 
 /**
  * The refusal of a definition whose name field is not its file name without `.json`: the generator writes the outputs
- * under the name field, while a named run finds its definition, and the outputs it deletes, by the file name.
+ * under the name field, while a named run finds its definition, and the outputs it deletes, by the file name. A name
+ * that is no string shows as its JSON.
  */
 export const nameMismatch = (file: string, json: unknown): Refusal | undefined => {
-  const named = Named.safeParse(json);
-  if (!named.success || named.data.name === basename(file, '.json')) return undefined;
-  return { code: 'definition.name-mismatch', params: { file, name: named.data.name } };
+  if (typeof json !== 'object' || json === null || !('name' in json)) return undefined;
+  const { name } = json;
+  if (name === basename(file, '.json')) return undefined;
+  const shown = typeof name === 'string' ? name : JSON.stringify(name);
+  return { code: 'definition.name-mismatch', params: { file, name: cut(shown) } };
 };
 
 /** A folder's `*.json` files without dotfiles (an editor's lock link); unreadable when out of reach or behind a link. */
@@ -40,6 +43,25 @@ export const definitionFileNames = (base: string, folder: string): string[] | 'u
     if (isUnreachable(error)) return 'unreadable';
     throw error;
   }
+};
+
+/**
+ * The path of the definition file at a "/"-separated path below base as its folder lists it, for the name check: a
+ * case-insensitive volume finds Build.json at build.json. Undefined when no listed file is there; the path itself
+ * when the folder is unreadable, for the reader to refuse.
+ */
+export const listedPath = (base: string, path: string): string | undefined => {
+  const slash = path.lastIndexOf('/');
+  const [folder, file] = [path.slice(0, slash), path.slice(slash + 1)];
+  const files = definitionFileNames(base, folder);
+  if (files === 'unreadable' || files.includes(file)) return path;
+  const idOf = (name: string) => {
+    const entry = reached(() => entryAt(join(base, folder, name)));
+    return entry === undefined ? undefined : `${entry.dev}:${entry.ino}`;
+  };
+  const wanted = idOf(file);
+  const listed = wanted === undefined ? undefined : files.find((each) => idOf(each) === wanted);
+  return listed === undefined ? undefined : `${folder}/${listed}`;
 };
 
 /**
