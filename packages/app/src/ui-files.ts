@@ -1,5 +1,5 @@
 import { readFile, realpath } from 'node:fs/promises';
-import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 // The file types a UI build emits; any other file goes out as bytes, and nosniff keeps the browser from guessing.
@@ -18,13 +18,22 @@ const absent = (error: unknown): boolean =>
   'code' in error &&
   ['ENOENT', 'ENOTDIR', 'EISDIR', 'ENAMETOOLONG'].includes(String(error.code));
 
-/** The bytes of the file at `path` under `root`, links followed, when it stays inside root; null otherwise. */
-const readInside = async (root: string, path: string): Promise<Buffer | null> => {
+const inside = (base: string, real: string): boolean => {
+  const inner = relative(base, real);
+  return inner !== '..' && !inner.startsWith(`..${sep}`) && !isAbsolute(inner);
+};
+
+/** The bytes of the file at `path` under `root`'s folder `scope`, links followed, when it stays inside both; null otherwise. */
+const readInside = async (root: string, scope: string, path: string): Promise<Buffer | null> => {
   if (path.includes('\0')) return null;
   try {
-    const [base, real] = await Promise.all([realpath(root), realpath(resolve(root, path))]);
-    const inner = relative(base, real);
-    if (inner === '..' || inner.startsWith(`..${sep}`) || isAbsolute(inner)) return null;
+    const [top, base, real] = await Promise.all([
+      realpath(root),
+      realpath(resolve(root, scope)),
+      // Joined first: as its own argument, an absolute path (a UNC path on Windows) would replace the folders before it.
+      realpath(resolve(root, join(scope, path))),
+    ]);
+    if (!inside(top, real) || !inside(base, real)) return null;
     return await readFile(real);
   } catch (error) {
     if (absent(error)) return null;
@@ -32,10 +41,10 @@ const readInside = async (root: string, path: string): Promise<Buffer | null> =>
   }
 };
 
-/** GET / and GET /assets/* answer with the built UI's files in `root`; a missing file or one outside it gets 404. */
+/** GET / answers with `root`'s index.html and GET /assets/* with the files in its assets folder; any other path gets 404. */
 export const uiRoutes = (app: FastifyInstance, root: string): void => {
-  const send = async (reply: FastifyReply, path: string): Promise<FastifyReply> => {
-    const bytes = await readInside(root, path);
+  const send = async (reply: FastifyReply, scope: string, path: string): Promise<FastifyReply> => {
+    const bytes = await readInside(root, scope, path);
     if (bytes === null) {
       reply.callNotFound();
       return reply;
@@ -44,8 +53,6 @@ export const uiRoutes = (app: FastifyInstance, root: string): void => {
   };
   // Files, not API routes: the OpenAPI document leaves them out.
   const schema = { hide: true };
-  app.get('/', { schema }, (_req, reply) => send(reply, 'index.html'));
-  app.get<{ Params: { '*': string } }>('/assets/*', { schema }, (req, reply) =>
-    send(reply, `assets/${req.params['*']}`),
-  );
+  app.get('/', { schema }, (_req, reply) => send(reply, '.', 'index.html'));
+  app.get<{ Params: { '*': string } }>('/assets/*', { schema }, (req, reply) => send(reply, 'assets', req.params['*']));
 };
