@@ -48,6 +48,7 @@ export const MESSAGE_IDS = [
   'recovery.skipped',
   'run.already-undone',
   'run.not-found',
+  'server.listen-failed',
   'server.open-hint',
   'server.port-in-use',
   'session.cookie',
@@ -112,6 +113,7 @@ export interface MessagePlaceholders {
   'recovery.skipped': 'path' | 'run';
   'run.already-undone': 'by' | 'run';
   'run.not-found': 'run';
+  'server.listen-failed': 'error' | 'port';
   'server.open-hint': never;
   'server.port-in-use': 'port';
   'session.cookie': never;

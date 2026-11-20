@@ -26,7 +26,7 @@ const PROJECT = {
   pluginRoot: null,
 };
 
-// A built UI in base/ui, a file beside it, and base/ui/assets/out linking to a folder outside it.
+// A built UI in base/ui, a file beside it, base/ui/assets/out linking to a folder outside it and base/ui/assets/up to base/ui.
 const base = mkdtempSync(join(tmpdir(), 'cedarloom-ui-'));
 afterAll(() => rmSync(base, { recursive: true, force: true }));
 const built = join(base, 'ui');
@@ -38,6 +38,11 @@ writeFileSync(join(base, 'package.json'), '{"secret":true}');
 writeFileSync(join(base, 'outside', 'secret.txt'), 'secret');
 // A junction needs no privilege on Windows; other platforms ignore the type.
 symlinkSync(join(base, 'outside'), join(built, 'assets', 'out'), 'junction');
+symlinkSync(built, join(built, 'assets', 'up'), 'junction');
+// A UI in base/linked whose assets folder links to the folder outside it.
+const linked = join(base, 'linked');
+mkdirSync(linked);
+symlinkSync(join(base, 'outside'), join(linked, 'assets'), 'junction');
 
 // Secrets in order: the URL token secret-0, then the cookie secret-1 and the CSRF value secret-2.
 // Most tests have no UI built: the folder does not exist.
@@ -403,12 +408,22 @@ describe('UI files', () => {
     ['a parent path with backslashes', '/assets/..%5c..%5cpackage.json'],
     ['a NUL byte', '/assets/app.js%00'],
     ['a link out of the folder', '/assets/out/secret.txt'],
+    ['an encoded parent path to a UI file outside assets', '/assets/..%2findex.html'],
+    ['a link to a UI file outside assets', '/assets/up/index.html'],
+    // Without its drive on Windows: the same folder on the root's drive.
+    ['an absolute path', `/assets/${encodeURIComponent(join(built, 'assets', 'app.js').replace(/^[A-Za-z]:/, ''))}`],
     ['a folder', '/assets/'],
     ['a missing file', '/assets/nope.js'],
     ['a name longer than a file system allows', `/assets/${'a'.repeat(300)}.js`],
   ])('answers %s with 404 api.not-found', async (_case, url) => {
     const { app } = await server(built);
     const reply = await app.inject({ method: 'GET', url, headers: { host: HOST } });
+    expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
+  });
+
+  it('answers a file of an assets folder that links out of the UI folder with 404 api.not-found', async () => {
+    const { app } = await server(linked);
+    const reply = await app.inject({ method: 'GET', url: '/assets/secret.txt', headers: { host: HOST } });
     expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
   });
 });

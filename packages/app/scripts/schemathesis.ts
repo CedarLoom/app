@@ -38,6 +38,9 @@ try {
   if (!exchange.ok) throw new Error(`token exchange answered ${exchange.status}`);
   const cookie = exchange.headers.get('set-cookie')?.split(';')[0];
   const { csrf } = z.object({ csrf: z.string() }).parse(await exchange.json());
+  // Every operation documents its 4XX answers, so a run whose cookie the server refuses would still pass.
+  const session = await fetch(`${base}/api/session`, { headers: { cookie: cookie ?? '' } });
+  if (session.status !== 200) throw new Error(`GET /api/session with the cookie answered ${session.status}`);
   // unsupported_method expects 405 with Allow; the server answers every method it does not route with 404 api.not-found.
   const checks = ['--checks', 'all', '--exclude-checks', 'unsupported_method'];
   const headers = ['-H', `Cookie: ${cookie}`, '-H', `x-cedarloom-csrf: ${csrf}`, '-H', `Host: 127.0.0.1:${port}`];
