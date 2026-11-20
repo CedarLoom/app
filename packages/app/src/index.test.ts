@@ -37,7 +37,7 @@ describe('closeOnSignal', () => {
 
 describe('run', () => {
   it('places the page and the store of a relative CEDARLOOM_STATE_DIR under the same project root', () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'cedarloom-app-')));
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'cedarloom-app-')));
     folders.push(root);
     vi.stubEnv('CEDARLOOM_STATE_DIR', 'state');
     run();
