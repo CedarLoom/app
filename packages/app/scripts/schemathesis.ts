@@ -74,7 +74,8 @@ try {
   const checks = ['--checks', 'all', '--exclude-checks', 'unsupported_method'];
   const headers = ['-H', `Cookie: ${cookie}`, '-H', `x-cedarloom-csrf: ${csrf}`, '-H', `Host: 127.0.0.1:${port}`];
   const hooked = { ...env, SCHEMATHESIS_HOOKS: path('schemathesis_hooks.py'), CEDARLOOM_FIXTURES: fixtureUrl };
-  const run = spawn('schemathesis', ['run', path('../openapi.json'), '--url', base, ...headers, ...checks], {
+  const config = ['--config-file', path('schemathesis.toml')];
+  const run = spawn('schemathesis', [...config, 'run', path('../openapi.json'), '--url', base, ...headers, ...checks], {
     cwd: root,
     env: hooked,
     stdio: 'inherit',
