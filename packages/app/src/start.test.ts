@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeRedirect } from './redirect.ts';
-import { type AppIo, closed, openPage, type Started, start } from './start.ts';
+import { type AppIo, closed, crashed, openPage, type Started, start } from './start.ts';
 
 const folders: string[] = [];
 const servers: (() => Promise<number>)[] = [];
@@ -49,7 +49,7 @@ const appIo = (argv: string[], open?: (path: string) => void) => {
     cwd: project(),
     env: {},
     home: state,
-    stateDir: state,
+    stateDir: () => state,
     storeDir: () => folder(),
     uiDir: join(state, 'ui'),
     clock: { now: () => new Date(0), newRunId: () => 'r1' },
@@ -164,7 +164,7 @@ describe('start, the redirect page', () => {
 
 // The clock reads 2026-01-01T00:00:00Z, which is 1_767_225_600 s; 10 minutes before is 1_767_225_000 s.
 const pageIo = (stateDir: string) => ({
-  stateDir,
+  stateDir: () => stateDir,
   open: () => undefined,
   platform: 'darwin' as const,
   stderr: () => undefined,
@@ -187,35 +187,42 @@ describe('openPage', () => {
   ] as const)('after opening the page on %s, --json %s, prints %i line(s) on stderr', (platform, json, lines) => {
     const errors: string[] = [];
     const io = { ...pageIo(folder()), platform, stderr: (text: string) => errors.push(text) };
-    openPage(io, 'http://127.0.0.1:4000/#t=abc', json);
+    openPage(io, '/project', 'http://127.0.0.1:4000/#t=abc', json);
     expect(errors).toHaveLength(lines);
   });
 
   it('removes the page of a start more than 10 minutes ago, keeps a younger one and its own', () => {
     const state = folder();
     const pages = [earlier(state, 1_767_224_999), earlier(state, 1_767_225_001)];
-    openPage(pageIo(state), 'http://127.0.0.1:4000/#t=abc', true);
+    openPage(pageIo(state), '/project', 'http://127.0.0.1:4000/#t=abc', true);
     expect([pages.map((page) => existsSync(page)), readdirSync(state).length]).toEqual([[false, true], 2]);
   });
 
   it('keeps its own page when the clock runs more than 10 minutes ahead of the state folder', () => {
     const state = folder();
     const clock = { now: () => new Date('2100-01-01T00:00:00Z'), newRunId: () => 'r1' };
-    openPage({ ...pageIo(state), clock }, 'http://127.0.0.1:4000/#t=abc', true);
+    openPage({ ...pageIo(state), clock }, '/project', 'http://127.0.0.1:4000/#t=abc', true);
     expect(readdirSync(state).map((name) => readdirSync(join(state, name)))).toEqual([['cedarloom-app.html']]);
   });
 });
 
 describe('closed', () => {
-  it('reports a failed close by its stack, escaped, on stderr and no second document, exit 5', async () => {
-    const { io, out, errors } = appIo(['--json']);
-    const failure = Object.assign(new Error('close failed'), { stack: 'Error: close\u202e failed\n    at close' });
-    expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([
-      5,
-      [],
-      ['Error: close\\u202e failed\n    at close\n'],
-    ]);
-  });
+  it.each([
+    ['--json', []],
+    // cli.internal as one line of text after the stack.
+    ['text', [expect.stringMatching(/^\S[^\n]*\n$/)]],
+  ])(
+    'reports a failed close in %s mode by its stack, escaped, on stderr and no second document, exit 5',
+    async (mode, text) => {
+      const { io, out, errors } = appIo(mode === 'text' ? [] : [mode]);
+      const failure = Object.assign(new Error('close failed'), { stack: 'Error: close\u202e failed\n    at close' });
+      expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([
+        5,
+        [],
+        ['Error: close\\u202e failed\n    at close\n', ...text],
+      ]);
+    },
+  );
 });
 
 describe('start without a server', () => {
@@ -284,7 +291,32 @@ describe('start, the --json document', () => {
   });
 });
 
+describe('crashed', () => {
+  // The message escaped apart from the frames, and the cause with its own stack.
+  const stack = expect.stringMatching(
+    /^Error: lost\\u000a    at forged\n {4}at [^]*\n\[cause\]: Error: disk gone\n {4}at /,
+  );
+  it.each([
+    ['--json', ['{"result":null,"findings":[],"refusals":[{"code":"cli.internal","params":{}}]}\n'], []],
+    // cli.internal as one line of text after the stack.
+    ['text', [], [expect.stringMatching(/^\S[^\n]*\n$/)]],
+  ])('reports a crash in %s mode by its stack and cli.internal, exit 5', (mode, document, text) => {
+    const { io, out, errors } = appIo(mode === 'text' ? [] : [mode]);
+    const error = new Error('lost\n    at forged', { cause: new Error('disk gone') });
+    expect([crashed(io, error), out, errors]).toEqual([5, document, [stack, ...text]]);
+  });
+});
+
 describe('start, usage and version', () => {
+  it.each([
+    ['extra', 'extra'],
+    ['', "''"],
+  ])('refuses the word %j with cli.surplus-argument, exit 2', async (word, argument) => {
+    const { result, document } = await started(['--json', word]);
+    const refusal = { code: 'cli.surplus-argument', params: { argument, command: 'cedarloom-app' } };
+    expect([result, document.refusals]).toEqual([{ exitCode: 2 }, [refusal]]);
+  });
+
   it.each(['--help', '-h'])('prints the usage for %s on stdout, exit 0', async (flag) => {
     const { io, out, errors } = appIo([flag]);
     expect([await start(io), out.join('') === '', errors]).toEqual([{ exitCode: 0 }, false, []]);
@@ -322,18 +354,46 @@ describe('bin/cedarloom-app.js', () => {
       '',
     ]);
   });
+});
 
-  it('reports a throw inside run as cli.internal, exit 5', () => {
-    const root = project();
-    writeFileSync(join(root, 'gone.mjs'), "process.cwd = () => { throw new Error('no working directory'); };");
-    const bin = fileURLToPath(new URL('../bin/cedarloom-app.js', import.meta.url));
-    const child = spawnSync(process.execPath, ['--import', './gone.mjs', bin, '--json'], {
-      cwd: root,
-      encoding: 'utf8',
-    });
-    expect([child.status, JSON.parse(child.stdout)]).toEqual([
+// Runs the bin in a project with a module loaded before it, which breaks one part of the process.
+const binWith = (preload: string, words: string[]) => {
+  const root = project();
+  writeFileSync(join(root, 'preload.mjs'), preload);
+  const bin = fileURLToPath(new URL('../bin/cedarloom-app.js', import.meta.url));
+  return spawnSync(process.execPath, ['--import', './preload.mjs', bin, ...words], { cwd: root, encoding: 'utf8' });
+};
+
+describe('bin/cedarloom-app.js, broken by a preload', () => {
+  it('reports a throw inside run by its stack, escaped, and cli.internal, exit 5', () => {
+    const child = binWith(
+      [
+        "import os from 'node:os';",
+        "import { syncBuiltinESMExports } from 'node:module';",
+        "os.homedir = () => { throw new Error('lost\\n    at forged'); };",
+        'syncBuiltinESMExports();',
+      ].join('\n'),
+      ['--json'],
+    );
+    expect([child.status, JSON.parse(child.stdout), child.stderr]).toEqual([
       5,
       { result: null, findings: [], refusals: [{ code: 'cli.internal', params: {} }] },
+      expect.stringMatching(/^Error: lost\\u000a {4}at forged\n {4}at /),
     ]);
+  });
+
+  describe('in a removed working folder', () => {
+    const gone = "process.cwd = () => { throw new Error('ENOENT: uv_cwd'); };";
+
+    it('prints the version, exit 0', () => {
+      const child = binWith(gone, ['--version']);
+      expect([child.status, child.stdout, child.stderr]).toEqual([0, '0.0.0\n', '']);
+    });
+
+    it('refuses with project.not-found, exit 3', () => {
+      const child = binWith(gone, ['--json']);
+      const refusal = { code: 'project.not-found', params: { cwd: '.' } };
+      expect([child.status, JSON.parse(child.stdout).refusals]).toEqual([3, [refusal]]);
+    });
   });
 });

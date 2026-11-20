@@ -6,7 +6,7 @@ import {
   messageText,
   type Params,
   printable,
-  printableLines,
+  printableStack,
   type Refusal,
 } from '@cedarloom/core';
 import core from '@cedarloom/core/messages/en.json' with { type: 'json' };
@@ -20,11 +20,12 @@ import { portOf, Session, type SessionSource, TOKEN_MS } from './session.ts';
 /** What cedarloom-app takes from its process; tests pass their own. */
 export interface AppIo extends SessionSource {
   argv: readonly string[];
-  cwd: string;
+  /** Read only when serving, so --version and --help answer in a removed working folder. */
+  readonly cwd: string;
   env: Readonly<Record<string, string | undefined>>;
   home: string;
-  /** The user's own state folder, which holds the redirect page's folder. */
-  stateDir: string;
+  /** The state folder of a project root, which holds the redirect page's folder. */
+  stateDir: (root: string) => string;
   /** The store folder of a project root. */
   storeDir: (root: string) => string;
   /** The built UI's folder. */
@@ -56,6 +57,9 @@ const BIN = 'cedarloom-app';
 const catalog: Readonly<Record<string, CompiledMessage>> = { ...core.messages, ...own.messages };
 const text = (id: Code | keyof MessagePlaceholders, params: Params): string => `${messageText(catalog, id, params)}\n`;
 const refused = (code: Code, params: Params): { refusal: Refusal } => ({ refusal: { code, params } });
+// stringify leaves DEL, C1, format and separator characters raw, only inside strings, where \u escapes parse equal.
+const documentLine = (result: unknown, refusals: Refusal[]): string =>
+  `${printable(JSON.stringify({ result, findings: [], refusals }))}\n`;
 
 interface Flag {
   name: string;
@@ -84,7 +88,7 @@ const switchRefusal = ({ name, rawName, value }: Flag): { refusal: Refusal } | u
 };
 
 // Sets the option a flag names, or returns the usage refusal of the flag.
-const applied = (options: Options, flag: Flag, cwd: string): { refusal: Refusal } | undefined => {
+const applied = (options: Options, flag: Flag): { refusal: Refusal } | undefined => {
   if (flag.name === 'port') {
     const port = portValue(flag);
     if (typeof port !== 'number') return port;
@@ -94,7 +98,7 @@ const applied = (options: Options, flag: Flag, cwd: string): { refusal: Refusal 
   if (flag.name === 'plugin-root') {
     const dir = valueOf(flag);
     if (!dir) return refused('cli.missing-argument', { argument: '<dir>', command: `${BIN} --plugin-root` });
-    options.pluginRoot = resolve(cwd, dir);
+    options.pluginRoot = dir;
     return undefined;
   }
   const refusal = switchRefusal(flag);
@@ -104,7 +108,7 @@ const applied = (options: Options, flag: Flag, cwd: string): { refusal: Refusal 
 };
 
 /** The options of a command line, or the usage refusal of its first wrong word; --json is read before. */
-const parse = (argv: readonly string[], cwd: string): Options | { refusal: Refusal } => {
+const parse = (argv: readonly string[]): Options | { refusal: Refusal } => {
   const options: Options = { port: 0, open: true, pluginRoot: null, help: false };
   const { tokens } = parseArgs({
     args: [...argv],
@@ -114,8 +118,10 @@ const parse = (argv: readonly string[], cwd: string): Options | { refusal: Refus
     options: { port: { type: 'string' }, 'plugin-root': { type: 'string' }, help: { type: 'boolean', short: 'h' } },
   });
   for (const token of tokens) {
-    if (token.kind === 'positional') return refused('cli.unknown-command', { command: token.value, bin: BIN });
-    const refusal = token.kind === 'option' ? applied(options, token, cwd) : undefined;
+    // The command takes no argument; an empty word is shown as the shell writes it.
+    if (token.kind === 'positional')
+      return refused('cli.surplus-argument', { argument: token.value || "''", command: BIN });
+    const refusal = token.kind === 'option' ? applied(options, token) : undefined;
     if (refusal !== undefined) return refusal;
   }
   return options;
@@ -129,18 +135,20 @@ const message = (error: unknown): string => `${printable(error instanceof Error 
  */
 export const openPage = (
   io: Pick<AppIo, 'stateDir' | 'open' | 'platform' | 'stderr' | 'clock'>,
+  root: string,
   url: string,
   json: boolean,
 ): Redirect | undefined => {
   let redirect: Redirect | undefined;
   try {
-    redirect = writeRedirect(io.stateDir, url);
+    const stateDir = io.stateDir(root);
+    redirect = writeRedirect(stateDir, url);
     io.open(redirect.path);
     // Snap-packaged browsers, a Windows browser under WSL and a Chromebook's Linux container cannot read the page.
     if (io.platform === 'linux' && !json) io.stderr(text('server.open-hint', {}));
     // A page is written after its token starts, so one older than the token's life by the wall clock holds a dead token,
     // unless the machine slept: the token's monotonic clock can stop then.
-    for (const error of sweepRedirects(io.stateDir, io.clock.now().getTime() - TOKEN_MS, redirect))
+    for (const error of sweepRedirects(stateDir, io.clock.now().getTime() - TOKEN_MS, redirect))
       io.stderr(message(error));
   } catch (error) {
     io.stderr(message(error));
@@ -158,15 +166,29 @@ const bindRefusal = (error: unknown, port: number): Refusal | undefined => {
     : undefined;
 };
 
-/** The exit code of a closing server: a failure prints only its stack, since --json printed the start document. */
-export const closed = (io: Pick<AppIo, 'stderr'>, closing: Promise<void>): Promise<number> =>
+/** The exit code of a closing server: a failure prints its stack escaped on stderr, then cli.internal as text; with --json no second document after the start document. */
+export const closed = (io: Pick<AppIo, 'argv' | 'stderr'>, closing: Promise<void>): Promise<number> =>
   closing.then(
     () => 0,
     (error: unknown) => {
-      io.stderr(`${printableLines(String(error instanceof Error ? error.stack : error))}\n`);
+      io.stderr(`${printableStack(error)}\n`);
+      if (!io.argv.includes('--json')) io.stderr(text('cli.internal', {}));
       return 5;
     },
   );
+
+// A refusal as the --json document on stdout, else as text on stderr.
+const report = (io: Pick<AppIo, 'stdout' | 'stderr'>, json: boolean, refusal: Refusal): void => {
+  if (json) io.stdout(documentLine(null, [refusal]));
+  else io.stderr(text(refusal.code, refusal.params));
+};
+
+/** The exit code of a start that threw: its stack escaped on stderr, then cli.internal as the document or as text. */
+export const crashed = (io: Pick<AppIo, 'argv' | 'stdout' | 'stderr'>, error: unknown): number => {
+  io.stderr(`${printableStack(error)}\n`);
+  report(io, io.argv.includes('--json'), { code: 'cli.internal', params: {} });
+  return 5;
+};
 
 type Stop = (refusal: Refusal, exitCode: number) => Started;
 
@@ -176,7 +198,7 @@ const request = (io: AppIo, json: boolean, stop: Stop): Options | Started => {
     io.stdout(`${io.version}\n`);
     return { exitCode: 0 };
   }
-  const options = parse(io.argv, io.cwd);
+  const options = parse(io.argv);
   if ('refusal' in options) return stop(options.refusal, 2);
   // The document carries no text, so it cannot carry the usage.
   if (options.help && json) return stop({ code: 'cli.flag-conflict', params: { flags: '--help, --json' } }, 2);
@@ -189,13 +211,19 @@ const request = (io: AppIo, json: boolean, stop: Stop): Options | Started => {
 export const start = async (io: AppIo): Promise<Started> => {
   const json = io.argv.includes('--json');
   const stop: Stop = (refusal, exitCode) => {
-    if (json) io.stdout(`${printable(JSON.stringify({ result: null, findings: [], refusals: [refusal] }))}\n`);
-    else io.stderr(text(refusal.code, refusal.params));
+    report(io, json, refusal);
     return { exitCode };
   };
   const options = request(io, json, stop);
   if (!('port' in options)) return options;
-  const root = projectRoot(io.cwd);
+  let cwd: string;
+  try {
+    cwd = io.cwd;
+  } catch {
+    // A removed working folder cannot be read, and the shell's PWD may name another folder, so the refusal names ".".
+    return stop({ code: 'project.not-found', params: { cwd: '.' } }, 3);
+  }
+  const root = projectRoot(cwd);
   if (typeof root !== 'string') return stop(root, 3);
   let redirect: Redirect | undefined;
   // A page left behind holds a token that is spent or ends with the server, so a failed removal is only reported.
@@ -207,8 +235,9 @@ export const start = async (io: AppIo): Promise<Started> => {
     }
   };
   const session = new Session(io, removePage);
-  const { node, required, cwd, env, home } = io;
-  const doctorInputs = { node, required, cwd, env, home, pluginRoot: options.pluginRoot };
+  const { node, required, env, home } = io;
+  const pluginRoot = options.pluginRoot === null ? null : resolve(cwd, options.pluginRoot);
+  const doctorInputs = { node, required, cwd, env, home, pluginRoot };
   const project = { root, storeDir: io.storeDir(root), clock: io.clock, ...doctorInputs };
   const app = await buildServer({ session, log: io.stderr, project, ui: io.uiDir });
   try {
@@ -221,8 +250,8 @@ export const start = async (io: AppIo): Promise<Started> => {
   }
   const port = portOf(app.server);
   const url = `http://127.0.0.1:${port}/#t=${session.token}`;
-  io.stdout(json ? `${JSON.stringify({ result: { url, port }, findings: [], refusals: [] })}\n` : `${url}\n`);
-  if (options.open) redirect = openPage(io, url, json);
+  io.stdout(json ? documentLine({ url, port }, []) : `${url}\n`);
+  if (options.open) redirect = openPage(io, root, url, json);
   return {
     close: () => {
       removePage();

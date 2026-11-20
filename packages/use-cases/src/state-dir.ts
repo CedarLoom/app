@@ -8,11 +8,17 @@ export interface StateDirInputs {
   cwd: string;
 }
 
+// C:state on another drive than cwd's starts at C:\, never at a current folder the process happens to hold on C:.
+const baseOf = (path: typeof posix, cwd: string, value: string): string => {
+  const drive = path.parse(value).root;
+  return /^[a-z]:$/i.test(drive) && drive.toLowerCase() !== cwd.slice(0, 2).toLowerCase() ? `${drive}\\` : cwd;
+};
+
 /** The state folder: CEDARLOOM_STATE_DIR, else `cedarloom` in XDG_STATE_HOME, else in the platform's default folder. */
 export const stateDir = ({ env, platform, home, cwd }: StateDirInputs): string => {
   const path = platform === 'win32' ? win32 : posix;
   const own = env['CEDARLOOM_STATE_DIR'];
-  if (own) return path.resolve(cwd, own);
+  if (own) return path.resolve(baseOf(path, cwd, own), own);
   // XDG Base Directory: an empty value counts as unset, and a relative one is invalid and ignored.
   const xdg = env['XDG_STATE_HOME'];
   if (xdg && path.isAbsolute(xdg)) return path.join(xdg, 'cedarloom');
