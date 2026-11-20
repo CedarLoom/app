@@ -12,7 +12,7 @@ const Settings = z.object({
   permissions: z.object({ deny: z.array(z.unknown()).optional() }).optional(),
   enabledPlugins: z.record(z.string(), z.unknown()).optional(),
 });
-type Settings = { permissions?: { deny?: unknown[] }; enabledPlugins?: Record<string, unknown> };
+type Settings = z.infer<typeof Settings>;
 const isSettings = (json: unknown): json is Settings => Settings.safeParse(json).success;
 
 /** A done workflow.off or workflow.on run in effect, with the settings entries of its operations. */
@@ -200,8 +200,8 @@ const switched = (
 
 /**
  * Switches off in a settings file: appends each deny rule that is missing, or sets the plugin entry to false. Records
- * come newest first. Undefined when the file is not a JSON object, or its permissions, deny or enabledPlugins has
- * another type.
+ * come newest first. Undefined when the file is not a JSON object, its permissions, deny or enabledPlugins has
+ * another type, or the edited text would not read back as the change (a duplicate key under the edit).
  */
 export const switchedOff = (
   settings: SettingsText,

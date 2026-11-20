@@ -145,7 +145,7 @@ msgstr "{path, select, null {No settings file enables cl-workflow@cedarloom} oth
 
 #. js-lingui-explicit-id
 msgid "settings.unreadable"
-msgstr "{path} cannot be read, is not a JSON object, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
+msgstr "{path} cannot be read, is not a JSON object, has a duplicate key CedarLoom would change, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
 
 #. js-lingui-explicit-id
 msgid "settings.owner-entry"
