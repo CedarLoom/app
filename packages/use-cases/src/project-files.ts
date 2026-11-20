@@ -16,6 +16,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { constants as os } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 
 export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
@@ -46,6 +47,9 @@ export type Found = { bytes: Buffer; mode: number } | 'absent' | 'link' | 'not-f
 
 // No link followed, and no wait on a FIFO.
 const READ = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+// Opening a socket: ENXIO on Linux, EOPNOTSUPP on macOS, which Node.js names by its number alone.
+const SOCKET = new Set<unknown>([-os.errno.ENXIO, -os.errno.EOPNOTSUPP]);
+const errorNumber = (error: unknown): unknown => (error instanceof Error && 'errno' in error ? error.errno : undefined);
 
 // The first length bytes of the file open at fd.
 const headOf = (fd: number, length: number): Buffer => {
@@ -71,6 +75,7 @@ export const readFound = (path: string, limit = Number.POSITIVE_INFINITY): Found
     if (code === 'ELOOP') return 'link';
     // ENOTDIR: a folder on the way is a file.
     if (code === 'EISDIR' || code === 'ENOTDIR') return 'not-file';
+    if (SOCKET.has(errorNumber(error))) return 'not-file';
     throw error;
   }
   try {
