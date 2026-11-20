@@ -57,13 +57,13 @@ if (Number(found.split('.')[0]) < Number(required.replace('>=', ''))) {
       cli.run(manifest);
     })
     .catch(function (error) {
-      return import('@cedarloom/core').then(
-        function (core) {
-          crashed(core.printableStack(error));
-        },
-        function () {
-          crashed(escaped(String(error && error.stack)));
-        },
-      );
+      return import('@cedarloom/core')
+        .then(function (core) {
+          return core.printableStack(error);
+        })
+        .catch(function () {
+          return escaped(String((error && error.stack) || error));
+        })
+        .then(crashed);
     });
 }

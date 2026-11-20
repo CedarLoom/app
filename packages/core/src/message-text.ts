@@ -12,7 +12,9 @@ export const printableLines = (text: string): string => text.split('\n').map(pri
 
 // The stack shows the message after the error's name, so a line feed in the message would add a line that reads as a frame.
 const stackOf = (error: Error): string => {
-  const { message } = error;
+  // Any code may set a message, a thrown value's included.
+  const set: unknown = error.message;
+  const message = typeof set === 'string' ? set : String(set);
   const stack = typeof error.stack === 'string' ? error.stack : `${error.name}: ${message}`;
   if (!message.includes('\n')) return printableLines(stack);
   const at = stack.lastIndexOf(message);
@@ -20,10 +22,10 @@ const stackOf = (error: Error): string => {
   return printable(stack.slice(0, at + message.length)) + printableLines(stack.slice(at + message.length));
 };
 
-// JSON.stringify throws on a cycle or a BigInt.
+// JSON.stringify throws on a cycle or a BigInt, and gives undefined when toJSON does.
 const jsonOf = (value: object): string => {
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(value) ?? Object.prototype.toString.call(value);
   } catch {
     return Object.prototype.toString.call(value);
   }

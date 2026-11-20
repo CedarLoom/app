@@ -37,3 +37,9 @@ it("reports the cause chain and an AggregateError's errors to any depth, with ea
     '[errors]: gone',
   ]);
 });
+
+it('reports a message that is no string and a toJSON that gives undefined', () => {
+  const thrown = Object.assign(new Error('x'), { message: 42, toJSON: () => undefined });
+  expect(printableStack(thrown).split('\n')[0]).toBe('Error: 42');
+  expect(printableStack({ toJSON: () => undefined })).toBe('[object Object]');
+});
