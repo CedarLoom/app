@@ -1,36 +1,48 @@
-import { type BigIntStats, statSync } from 'node:fs';
+import { type BigIntStats, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { Refusal } from '@cedarloom/core';
-import { errorCode, readFound } from './project-files.ts';
+import { isUnreachable } from './plugin-folder.ts';
+import { entryAt, errorCode, readFound } from './project-files.ts';
 
 const GITDIR = Buffer.from('gitdir: ');
 
-// What is at path, its links followed as Git follows them; undefined when nothing is.
+// What is at path, its links followed; undefined when nothing is, also when a folder on the way is a file or the name is too long to exist.
 const statAt = (path: string): BigIntStats | undefined => {
   try {
     return statSync(path, { throwIfNoEntry: false, bigint: true });
   } catch (error) {
-    if (errorCode(error) === 'ENOTDIR') return undefined;
+    const code = errorCode(error);
+    if (code === 'ENOTDIR' || code === 'ENAMETOOLONG') return undefined;
     throw error;
   }
 };
 
-/** What the .git entry of folder makes of it, as Git reads it; below is the folder the walk came up from. */
+// Whether the regular file at path, its links followed, starts with "gitdir: ".
+const isGitFile = (path: string): boolean => {
+  const head = readFound(realpathSync.native(path), GITDIR.length);
+  return typeof head === 'object' && GITDIR.equals(head.bytes);
+};
+
+/**
+ * What the .git entry of folder makes of it, its links followed: a root when it is a folder or a file that starts with
+ * "gitdir: ", invalid when it is anything else or a link that leads nowhere; below is the folder the walk came up from.
+ */
 const gitEntry = (folder: string, below: string | undefined): 'root' | 'none' | 'inside' | 'invalid' => {
   const git = join(folder, '.git');
-  const info = statAt(git);
+  // A link that leads nowhere is seen as the link itself, which is invalid.
+  const info = statAt(git) ?? entryAt(git);
   if (info === undefined) return 'none';
   if (info.isDirectory()) {
     const from = below === undefined ? undefined : statAt(below);
     return from?.ino === info.ino && from.dev === info.dev ? 'inside' : 'root';
   }
-  const head = info.isFile() ? readFound(git, GITDIR.length) : 'not-file';
-  return typeof head === 'object' && GITDIR.equals(head.bytes) ? 'root' : 'invalid';
+  return info.isFile() && isGitFile(git) ? 'root' : 'invalid';
 };
 
 /**
- * The top folder of the Git working tree that holds cwd, by its .git folder or "gitdir: " file; no git process, so no
- * git setting moves it. Refused inside a .git folder, which is no working tree, and at a .git entry Git would refuse.
+ * The top folder of the Git working tree that holds cwd: the nearest folder whose .git entry is a folder or a file that
+ * starts with "gitdir: "; no git process, so no git setting moves it. Refused inside a .git folder, which is no working
+ * tree, and at any other .git entry or one the app cannot reach.
  */
 export const projectRoot = (cwd: string): string | Refusal => {
   let below: string | undefined;
@@ -39,7 +51,7 @@ export const projectRoot = (cwd: string): string | Refusal => {
     try {
       entry = gitEntry(folder, below);
     } catch (error) {
-      if (errorCode(error) === undefined) throw error;
+      if (!isUnreachable(error)) throw error;
       entry = 'invalid';
     }
     if (entry === 'root') return folder;
