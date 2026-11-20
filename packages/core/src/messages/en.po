@@ -33,7 +33,7 @@ msgstr "{path} is a symbolic link. CedarLoom does not write through links."
 
 #. js-lingui-explicit-id
 msgid "plan.not-text"
-msgstr "{path} is not a UTF-8 text file, or CedarLoom may not read it. CedarLoom writes only text files it can read."
+msgstr "{path} is not a UTF-8 text file of at most 16 MiB, or CedarLoom may not read it. CedarLoom writes only text files it can read."
 
 #. js-lingui-explicit-id
 msgid "plan.text-mismatch"

@@ -70,7 +70,7 @@ const settingsFile = (root: string): { bytes: Buffer; text: string } | null | Re
   if (isRefusal(found)) return found;
   if (found === 'absent') return null;
   if (found === 'link') return refusal('plan.symlink', SETTINGS);
-  if (found === 'not-file' || !isUtf8(found.bytes) || nestsBeyond(found.bytes, NESTING_LIMIT)) return unreadable();
+  if (typeof found !== 'object' || !isUtf8(found.bytes) || nestsBeyond(found.bytes, NESTING_LIMIT)) return unreadable();
   return { bytes: found.bytes, text: found.bytes.toString('utf8') };
 };
 

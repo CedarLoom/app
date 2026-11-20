@@ -1,4 +1,14 @@
-import { chmodSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
@@ -8,6 +18,7 @@ import {
   crash,
   create,
   failAt,
+  foldsCase,
   fresh,
   listing,
   project,
@@ -96,9 +107,10 @@ describe('undo', () => {
   });
 
   it.each([
-    ['undo.backup-missing', (backup: string) => rmSync(backup)],
-    ['undo.backup-changed', (backup: string) => writeFileSync(backup, 'other\n')],
-  ] as const)('undo refuses with %s when the backup is missing or changed', (code, spoil) => {
+    ['undo.backup-missing', 'is missing', (backup: string) => rmSync(backup)],
+    ['undo.backup-changed', 'changed', (backup: string) => writeFileSync(backup, 'other\n')],
+    ['undo.backup-changed', 'grew past 16 MiB', (backup: string) => truncateSync(backup, 16 * 1024 * 1024 + 1)],
+  ] as const)('undo refuses with %s when the backup %s', (code, _, spoil) => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     const held = store(state, 'r1', 'u1');
     apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
@@ -296,8 +308,8 @@ describe('undo of a replaced undo on two files', () => {
 });
 
 describe('undo matches files and runs as apply and the store do', () => {
-  // Linux filesystems tell the two names apart, so apply never chains them as one file there.
-  it.skipIf(process.platform === 'linux')('undoes two steps on one file named in two letter cases', () => {
+  // A volume that tells the two names apart never has apply chain them as one file.
+  it.skipIf(!foldsCase())('undoes two steps on one file named in two letter cases', () => {
     const { root, state } = project();
     const held = store(state, 'r1', 'u1');
     apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/A.md', 'a\n', 'b\n')]));

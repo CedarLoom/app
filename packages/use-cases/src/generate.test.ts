@@ -9,6 +9,7 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  truncateSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -227,6 +228,22 @@ it.skipIf(process.platform === 'win32')('refuses a planned path through a link w
     refusals: [{ code: 'plan.symlink', params: { path: '.claude/skills' } }],
   });
   expect(existsSync(join(outside, 'dev'))).toBe(false);
+});
+
+it('refuses a planned path below a file with plan.path-through-file', () => {
+  const { generated, project } = setup({ name: 'dev', skill: 'Run dev.\n' });
+  put(join(project, '.claude', 'skills'), 'a file\n');
+  expect(generated()).toMatchObject({
+    plan: null,
+    refusals: [{ code: 'plan.path-through-file', params: { path: SKILL } }],
+  });
+});
+
+it('refuses a planned file larger than CedarLoom reads, a sparse one of 2 GiB, with plan.not-text', () => {
+  const { generated, project } = setup({ name: 'dev', skill: 'Run dev.\n' });
+  put(join(project, SKILL), '');
+  truncateSync(join(project, SKILL), 2 ** 31);
+  expect(generated()).toMatchObject({ plan: null, refusals: [{ code: 'plan.not-text', params: { path: SKILL } }] });
 });
 
 it('refuses a definition whose name is not its file name with definition.name-mismatch before the generator runs', () => {

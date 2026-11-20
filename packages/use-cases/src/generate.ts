@@ -12,11 +12,11 @@ import {
   type Run,
   type SettingsEntry,
 } from '@cedarloom/core';
-import { apply, fileKey, linkRefusal, precheck, refusal } from './apply.ts';
+import { apply, fileKey, fileOnWay, linkRefusal, precheck, refusal } from './apply.ts';
 import { definitionBytes, isListed, jsonWithin } from './definition-files.ts';
 import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
-import { type Found, readFound, sha256 } from './project-files.ts';
+import { type FileFound, fileAt, sha256 } from './project-files.ts';
 import { recover, unsettledBy } from './recover.ts';
 import { isOwnPath, withLf } from './stale-paths.ts';
 import type { RunStore } from './store.ts';
@@ -109,18 +109,22 @@ const previousFiles = (store: RunStore, names: readonly string[]): Map<string, s
 };
 
 // The project's file at a planned path; a path outside the write roots, through a link, below a folder the app may not
-// enter or that the app may not read is refused.
-export const foundAt = (root: string, path: string): Found | Refusal => {
+// enter or below a file, or that the app may not read is refused.
+export const foundAt = (root: string, path: string): FileFound | Refusal => {
   if (!inWriteRoots(path)) return refusal('plan.path-outside-roots', path);
-  return linkRefusal(root, path) ?? reached(() => readFound(join(root, path))) ?? refusal('plan.not-text', path);
+  return (
+    linkRefusal(root, path) ??
+    reached(() => fileOnWay(root, path) ?? fileAt(join(root, path))) ??
+    refusal('plan.not-text', path)
+  );
 };
 
-export const isRefusal = (value: Found | Refusal): value is Refusal => typeof value === 'object' && 'code' in value;
+export const isRefusal = (value: FileFound | Refusal): value is Refusal => typeof value === 'object' && 'code' in value;
 
 type ReadHashes = ReadonlyMap<string, string | null>;
 
 // The project's file at a path the caller read, unless it no longer hashes as read (null: read as absent).
-const asRead = (root: string, path: string, read: ReadHashes): Found | Refusal => {
+const asRead = (root: string, path: string, read: ReadHashes): FileFound | Refusal => {
   const found = foundAt(root, path);
   if (isRefusal(found) || !read.has(path)) return found;
   const now = typeof found === 'object' ? sha256(found.bytes) : found;
@@ -135,7 +139,7 @@ const write = (root: string, path: string, output: Buffer, read: ReadHashes): Pl
   const afterHash = sha256(output);
   if (found === 'absent') return { kind: 'create', path, beforeHash: null, afterHash, before: null, after };
   if (found === 'link') return refusal('plan.symlink', path);
-  if (found === 'not-file' || !isUtf8(found.bytes)) return refusal('plan.not-text', path);
+  if (found === 'not-file' || found === 'too-large' || !isUtf8(found.bytes)) return refusal('plan.not-text', path);
   if (withLf(found.bytes).equals(withLf(output))) return undefined;
   const before = found.bytes.toString('utf8');
   return { kind: 'replace', path, beforeHash: sha256(found.bytes), afterHash, before, after };
@@ -152,7 +156,11 @@ const remove = (
   if (isRefusal(found)) return found;
   if (found === 'absent') return undefined;
   if (found === 'link') return refusal('plan.symlink', path);
-  if (found !== 'not-file' && isUtf8(found.bytes) && [found.bytes, withLf(found.bytes)].map(sha256).includes(hash)) {
+  if (
+    typeof found === 'object' &&
+    isUtf8(found.bytes) &&
+    [found.bytes, withLf(found.bytes)].map(sha256).includes(hash)
+  ) {
     const before = found.bytes.toString('utf8');
     return { kind: 'delete', path, beforeHash: sha256(found.bytes), afterHash: null, before, after: null };
   }

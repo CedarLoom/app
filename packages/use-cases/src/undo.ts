@@ -10,7 +10,7 @@ import {
   type Run,
 } from '@cedarloom/core';
 import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
-import { entryAt, errorCode, type Found, readFound, removeEmptyFolder, sha256 } from './project-files.ts';
+import { entryAt, errorCode, type FileFound, fileAt, hashAt, removeEmptyFolder, sha256 } from './project-files.ts';
 import { type Operation, recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
 import { inWriteRoots, linkOnWay } from './write-roots.ts';
@@ -47,11 +47,12 @@ class Denied extends Error {
   }
 }
 
-// A text file's text, null for nothing; undefined for anything no step leaves, such as a link or a binary file.
+// A text file's text, null for nothing; undefined for anything no step leaves, such as a link, a binary file or one
+// larger than a step writes.
 const textAt = (root: string, path: string): string | null | undefined => {
-  let found: Found;
+  let found: FileFound;
   try {
-    found = readFound(join(root, path));
+    found = fileAt(join(root, path));
   } catch (error) {
     throw DENIED.has(errorCode(error)) ? new Denied(path) : error;
   }
@@ -90,8 +91,13 @@ interface Walk {
 // The text the step found, from the backup it made; a create found nothing.
 const textBefore = ({ store, run }: Walk, position: number, step: Operation): string | null | Refusal => {
   if (step.beforeHash === null) return null;
-  const found = readFound(store.backupPath(run, position));
+  const backup = store.backupPath(run, position);
+  const found = fileAt(backup);
   if (found === 'absent') return refusal('undo.backup-missing', step.path);
+  // Only a run recorded before the size limit holds a backup this large as the step found it.
+  if (found === 'too-large') {
+    return refusal(hashAt(backup) === step.beforeHash ? 'plan.not-text' : 'undo.backup-changed', step.path);
+  }
   if (typeof found !== 'object' || sha256(found.bytes) !== step.beforeHash) {
     return refusal('undo.backup-changed', step.path);
   }
