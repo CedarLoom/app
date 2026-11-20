@@ -5,6 +5,7 @@
  * @public a catalog lists every id, whether its package reads the list or not.
  */
 export const MESSAGE_IDS = [
+  'api.bad-fields',
   'api.bad-request',
   'api.internal',
   'api.not-found',
@@ -69,7 +70,8 @@ export const MESSAGE_IDS = [
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
 export interface MessagePlaceholders {
-  'api.bad-request': 'issues';
+  'api.bad-fields': 'issues';
+  'api.bad-request': never;
   'api.internal': never;
   'api.not-found': never;
   'apply.backup-failed': 'path' | 'run';

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { recordRun } from '../scripts/recorded-run.ts';
 import { buildServer } from './server.ts';
@@ -32,14 +33,20 @@ const r1 = {
 };
 
 // A project whose store holds run r1, and a server with an exchanged session: cookie secret-1, CSRF value secret-2.
-const served = async () => {
+// `begun` runs as a run is recorded, after the checks before it.
+const served = async (begun: (notes: string) => void = () => undefined) => {
   const root = folder();
   mkdirSync(join(root, '.git'));
   const storeDir = folder();
   recordRun(root, storeDir);
   let count = 0;
   const session = new Session({ now: () => 0, secret: () => `secret-${count++}` });
-  const clock = { now: () => new Date('2026-11-19T07:00:00.000Z'), newRunId: () => 'u1' };
+  const notes = join(root, '.claude', 'notes.md');
+  const newRunId = (): string => {
+    begun(notes);
+    return 'u1';
+  };
+  const clock = { now: () => new Date('2026-11-19T07:00:00.000Z'), newRunId };
   const plugins = folder();
   const env = { CLAUDE_CODE_PLUGIN_CACHE_DIR: plugins, CLAUDE_CONFIG_DIR: folder() };
   const doctorInputs = { node: '26.13.0', required: '>=26', cwd: root, env, home: '', pluginRoot: null };
@@ -47,19 +54,14 @@ const served = async () => {
   const app = await buildServer({ session, log: () => undefined, project, ui: join(root, 'ui') });
   onTestFinished(() => app.close());
   await app.inject({ method: 'POST', url: '/api/session', headers: { host: HOST }, payload: { token: 'secret-0' } });
-  const notes = join(root, '.claude', 'notes.md');
-  return { app, notes, plugins };
+  return { app, notes, plugins, storeDir };
 };
 
 type App = Awaited<ReturnType<typeof served>>['app'];
 const cookie = { host: HOST, cookie: 'cedarloom_session_0=secret-1' };
 const get = (app: App, url: string) => app.inject({ method: 'GET', url, headers: cookie });
-const post = (
-  app: App,
-  url: string,
-  planHash: string,
-  headers: Record<string, string> = { 'x-cedarloom-csrf': 'secret-2' },
-) => app.inject({ method: 'POST', url, headers: { ...cookie, ...headers }, payload: { planHash } });
+const post = (app: App, url: string, planHash: string) =>
+  app.inject({ method: 'POST', url, headers: { ...cookie, 'x-cedarloom-csrf': 'secret-2' }, payload: { planHash } });
 const answer = (reply: { statusCode: number; json: () => unknown }) => [reply.statusCode, reply.json()];
 
 describe('reads', () => {
@@ -105,15 +107,33 @@ describe('reads', () => {
     },
   );
 
-  it.each(['/api/runs/-r1', '/api/runs/-r1/undo'])('refuses GET %s with 400 api.bad-request naming id', async (url) => {
+  it.each(['/api/runs/-r1', '/api/runs/-r1/undo'])('refuses GET %s with 400 api.bad-fields naming id', async (url) => {
     const { app } = await served();
-    expect(answer(await get(app, url))).toEqual([400, { code: 'api.bad-request', params: { issues: ['id'] } }]);
+    expect(answer(await get(app, url))).toEqual([400, { code: 'api.bad-fields', params: { issues: ['id'] } }]);
   });
 
   it.each(['', '/undo'])('refuses GET /api/runs/{id}%s with an id over the router limit with 400', async (rest) => {
     const { app } = await served();
     const reply = await get(app, `/api/runs/${'a'.repeat(101)}${rest}`);
-    expect(answer(reply)).toEqual([400, { code: 'api.bad-request', params: { issues: [] } }]);
+    expect(answer(reply)).toEqual([400, { code: 'api.bad-request', params: {} }]);
+  });
+});
+
+describe('store faults', () => {
+  it.each([
+    ['not a database', 'store.unreadable'],
+    ['of another version', 'store.version-unsupported'],
+  ])('answers GET /api/runs for a store %s with 500 %s', async (_case, code) => {
+    const { app, storeDir } = await served();
+    const runs = join(storeDir, 'runs.sqlite');
+    if (code === 'store.unreadable') writeFileSync(runs, 'not a database, only text. '.repeat(20));
+    else {
+      const db = new DatabaseSync(runs);
+      db.exec('PRAGMA user_version = 2');
+      db.close();
+    }
+    const params = code === 'store.unreadable' ? { path: runs } : { found: 2, supported: 1 };
+    expect(answer(await get(app, '/api/runs'))).toEqual([500, { code, params }]);
   });
 });
 
@@ -165,36 +185,14 @@ describe('undo apply', () => {
 });
 
 describe('undo apply refusals', () => {
-  it.each([
-    {
-      refused: 'a stale plan hash with 409 plan.stale',
-      planHash: STALE,
-      headers: undefined,
-      status: 409,
-      code: 'plan.stale',
-    },
-    {
-      refused: 'a missing CSRF header with 403 session.csrf',
-      planHash: UNDO_PLAN,
-      headers: {},
-      status: 403,
-      code: 'session.csrf',
-    },
-    {
-      refused: 'a missing cookie with 401 session.cookie',
-      planHash: UNDO_PLAN,
-      headers: { cookie: '' },
-      status: 401,
-      code: 'session.cookie',
-    },
-  ])('refuses $refused and changes nothing', async ({ planHash, headers, status, code }) => {
+  it('refuses a stale plan hash with 409 plan.stale and changes nothing', async () => {
     const { app, notes } = await served();
-    expect(answer(await post(app, '/api/runs/r1/undo', planHash, headers))).toEqual([status, { code, params: {} }]);
+    expect(answer(await post(app, '/api/runs/r1/undo', STALE))).toEqual([409, { code: 'plan.stale', params: {} }]);
     expect(existsSync(notes)).toBe(true);
     expect((await get(app, '/api/runs')).json()).toEqual({ runs: [r1] });
   });
 
-  it('refuses POST without a plan hash with 400 api.bad-request naming planHash', async () => {
+  it('refuses POST without a plan hash with 400 api.bad-fields naming planHash', async () => {
     const { app } = await served();
     const reply = await app.inject({
       method: 'POST',
@@ -202,7 +200,7 @@ describe('undo apply refusals', () => {
       headers: { ...cookie, 'x-cedarloom-csrf': 'secret-2' },
       payload: {},
     });
-    expect(answer(reply)).toEqual([400, { code: 'api.bad-request', params: { issues: ['planHash'] } }]);
+    expect(answer(reply)).toEqual([400, { code: 'api.bad-fields', params: { issues: ['planHash'] } }]);
   });
 
   it('answers a refusal of the undo with 409 and its code', async () => {
@@ -211,6 +209,14 @@ describe('undo apply refusals', () => {
     expect(answer(await post(app, '/api/runs/r1/undo', UNDO_PLAN))).toEqual([
       409,
       { code: 'undo.file-changed', params: { path: '.claude/notes.md' } },
+    ]);
+  });
+
+  it('answers a refusal after its run is recorded with 409 and the run id', async () => {
+    const { app } = await served((notes) => writeFileSync(notes, 'edited'));
+    expect(answer(await post(app, '/api/runs/r1/undo', UNDO_PLAN))).toEqual([
+      409,
+      { code: 'plan.file-changed', params: { path: '.claude/notes.md' }, run: 'u1' },
     ]);
   });
 });

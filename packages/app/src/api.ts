@@ -1,4 +1,6 @@
 import {
+  ApplyRefusal,
+  type Code,
   DoctorResult,
   Refusal,
   Run,
@@ -41,14 +43,22 @@ const BODIES = {
   apply: UndoApply.meta({ id: 'UndoApply' }),
   applied: UndoApplied.meta({ id: 'UndoApplied' }),
   refusal: Refusal.meta({ id: 'Refusal' }),
+  applyRefusal: ApplyRefusal.meta({ id: 'ApplyRefusal' }),
 };
 
-/** Every error body is a Refusal: the guard and the error handler can answer any route with one. */
-export const ERRORS = { '4xx': BODIES.refusal, '5xx': BODIES.refusal } as const;
+/** Every error body is a Refusal: the guard and the error handler can answer any route with one; a 500 may name a run. */
+export const ERRORS = { '4xx': BODIES.refusal, '5xx': BODIES.applyRefusal } as const;
 const RunPath = z.strictObject({ id: RunId });
 
-const refuse = (reply: FastifyReply, refusal: Refusal): FastifyReply =>
-  reply.code(refusal.code === 'run.not-found' ? 404 : 409).send(refusal);
+// A store this process cannot read, or of another version, is no conflict the client can resolve.
+const STATUS: Partial<Record<Code, number>> = {
+  'run.not-found': 404,
+  'store.unreadable': 500,
+  'store.version-unsupported': 500,
+};
+
+const refuse = (reply: FastifyReply, refusal: ApplyRefusal): FastifyReply =>
+  reply.code(STATUS[refusal.code] ?? 409).send(refusal);
 
 const summary = ({ planHash: _plan, operations: _steps, generatedFrom: _from, ...run }: Run): RunSummary => run;
 
@@ -74,9 +84,9 @@ const stored = <T>(project: Project, use: (store: RunStore) => T): Opened<T> => 
 };
 
 // Applies the undo only when its fresh plan has the hash the client showed; the summary of the recorded undo run.
-const undone = (store: RunStore, request: Parameters<typeof undo>[1]): RunSummary | Refusal => {
+const undone = (store: RunStore, request: Parameters<typeof undo>[1]): RunSummary | ApplyRefusal => {
   const { run, refusal } = undo(store, request);
-  if (refusal !== null) return refusal;
+  if (refusal !== null) return run === null ? refusal : { ...refusal, run };
   const recorded = run === null ? undefined : store.run(run);
   if (recorded === undefined) throw new Error(`undo of ${request.run} recorded no run`);
   return summary(recorded);
@@ -115,7 +125,11 @@ const undoRoutes = (app: FastifyInstance, project: Project): void => {
       ? refuse(reply, refusal)
       : { planHash: null, plan: null, refusals: [refusal] };
   });
-  const apply = { params: RunPath, body: BODIES.apply, response: { 200: BODIES.applied, ...ERRORS } };
+  const apply = {
+    params: RunPath,
+    body: BODIES.apply,
+    response: { 200: BODIES.applied, ...ERRORS, '4xx': BODIES.applyRefusal },
+  };
   routes.post('/api/runs/:id/undo', { schema: apply }, async ({ params: { id }, body }, reply) => {
     const done = stored(project, (store) => undone(store, { root, run: id, planHash: body.planHash }));
     if (!done.ok) return refuse(reply, done.refusal);
