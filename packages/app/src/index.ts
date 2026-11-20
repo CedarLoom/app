@@ -19,10 +19,11 @@ const openFile = (path: string): void => {
   child.unref();
 };
 
-const crashed = (error: unknown): void => {
+// After the start document only the stack is printed, since --json prints one document.
+const crashed = (error: unknown, documented = false): void => {
   process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
   const refusal = { code: 'cli.internal', params: {} };
-  if (process.argv.includes('--json'))
+  if (!documented && process.argv.includes('--json'))
     process.stdout.write(`${JSON.stringify({ result: null, findings: [], refusals: [refusal] })}\n`);
   process.exitCode = 5;
 };
@@ -41,6 +42,7 @@ export const run = (): void => {
     clock: { now: () => new Date(), newRunId: randomUUID },
     node: process.versions.node,
     required: manifest.engines.node,
+    version: manifest.version,
     // Monotonic, so a change of the system clock does not stretch or cut the token's 10 minutes.
     now: () => performance.now(),
     secret: () => randomBytes(32).toString('base64url'),
@@ -54,9 +56,12 @@ export const run = (): void => {
       return;
     }
     const stop = (): void => {
-      started.close().then(() => {
-        process.exitCode = 0;
-      }, crashed);
+      started.close().then(
+        () => {
+          process.exitCode = 0;
+        },
+        (error) => crashed(error, true),
+      );
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);

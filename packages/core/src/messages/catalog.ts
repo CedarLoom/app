@@ -45,6 +45,7 @@ export const MESSAGE_IDS = [
   'project.not-found',
   'run.already-undone',
   'run.not-found',
+  'server.listen-failed',
   'server.open-hint',
   'server.port-in-use',
   'session.cookie',
@@ -106,6 +107,7 @@ export interface MessagePlaceholders {
   'project.not-found': 'cwd';
   'run.already-undone': 'by' | 'run';
   'run.not-found': 'run';
+  'server.listen-failed': 'error' | 'port';
   'server.open-hint': never;
   'server.port-in-use': 'port';
   'session.cookie': never;
