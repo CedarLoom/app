@@ -55,14 +55,30 @@ const settleStep = ({ store, root, run }: Unsettled, position: number, op: Opera
 };
 
 // A put-back of a link killed between the new link and the removal of the aside leaves the link twice; the aside goes.
-// True when it went: the step set a link aside, which never hashes as the file it replaces, so it changed nothing.
-const droppedTwinLink = ({ root, run }: Unsettled, position: number, op: Operation): boolean => {
-  const path = join(root, op.path);
-  const aside = asidePath(path, run, position);
+// True when it went; false when the aside is another file, or the path or the aside changed while they were read.
+const droppedTwinLink = (path: string, aside: string): boolean => {
   if (entryAt(aside)?.isSymbolicLink() !== true) return false;
-  if (!readlinkSync(aside, 'buffer').equals(readlinkSync(path, 'buffer'))) return false;
+  try {
+    if (!readlinkSync(aside, 'buffer').equals(readlinkSync(path, 'buffer'))) return false;
+  } catch (error) {
+    // A name swapped for a file that is not a link, or removed, since the checks.
+    if (errorCode(error) === 'EINVAL' || errorCode(error) === 'ENOENT') return false;
+    throw error;
+  }
   dropAside(aside);
   return true;
+};
+
+// A link at the step's own path is settled when the aside is its twin, the step's put-back of a link it never changed,
+// or gone, so nothing was moved; nothing settling the step follows it. Any other aside keeps the step unsettled.
+// Known limit: a delete step with a link at its path and no aside settles as settled.
+const settledAtLink = (unsettled: Unsettled, position: number, op: Operation): Ended | null | undefined => {
+  const path = join(unsettled.root, op.path);
+  const aside = asidePath(path, unsettled.run, position);
+  if (entryAt(aside) === undefined) return settleStep(unsettled, position, op) ?? null;
+  if (!droppedTwinLink(path, aside)) return undefined;
+  settleStep(unsettled, position, op);
+  return 'untouched';
 };
 
 // The codes of a filesystem that refuses a change for now: no permission, a read-only volume, a file another process holds.
@@ -70,12 +86,12 @@ const REFUSED = new Set(['EACCES', 'EPERM', 'EROFS', 'EBUSY']);
 
 // How the step ended once its files were put in order, null when it never started: undefined when a link is on the way
 // since the run, so nothing is moved through it, or when the filesystem refused, as in a folder this user may not enter
-// or write. A link at the path whose twin went is the one the step put back; nothing settling the step follows it.
+// or write.
 const settled = (unsettled: Unsettled, position: number, op: Operation): Ended | null | undefined => {
   try {
     const link = linkOnWay(unsettled.root, op.path);
-    if (link !== undefined && (link !== op.path || !droppedTwinLink(unsettled, position, op))) return undefined;
-    return settleStep(unsettled, position, op) ?? null;
+    if (link === undefined) return settleStep(unsettled, position, op) ?? null;
+    return link === op.path ? settledAtLink(unsettled, position, op) : undefined;
   } catch (error) {
     if (REFUSED.has(String(errorCode(error)))) return undefined;
     throw error;
