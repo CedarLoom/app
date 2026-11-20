@@ -330,14 +330,17 @@ describe('the store refusals', () => {
     expect([openStore(dir, clock), openRunView(dir)]).toEqual([refused, refused]);
   });
 
-  it('refuses a row it cannot parse with the parse error as the cause, for the held store and for reading', () => {
+  it.each([
+    ['a value out of schema', `startedAt = 'yesterday'`, ZodError],
+    ['text that is not JSON', `generatedFrom = '{'`, SyntaxError],
+  ])('refuses a row with %s with the parse error as the cause, for the held store and for reading', (_, set, error) => {
     const dir = fresh();
     const held = store(dir);
     const id = value(held.begin(newRun));
     const db = new DatabaseSync(join(dir, 'runs.sqlite'));
-    db.exec(`UPDATE runs SET startedAt = 'yesterday'`);
+    db.exec(`UPDATE runs SET ${set}`);
     db.close();
-    const refused = { ...unreadable(join(dir, 'runs.sqlite')), cause: expect.any(ZodError) };
+    const refused = { ...unreadable(join(dir, 'runs.sqlite')), cause: expect.any(error) };
     expect([held.read(() => held.run(id)), view(dir).run(id)]).toEqual([refused, refused]);
   });
 

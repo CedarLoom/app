@@ -78,13 +78,15 @@ const onSettings = ({ path }: { path: string }): boolean => fileKey(path) === fi
 
 const entriesOf = (run: Run): SettingsEntry[] => run.operations.flatMap(({ entries }) => entries ?? []);
 
-// A switch run as its record; an undo of one as the opposite switch, with the entries as it put them back.
+// A switch run as its record; an undo as the opposite of the record of the run it undid, with the entries as it put
+// them back, so each level of undo flips once.
 const recordOf = (store: RunStore, run: Run): SwitchRecord => {
   const undid = run.undoes === null ? undefined : store.run(run.undoes);
   if (undid === undefined) return { action: run.action, entries: entriesOf(run) };
+  const { action, entries } = recordOf(store, undid);
   return {
-    action: undid.action === 'workflow.off' ? 'workflow.on' : 'workflow.off',
-    entries: entriesOf(undid).map(({ pointer, value, before }) =>
+    action: action === 'workflow.off' ? 'workflow.on' : 'workflow.off',
+    entries: entries.map(({ pointer, value, before }) =>
       before === undefined ? { pointer, value } : { pointer, value: before, before: value },
     ),
   };
@@ -110,12 +112,15 @@ const written = (store: RunStore, run: Run, now: string | null): boolean => {
   return (step.status === 'failed' || step.status === 'settled') && shownAt(store, run, step.afterHash, now);
 };
 
-// The records in effect, newest first; `now` is the hash of the settings file read for the plan, null for none.
+// The records in effect, newest first; `now` is the hash of the settings file read for the plan, null for none. An off
+// record whose write is not shown stays as an on record, which owns nothing and hides older off records of its entries.
 const records = (store: RunStore, now: string | null): SwitchRecord[] =>
   store.switches().flatMap((run) => {
     if (!inEffect(store, run)) return [];
     const record = recordOf(store, run);
-    return record.action === 'workflow.on' || written(store, run, now) ? [record] : [];
+    return record.action === 'workflow.on' || written(store, run, now)
+      ? [record]
+      : [{ ...record, action: 'workflow.on' }];
   });
 
 const writeOf = (file: { bytes: Buffer; text: string } | null, after: string): PlanOperation => {

@@ -107,7 +107,7 @@ const resultCode = (error: unknown): number | undefined =>
 const unreadable = (error: unknown, file: string): Refusal => {
   const sqlite = resultCode(error);
   const node = errorCode(error);
-  const row = error instanceof ZodError;
+  const row = error instanceof ZodError || error instanceof SyntaxError;
   if (row || (sqlite !== undefined && UNREADABLE.has(sqlite)) || (typeof node === 'string' && DENIED.has(node))) {
     return { code: 'store.unreadable', params: { path: file } };
   }
@@ -293,11 +293,17 @@ export class RunStore {
     );
   }
 
-  /** The runs that may hold a switch, newest first: on runs, off runs done or stopped, and done undos of either. */
+  /**
+   * The runs that may hold a switch, newest first: on runs, off runs done or stopped, and done undos whose chain of
+   * undone runs ends at either.
+   */
   switches(): Run[] {
     return this.#newestFirst(
       `r.action = 'workflow.on' OR (r.action = 'workflow.off' AND r.status <> 'running') OR (r.status = 'done'
-        AND (SELECT t.action FROM runs t WHERE t.id = r.undoes) IN ('workflow.off', 'workflow.on'))`,
+        AND r.undoes IN (WITH RECURSIVE chain (id) AS (
+          SELECT id FROM runs WHERE action IN ('workflow.off', 'workflow.on')
+          UNION SELECT u.id FROM runs u JOIN chain ON u.undoes = chain.id
+        ) SELECT id FROM chain))`,
     );
   }
 

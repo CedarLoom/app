@@ -301,15 +301,44 @@ describe('workflows on after undo runs', () => {
     expect(read()).toBe(settings);
   });
 
-  it('an undo of an on run that wrote nothing owns nothing', () => {
+  it.each([
+    ['after an undo of the off run', ['r1'], 'r4'],
+    ['with the off run in effect', [], 'r3'],
+  ])('an undo of an on run that wrote nothing owns nothing, %s', (_, done, last) => {
     const { root, held, off, on, read, edit } = setup(OWNER);
     off('dev');
     on('dev');
-    undo(held, { root, run: 'r1' });
+    for (const run of done) expect(undo(held, { root, run }).refusal).toBeNull();
     edit(DEV);
-    expect(undo(held, { root, run: 'r2' })).toMatchObject({ run: 'r4', plan: { operations: [] } });
+    expect(undo(held, { root, run: 'r2' })).toMatchObject({ run: last, plan: { operations: [] } });
     expect(on('dev')).toMatchObject({ run: null, plan: { operations: [] } });
     expect(read()).toBe(DEV);
+  });
+});
+
+describe('workflows on after an undo of the undo of an on run', () => {
+  it.each([
+    [
+      'stopped after its write, with the off run in effect',
+      ({ root, held }: Context) =>
+        expect(() => undo(held, { root, run: 'r3' }, failAt('written', 0))).toThrow('disk gone'),
+    ],
+    [
+      'done, with a later off run in effect',
+      ({ root, held, off, on }: Context) => {
+        on('dev');
+        off('dev');
+        expect(undo(held, { root, run: 'r3' })).toMatchObject({ run: 'r6', refusal: null });
+      },
+    ],
+  ])('a rule the owner adds stays after the undo %s', (_, last) => {
+    const context = setup(OWNER);
+    context.off('dev');
+    context.on('dev');
+    expect(undo(context.held, { root: context.root, run: 'r2' })).toMatchObject({ run: 'r3', refusal: null });
+    last(context);
+    expect(context.read()).toBe(OWNER);
+    ownerRuleStays(context);
   });
 });
 
