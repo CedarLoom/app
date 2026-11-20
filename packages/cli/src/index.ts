@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { inspect } from 'node:util';
 import { printableLines } from '@cedarloom/core';
 import { doctorRun } from './doctor.ts';
+import { type EditVerb, workflowsEdit } from './edit-workflow.ts';
 import { workflowsGenerate } from './generate.ts';
 import { workflowsNew } from './new-workflow.ts';
 import { type Parsed, parse, type Request } from './grammar.ts';
@@ -26,11 +27,18 @@ const HELP = {
   'workflows validate': 'help.workflows-validate',
   'workflows generate': 'help.workflows-generate',
   'workflows new': 'help.workflows-new',
+  'workflows add': 'help.workflows-add',
+  'workflows move': 'help.workflows-move',
+  'workflows remove': 'help.workflows-remove',
+  'workflows set': 'help.workflows-set',
   runs: 'help.runs',
   workflows: 'help.workflows',
 } as const;
 
 type Command = Extract<Request, { kind: 'command' }>;
+
+const edit = (io: Io, verb: EditVerb, { args, unset, yes, pluginRoot }: Command): Outcome =>
+  workflowsEdit(io, { verb, args, unset, pluginRoot }, yes);
 
 const OUTCOMES: Record<Command['name'], (io: Io, command: Command, argument: string) => Outcome> = {
   doctor: (io, { pluginRoot }) => doctorRun(io, pluginRoot),
@@ -43,6 +51,10 @@ const OUTCOMES: Record<Command['name'], (io: Io, command: Command, argument: str
   'workflows generate': (io, { args, yes, pluginRoot }) => workflowsGenerate(io, args, yes, pluginRoot),
   'workflows new': (io, { from, yes, pluginRoot }, name) =>
     workflowsNew(io, { name, from: from ?? 'dev', pluginRoot }, yes),
+  'workflows add': (io, command) => edit(io, 'add', command),
+  'workflows move': (io, command) => edit(io, 'move', command),
+  'workflows remove': (io, command) => edit(io, 'remove', command),
+  'workflows set': (io, command) => edit(io, 'set', command),
 };
 
 const commandOutcome = (io: Io, command: Command): Outcome => {

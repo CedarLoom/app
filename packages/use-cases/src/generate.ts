@@ -186,6 +186,8 @@ export interface GenerationInputs {
   generator: string;
   definitions: Definition[];
   files: Map<string, Buffer>;
+  /** Project files to delete while they hash as given, beside the outputs no longer generated. */
+  removed?: Map<string, string>;
   findings: Finding[];
 }
 
@@ -195,7 +197,7 @@ export interface GenerationInputs {
  * names wrote that no output holds any more is deleted, while it is unchanged.
  */
 export const generationOf = (store: RunStore, inputs: GenerationInputs): Generation => {
-  const { root, names, env, generator, definitions, files, findings } = inputs;
+  const { root, names, env, generator, definitions, files, removed = new Map(), findings } = inputs;
   const generatedFrom = definitions.map(({ name, text }) => ({ name, definition: text }));
   const generated =
     definitions.length === 0
@@ -214,7 +216,7 @@ export const generationOf = (store: RunStore, inputs: GenerationInputs): Generat
   }
   const outputs = projectOutputs(generated.outputs);
   if (!(outputs instanceof Map)) return stoppedBy([outputs], findings);
-  const plan = planned(root, new Map([...outputs, ...files]), previousFiles(store, names));
+  const plan = planned(root, new Map([...outputs, ...files]), new Map([...previousFiles(store, names), ...removed]));
   if (!('operations' in plan)) return stoppedBy([plan], findings);
   return { plan, generatorRefusals: [], generatedFrom, run: null, refusals: [], findings };
 };
@@ -266,7 +268,7 @@ export const appliedAs = (
   store: RunStore,
   root: string,
   generation: Generation,
-  { action, subject }: { action: 'workflow.generate' | 'workflow.new'; subject: string | null },
+  { action, subject }: { action: 'workflow.generate' | 'workflow.new' | 'workflow.edit'; subject: string | null },
 ): Generation => {
   const { plan, generatedFrom } = generation;
   if (plan === null || plan.operations.length === 0) return generation;

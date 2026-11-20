@@ -38,6 +38,7 @@
     "cli.missing-argument": [["command"], " needs ", ["argument"], "."],
     "cli.unknown-command": ["Unknown command: ", ["command"], ". Run ", ["bin"], " --help for usage."],
     "cli.unknown-flag": [["command"], " has no option ", ["flag"], "."],
+    "cli.value-not-json": [["argument"], " must be JSON; write a text value in quotes, for example '\"opus\"'."],
     "definition.invalid": [
       "The workflow definition ",
       ["path"],
@@ -67,6 +68,7 @@
       ["paths"],
       ". Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete any other file of a definition that no longer exists yourself."
     ],
+    "edit.target-invalid": [["pointer"], " is not a place where ", ["operation"], " can apply in this definition."],
     "generate.delete-skipped": [
       ["path"],
       " is no longer generated, but it changed since it was written, so CedarLoom kept it. Delete it yourself if it is not needed."

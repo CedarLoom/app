@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Edit } from '@cedarloom/core';
 import {
   chmodSync,
   existsSync,
@@ -14,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 import { apply } from './apply.ts';
+import { editWorkflow } from './edit-workflow.ts';
 import { type GenerateRequest, generateWorkflows, planGeneration } from './generate.ts';
 import { newWorkflow } from './new-workflow.ts';
 import { openStore } from './store.ts';
@@ -32,7 +34,7 @@ const put = (path: string, text: string): void => {
 };
 
 // A stub generator with hardcoded outputs: each definition's "skill" as its SKILL.md, a fixed script while "script" is
-// set, and each path of "extra" with fixed text.
+// set, and each path of "extra" with fixed text; a definition with "refuse" is refused at that field.
 const STUB = `import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 const argv = process.argv.slice(2);
@@ -41,13 +43,16 @@ const emit = (path, text) => {
   mkdirSync(dirname(join(into, path)), { recursive: true });
   writeFileSync(join(into, path), text);
 };
+const refusals = [];
 for (const definition of argv.slice(0, argv.indexOf('--json'))) {
-  const { name, skill, script, extra = [] } = JSON.parse(readFileSync(definition, 'utf8'));
+  const { name, skill, script, extra = [], refuse } = JSON.parse(readFileSync(definition, 'utf8'));
+  if (refuse) refusals.push({ file: definition, field: refuse, rule: 'refused' });
   emit('skills/' + name + '/SKILL.md', skill);
   if (script) emit('workflows/' + name + '.js', 'export default "stub";\\n');
   for (const path of extra) emit(path, 'extra\\n');
 }
-process.stdout.write('[]');
+process.stdout.write(JSON.stringify(refusals));
+process.exitCode = refusals.length > 0 ? 1 : 0;
 `;
 
 const SKILL = '.claude/skills/dev/SKILL.md';
@@ -376,4 +381,112 @@ it("counts a new workflow's files as generated: generate keeps its definition an
   expect(generated().plan?.operations).toEqual([]);
   define({ name: 'mine', skill: 'Run.\n', script: false }, 'mine');
   expect(kinds(generated().plan)).toEqual([['delete', MINE_SCRIPT]]);
+});
+
+// The workflows new setup with mine created from full, and an edit of mine.
+const editSetup = () => {
+  const context = newSetup();
+  context.created('mine', 'full');
+  const edited = (edit: Edit) => editWorkflow(context.store, { ...context.request, name: 'mine', edit }, true);
+  return { ...context, edited };
+};
+
+it('workflows set writes the edited definition and its regenerated files as one workflow.edit run', () => {
+  const { store, edited, text } = editSetup();
+  const done = edited({ operation: 'set', pointer: '/skill', value: 'Go.\n' });
+  const after = '{\n  "schemaVersion": 2,\n  "name": "mine",\n  "skill": "Go.\\n",\n  "script": true\n}\n';
+  expect(kinds(done.plan)).toEqual([
+    ['replace', MINE],
+    ['replace', MINE_SKILL],
+  ]);
+  expect([done.refusals, text(MINE), text(MINE_SKILL)]).toEqual([[], after, 'Go.\n']);
+  expect(store.run(done.run ?? '')).toMatchObject({
+    action: 'workflow.edit',
+    subject: 'mine',
+    status: 'done',
+    generatedFrom: [{ name: 'mine', definition: after }],
+  });
+});
+
+it('workflows set /script false deletes the script the definition no longer has', () => {
+  const { project, edited } = editSetup();
+  expect(kinds(edited({ operation: 'set', pointer: '/script', value: false }).plan)).toEqual([
+    ['replace', MINE],
+    ['delete', MINE_SCRIPT],
+  ]);
+  expect(existsSync(join(project, MINE_SCRIPT))).toBe(false);
+});
+
+it('saves no edit the generator refuses and returns its refusals', () => {
+  const { edited, text } = editSetup();
+  expect(edited({ operation: 'set', pointer: '/refuse', value: 'stages[0].model' })).toMatchObject({
+    plan: null,
+    run: null,
+    refusals: [],
+    generatorRefusals: [{ file: MINE, field: 'stages[0].model', rule: 'refused' }],
+  });
+  expect(text(MINE)).toBe(COPY);
+});
+
+it('undo of an applied edit restores the definition and its generated files', () => {
+  const { project, store, edited, text } = editSetup();
+  const done = edited({ operation: 'set', pointer: '/script', value: false });
+  expect(undo(store, { root: project, run: done.run ?? '' }).refusal).toBeNull();
+  expect([text(MINE), text(MINE_SKILL), text(MINE_SCRIPT)]).toEqual([COPY, 'Run.\n', STUB_SCRIPT]);
+});
+
+it('workflows set /name moves the definition and deletes the old outputs, as one plan', () => {
+  const { project, edited, text } = editSetup();
+  const done = edited({ operation: 'set', pointer: '/name', value: 'other' });
+  expect(kinds(done.plan)).toEqual([
+    ['delete', MINE],
+    ['create', '.cedarloom/workflows/other.json'],
+    ['delete', MINE_SKILL],
+    ['create', '.claude/skills/other/SKILL.md'],
+    ['delete', MINE_SCRIPT],
+    ['create', '.claude/workflows/other.js'],
+  ]);
+  expect([existsSync(join(project, MINE)), text('.cedarloom/workflows/other.json')]).toEqual([
+    false,
+    '{\n  "schemaVersion": 2,\n  "name": "other",\n  "skill": "Run.\\n",\n  "script": true\n}\n',
+  ]);
+});
+
+it("counts an edit's files as generated, so a later edit deletes a file the earlier one added", () => {
+  const { project, edited } = editSetup();
+  const notes = '.claude/skills/mine/notes.md';
+  edited({ operation: 'set', pointer: '/extra', value: ['skills/mine/notes.md'] });
+  expect(existsSync(join(project, notes))).toBe(true);
+  expect(kinds(edited({ operation: 'unset', pointer: '/extra' }).plan)).toEqual([
+    ['replace', MINE],
+    ['delete', notes],
+  ]);
+});
+
+it.each<[Edit, object]>([
+  [
+    { operation: 'set', pointer: '/name', value: 'dev' },
+    { code: 'workflow.name-taken', params: { name: 'dev', path: '.cedarloom/workflows/dev.json' } },
+  ],
+  [
+    { operation: 'set', pointer: '/name', value: '../x' },
+    { code: 'workflow.name-invalid', params: { name: '../x' } },
+  ],
+  [
+    { operation: 'remove', pointer: '/stages/0' },
+    { code: 'edit.target-invalid', params: { pointer: '/stages/0', operation: 'remove' } },
+  ],
+])('refuses the edit %o with a typed refusal and writes nothing', (edit, refusal) => {
+  const { edited, text } = editSetup();
+  expect(edited(edit)).toMatchObject({ plan: null, run: null, refusals: [refusal] });
+  expect(text(MINE)).toBe(COPY);
+});
+
+it('refuses an edit of a definition only the plugin ships with definition.not-found', () => {
+  const { store, request } = newSetup();
+  const edit: Edit = { operation: 'set', pointer: '/skill', value: 'Go.\n' };
+  expect(editWorkflow(store, { ...request, name: 'full', edit }, true)).toMatchObject({
+    plan: null,
+    refusals: [{ code: 'definition.not-found', params: { name: 'full', source: 'project' } }],
+  });
 });

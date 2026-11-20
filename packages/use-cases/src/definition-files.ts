@@ -1,7 +1,8 @@
 import { readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import type { Refusal } from '@cedarloom/core';
+import { JsonValue, type Refusal } from '@cedarloom/core';
 import { z } from 'zod';
+import { jsonOf } from './generator-run.ts';
 import { nestsBeyond } from './json-nesting.ts';
 import { isUnreachable, reached } from './plugin-folder.ts';
 import { errorCode, readFound } from './project-files.ts';
@@ -60,4 +61,12 @@ export const definitionBytes = (base: string, path: string): Buffer | 'absent' |
   if (found === 'absent') return 'absent';
   if (typeof found !== 'object' || found.bytes.length > SIZE_LIMIT) return 'unreadable';
   return nestsBeyond(found.bytes, NESTING_LIMIT) ? 'unreadable' : found.bytes;
+};
+
+/** JSON text as a value, as the definition readers would read it back; undefined for text they refuse. */
+export const jsonWithin = (text: string): JsonValue | undefined => {
+  const bytes = Buffer.from(text);
+  if (bytes.length > SIZE_LIMIT || nestsBeyond(bytes, NESTING_LIMIT)) return undefined;
+  const parsed = JsonValue.safeParse(jsonOf(text));
+  return parsed.success ? parsed.data : undefined;
 };

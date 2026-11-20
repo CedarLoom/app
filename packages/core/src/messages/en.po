@@ -188,6 +188,10 @@ msgid "workflow.name-taken"
 msgstr "The name {name} is already used by {path}."
 
 #. js-lingui-explicit-id
+msgid "edit.target-invalid"
+msgstr "{pointer} is not a place where {operation} can apply in this definition."
+
+#. js-lingui-explicit-id
 msgid "session.host"
 msgstr "This server answers only at 127.0.0.1."
 
@@ -262,3 +266,7 @@ msgstr "This plan was not applied. Run the command again with --yes to apply it.
 #. js-lingui-explicit-id
 msgid "cli.internal"
 msgstr "CedarLoom stopped on an unexpected error. Please report it with the output above."
+
+#. js-lingui-explicit-id
+msgid "cli.value-not-json"
+msgstr "{argument} must be JSON; write a text value in quotes, for example '\"opus\"'."

@@ -1,5 +1,7 @@
 export { type Applied, type ApplyRequest, apply, type Boundary, StepFailed } from './apply.ts';
+export { jsonWithin } from './definition-files.ts';
 export { type DoctorRequest, doctor } from './doctor.ts';
+export { type EditRequest, editWorkflow } from './edit-workflow.ts';
 export { type GenerateRequest, type Generation, generateWorkflows, planGeneration } from './generate.ts';
 export { newWorkflow } from './new-workflow.ts';
 export { projectRoot } from './project-root.ts';
