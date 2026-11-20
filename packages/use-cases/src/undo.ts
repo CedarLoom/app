@@ -13,8 +13,7 @@ import { type Applied, type ApplyRequest, type At, apply, fileKey, refusal, wayR
 import { entryAt, errorCode, type FileFound, fileAt, hashAt, removeEmptyFolder, sha256 } from './project-files.ts';
 import { type Operation, recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
-import { blockOnWay, isDenied } from './write-roots.ts';
-import { inWriteRoots, linkOnWay } from './write-roots.ts';
+import { blockOnWay, inWriteRoots, isDenied, linkOnWay } from './write-roots.ts';
 
 export interface UndoRequest {
   /** The project root, absolute; the run's paths are relative to it. */
@@ -37,7 +36,7 @@ export type Undone = Applied & { plan: PlanPreview | null };
 
 const hashOf = (text: string | null): string | null => (text === null ? null : sha256(Buffer.from(text)));
 
-// A file the undo plan reads that the app may not read, and the folder or file that denies it, as project-relative paths.
+// A file the undo plan reads that the app may not read, and the folder or file that denies it.
 class Denied extends Error {
   readonly path: string;
   readonly denied: string;

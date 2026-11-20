@@ -123,9 +123,7 @@
       ["path"],
       ", so it leaves ",
       ["path"],
-      " as it is. Check the permissions of ",
-      ["denied"],
-      ", then try again."
+      " as it is. Check those permissions, then try again."
     ],
     "plan.name-not-portable": [
       ["path"],

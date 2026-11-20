@@ -14,7 +14,7 @@ const WORKFLOWS = '.claude/workflows';
 const HEAD = 1024 * 1024;
 
 // A project file's first limit bytes; undefined for anything but a regular file reached without a link, as a write
-// would refuse it, and the project-relative folder or file that denied the read where the app may not read it.
+// would refuse it.
 const bytesAt = (project: string, path: string, limit: number): Buffer | { denied: string } | undefined => {
   const block = blockOnWay(project, path);
   if (block !== undefined) return block.found === 'denied' ? { denied: block.at } : undefined;

@@ -80,8 +80,7 @@ export const refusal = (code: Refusal['code'], path: string): Refusal => ({ code
 
 const denied = (path: string, at: string): Refusal => ({ code: 'plan.folder-denied', params: { path, denied: at } });
 
-// A link, a folder on the way that the app may not enter, which hides whether a link is below it, or a file on the way;
-// Windows reads a path below a file as absent, not as ENOTDIR.
+// Windows reads a path below a file as absent, not as ENOTDIR, so a file on the way is refused here.
 export const wayRefusal = (root: string, path: string): Refusal | undefined => {
   const block = blockOnWay(root, path);
   if (block === undefined) return undefined;
@@ -147,8 +146,7 @@ const orDenied = <T>(path: string, at: string, act: () => T): T | Refusal => {
   }
 };
 
-// A later operation on a path starts from what the one before it leaves, at the file the chain began with; a spelling
-// the volume reads as another file clashes with it.
+// A later operation on a path starts from what the one before it leaves, at the file the chain began with.
 const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined => {
   const same = sameFile(root, first, op.path);
   if (same === false) return { code: 'plan.spelling-clash', params: { path: op.path, other: first } };
@@ -156,8 +154,7 @@ const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): 
   return op.beforeHash === left ? undefined : refusal('plan.file-changed', op.path);
 };
 
-// One key for the spellings a volume may read as one file: NFC, then lower, upper and lower case, which folds ẞ and ß
-// to ss and ﬁ to fi as full case folding does. The spelling probe decides whether a key's spellings chain or clash.
+// Over-approximates the volume's folds (ẞ, ß and ss share a key); the spelling probe decides chain or clash.
 export const fileKey = (path: string): string =>
   path.normalize('NFC').toLowerCase().toUpperCase().toLowerCase().normalize('NFC');
 
@@ -205,18 +202,25 @@ const folderKeys = (path: string): string[] => {
 const planProblem = (root: string, op: PlanOperation, position: number, nested: boolean): Refusal | undefined =>
   nameProblem(root, op.path, position) ?? (nested ? refusal('plan.path-nested', op.path) : textProblem(op));
 
+// A file already on disk keeps its name: undo and generate must still replace or delete it.
+const whereProblem = (op: PlanOperation): Refusal | undefined => {
+  if (!inWriteRoots(op.path)) return refusal('plan.path-outside-roots', op.path);
+  return op.beforeHash === null && !isPortable(op.path) ? refusal('plan.name-not-portable', op.path) : undefined;
+};
+
 // Every operation is checked before the first write, each against what the ones before it leave: one problem writes none.
 export const precheck = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
   const chains = new Map<string, Chain>();
   const folders = new Set<string>();
   for (const [position, op] of operations.entries()) {
-    if (!inWriteRoots(op.path)) return refusal('plan.path-outside-roots', op.path);
-    if (!isPortable(op.path)) return refusal('plan.name-not-portable', op.path);
+    const outside = whereProblem(op);
+    if (outside !== undefined) return outside;
     const key = fileKey(op.path);
     const above = folderKeys(op.path);
     const nested = folders.has(key) || above.some((folder) => chains.has(folder));
     const chain = chains.get(key);
-    const problem = planProblem(root, op, position, nested) ?? fileProblem(root, op, chain);
+    const problem =
+      planProblem(root, op, position, nested) ?? orDenied(op.path, op.path, () => fileProblem(root, op, chain));
     if (problem !== undefined) return problem;
     chains.set(key, { first: chain?.first ?? op.path, left: op.afterHash });
     for (const folder of above) folders.add(folder);
@@ -247,7 +251,7 @@ const linksAt = (root: string, op: PlanOperation, probed: Set<bigint>): Refusal 
 const linksProblem = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
   const probed = new Set<bigint>();
   for (const op of operations) {
-    const problem = linksAt(root, op, probed);
+    const problem = orDenied(op.path, op.path, () => linksAt(root, op, probed));
     if (problem !== undefined) return problem;
   }
   return undefined;

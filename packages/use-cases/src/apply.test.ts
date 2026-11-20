@@ -213,6 +213,17 @@ describe('apply checks the plan paths', () => {
     expect([listing(root), runs(state)]).toEqual([[], []]);
   });
 
+  // Windows refuses to create the file the test starts from.
+  it.skipIf(process.platform === 'win32')('deletes a file whose name Windows does not allow', () => {
+    const { root, state } = project({ '.claude/a?b.md': 'a\n' });
+    expect(apply(store(state), request(root, [remove('.claude/a?b.md', 'a\n')]))).toEqual({
+      run: 'r1',
+      refusal: null,
+      findings: [],
+    });
+    expect(listing(root)).toEqual([]);
+  });
+
   it('refuses a plan path through a file before any write', () => {
     const { root, state } = project({ '.claude/a.md': 'a\n' });
     const plan = [create('.claude/b.md', 'b\n'), create('.claude/a.md/c.md', 'c\n')];

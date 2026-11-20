@@ -53,7 +53,7 @@ msgstr "A folder on the way to {path} is a file, so CedarLoom cannot write {path
 
 #. js-lingui-explicit-id
 msgid "plan.folder-denied"
-msgstr "The permissions of {denied} keep CedarLoom from reading or writing {path}, so it leaves {path} as it is. Check the permissions of {denied}, then try again."
+msgstr "The permissions of {denied} keep CedarLoom from reading or writing {path}, so it leaves {path} as it is. Check those permissions, then try again."
 
 #. js-lingui-explicit-id
 msgid "plan.name-not-portable"
