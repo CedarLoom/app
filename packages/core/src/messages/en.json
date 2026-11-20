@@ -104,6 +104,13 @@
       ["path"],
       " changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
     ],
+    "plan.folder-denied": [
+      "CedarLoom may not enter a folder on the way to ",
+      ["path"],
+      ", so it does not read or write ",
+      ["path"],
+      ". Check the permissions of the folders on the way, then try again."
+    ],
     "plan.name-too-long": [
       "The path of ",
       ["path"],

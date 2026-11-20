@@ -22,6 +22,7 @@ import {
   tempPath,
   writeNew,
 } from './project-files.ts';
+import { reached } from './plugin-folder.ts';
 import { recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
 import { inWriteRoots, linkOnWay } from './write-roots.ts';
@@ -75,9 +76,11 @@ class Dropped extends Changed {}
 
 export const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
 
+// A folder on the way that the app may not enter hides whether a link is below it.
 export const linkRefusal = (root: string, path: string): Refusal | undefined => {
-  const link = linkOnWay(root, path);
-  return link === undefined ? undefined : refusal('plan.symlink', link);
+  const link = reached(() => linkOnWay(root, path) ?? null);
+  if (link === undefined) return refusal('plan.folder-denied', path);
+  return link === null ? undefined : refusal('plan.symlink', link);
 };
 
 // The file a step replaces or deletes, when it is the text file the plan expects.

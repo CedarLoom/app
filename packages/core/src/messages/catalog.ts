@@ -35,6 +35,7 @@ export const MESSAGE_IDS = [
   'generator.output-unknown',
   'node.version-unsupported',
   'plan.file-changed',
+  'plan.folder-denied',
   'plan.name-too-long',
   'plan.not-text',
   'plan.path-nested',
@@ -108,6 +109,7 @@ export interface MessagePlaceholders {
   'generator.output-unknown': 'output';
   'node.version-unsupported': 'found' | 'required';
   'plan.file-changed': 'path';
+  'plan.folder-denied': 'path';
   'plan.name-too-long': 'path';
   'plan.not-text': 'path';
   'plan.path-nested': 'path';
