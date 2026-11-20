@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import {
   type Finding,
   type GeneratorRefusal,
-  JsonValue,
   type PlanOperation,
   type PlanPreview,
   planHash,
@@ -12,8 +11,8 @@ import {
   type Run,
 } from '@cedarloom/core';
 import { apply, fileKey, linkRefusal, precheck, refusal } from './apply.ts';
-import { definitionBytes, nameMismatch } from './definition-files.ts';
-import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
+import { definitionBytes, jsonWithin, nameMismatch } from './definition-files.ts';
+import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
 import { type Found, readFound, sha256 } from './project-files.ts';
 import { recover, unsettledBy } from './recover.ts';
@@ -75,9 +74,8 @@ export const definitionOf = (place: Place, { name, path }: { name: string; path:
   const shown = place.shown(path);
   if (bytes === 'unreadable' || !isUtf8(bytes)) return notJson(shown);
   const text = bytes.toString('utf8');
-  const json = jsonOf(text);
-  // JsonValue also refuses a __proto__ member, as the definition readers do.
-  if (!JsonValue.safeParse(json).success) return notJson(shown);
+  const json = jsonWithin(text);
+  if (json === undefined) return notJson(shown);
   return (place.source === 'project' ? nameMismatch(shown, json) : undefined) ?? { name, path, text };
 };
 

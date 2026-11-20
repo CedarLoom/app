@@ -1,5 +1,5 @@
 import { type Edit, edited, JsonValue, type Refusal } from '@cedarloom/core';
-import { jsonWithin, PROJECT_FOLDER } from './definition-files.ts';
+import { jsonWithin, Named, PROJECT_FOLDER } from './definition-files.ts';
 import { appliedAs, definitionOf, type Generation, generationOf, locatedAfter, start, stoppedBy } from './generate.ts';
 import { nameTaken } from './name-taken.ts';
 import { sha256 } from './project-files.ts';
@@ -15,13 +15,7 @@ export interface EditRequest extends WorkflowsRequest {
 }
 
 // The name the edited definition gives; one that is no text is the generator's to refuse, so the file keeps its name.
-const nameIn = (definition: JsonValue, name: string): string =>
-  typeof definition === 'object' &&
-  definition !== null &&
-  !Array.isArray(definition) &&
-  typeof definition['name'] === 'string'
-    ? definition['name']
-    : name;
+const nameIn = (definition: JsonValue, name: string): string => Named.safeParse(definition).data?.name ?? name;
 
 // A new name takes the checks of a new workflow's name.
 const renameRefusals = (request: EditRequest, next: string): Refusal[] => {

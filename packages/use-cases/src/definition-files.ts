@@ -63,7 +63,10 @@ export const definitionBytes = (base: string, path: string): Buffer | 'absent' |
   return nestsBeyond(found.bytes, NESTING_LIMIT) ? 'unreadable' : found.bytes;
 };
 
-/** JSON text as a value, as the definition readers would read it back; undefined for text they refuse. */
+/**
+ * JSON text as a value, as the definition readers read it; undefined for text they refuse. JsonValue also refuses a
+ * __proto__ member.
+ */
 export const jsonWithin = (text: string): JsonValue | undefined => {
   const bytes = Buffer.from(text);
   if (bytes.length > SIZE_LIMIT || nestsBeyond(bytes, NESTING_LIMIT)) return undefined;
