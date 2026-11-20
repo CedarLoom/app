@@ -506,6 +506,28 @@ it('keeps and reports the generated files of the old name that no recorded run w
   expect(text(notes)).toBe('<!-- mine: edit the definition, not this file. -->\n');
 });
 
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+  'reports a folder of the old name the app may not read on a rename',
+  () => {
+    const { project, store, request, define } = setup({ name: 'dev', skill: 'Run dev.\n' });
+    define({ name: 'mine', skill: 'Run.\n' }, 'mine');
+    const hidden = join(project, '.claude/skills/mine/sub');
+    mkdirSync(hidden, { recursive: true });
+    chmodSync(hidden, 0);
+    onTestFinished(() => chmodSync(hidden, 0o700));
+    const renamed = editWorkflow(
+      store,
+      { ...request, name: 'mine', edit: { operation: 'set', pointer: '/name', value: 'other' } },
+      false,
+    );
+    expect(renamed.findings).toContainEqual({
+      code: 'generated.folder-unreadable',
+      severity: 'warning',
+      params: { path: '.claude/skills/mine/sub' },
+    });
+  },
+);
+
 it("counts an edit's files as generated, so a later edit deletes a file the earlier one added", () => {
   const { project, edited } = editSetup();
   const notes = '.claude/skills/mine/notes.md';
