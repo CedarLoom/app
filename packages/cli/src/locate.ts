@@ -10,10 +10,14 @@ export const locate = (io: Io): { root: string; dir: string } | { refusal: Refus
   return { root, dir: storeDir({ ...io, projectRoot: root }) };
 };
 
-/** Runs work on the project's store, held for the call; refused when there is no project or the store cannot open. */
-export const withStore = (io: Io, work: (store: RunStore, root: string) => Outcome): Outcome => {
+/**
+ * Runs work on the project's store, held for the call; refused when there is no project, with `stop` once the project
+ * is found, or when the store cannot open.
+ */
+export const withStore = (io: Io, work: (store: RunStore, root: string) => Outcome, stop?: Refusal): Outcome => {
   const place = locate(io);
   if ('refusal' in place) return refused(place.refusal);
+  if (stop !== undefined) return refused(stop);
   const store = openStore(place.dir, io.clock);
   if (!store.ok) return refused(store.refusal);
   try {
