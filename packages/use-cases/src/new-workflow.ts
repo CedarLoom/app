@@ -1,4 +1,4 @@
-import { jsonWithin, PROJECT_FOLDER, SHIPPED_FOLDER } from './definition-files.ts';
+import { jsonWithin, overLimits, PROJECT_FOLDER, SHIPPED_FOLDER } from './definition-files.ts';
 import { appliedAs, definitionOf, type Generation, generationOf, locatedAfter, start, stoppedBy } from './generate.ts';
 import { nameTaken } from './name-taken.ts';
 import type { RunStore } from './store.ts';
@@ -38,7 +38,7 @@ const planNewWorkflow = (store: RunStore, request: NewRequest): Generation => {
   const path = `${PROJECT_FOLDER}/${name}.json`;
   const text = `${JSON.stringify({ ...definition, name }, null, 2)}\n`;
   // The copy must read back as the definition readers read it.
-  if (jsonWithin(text) === undefined) return stoppedBy([{ code: 'edit.result-over-limits', params: {} }], findings);
+  if (jsonWithin(text) === undefined) return stoppedBy([overLimits], findings);
   return generationOf(store, {
     root,
     names: [name],

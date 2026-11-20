@@ -15,7 +15,7 @@ const Settings = z.object({
 type Settings = z.infer<typeof Settings>;
 const isSettings = (json: unknown): json is Settings => Settings.safeParse(json).success;
 
-/** A done workflow.off or workflow.on run in effect, with the settings entries of its operations. */
+/** A switch run in effect, done or stopped, or an undo of one as the opposite action, with its settings entries. */
 export interface SwitchRecord {
   action: Action;
   entries: readonly SettingsEntry[];

@@ -488,6 +488,24 @@ it('workflows set /name moves the definition and deletes the old outputs, as one
   ]);
 });
 
+it('keeps and reports the generated files of the old name that no recorded run wrote on a rename', () => {
+  const { project, store, request, define, text } = setup({ name: 'dev', skill: 'Run dev.\n' });
+  define({ name: 'mine', skill: 'Run.\n' }, 'mine');
+  const notes = '.claude/skills/mine/notes.md';
+  put(join(project, notes), '<!-- mine: edit the definition, not this file. -->\n');
+  const renamed = editWorkflow(
+    store,
+    { ...request, name: 'mine', edit: { operation: 'set', pointer: '/name', value: 'other' } },
+    true,
+  );
+  expect(renamed.findings).toContainEqual({
+    code: 'edit.outputs-left',
+    severity: 'warning',
+    params: { name: 'mine', paths: [notes] },
+  });
+  expect(text(notes)).toBe('<!-- mine: edit the definition, not this file. -->\n');
+});
+
 it("counts an edit's files as generated, so a later edit deletes a file the earlier one added", () => {
   const { project, edited } = editSetup();
   const notes = '.claude/skills/mine/notes.md';
@@ -566,7 +584,7 @@ it.each<[string, JsonValue]>([
   expect(edited({ operation: 'set', pointer: '/deep', value })).toMatchObject({
     plan: null,
     run: null,
-    refusals: [{ code: 'edit.result-over-limits', params: {} }],
+    refusals: [{ code: 'edit.result-over-limits', params: { mebibytes: 16, levels: 100 } }],
   });
   expect(text(MINE)).toBe(COPY);
 });

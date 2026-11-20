@@ -13,7 +13,7 @@
     ],
     "apply.no-hard-links": [
       ["path"],
-      " is on a volume without hard links, such as exFAT, FAT or some network shares. CedarLoom needs them to replace a file, or put one back, without leaving it half written. Nothing was changed. Move the project to a volume with hard links, such as APFS, NTFS or ext4."
+      " is on a volume without hard links, such as exFAT, FAT or some network shares. CedarLoom needs them to replace a file, or put one back, without leaving it half written. Move the project to a volume with hard links, such as APFS, NTFS or ext4."
     ],
     "apply.recovered": [["path"], " was left from the interrupted run ", ["run"], " and was settled."],
     "apply.unsettled": [
@@ -76,8 +76,19 @@
       ["paths"],
       ". Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete yourself any other listed file the generator does not write."
     ],
+    "edit.outputs-left": [
+      "No CedarLoom run recorded the files generated for the old name ",
+      ["name"],
+      ", so the rename keeps them: ",
+      ["paths"],
+      ". Delete them yourself if they are not needed."
+    ],
     "edit.result-over-limits": [
-      "The edited definition would be larger than 16 MiB or nested deeper than 100 levels, more than CedarLoom reads. Nothing was changed."
+      "The edited definition would be larger than ",
+      ["mebibytes"],
+      " MiB or nested deeper than ",
+      ["levels"],
+      " levels, more than CedarLoom reads. Nothing was changed."
     ],
     "edit.target-invalid": [
       "The pointer \"",
@@ -114,7 +125,7 @@
     "node.version-unsupported": ["Node.js ", ["found"], " is running; CedarLoom needs Node.js ", ["required"], "."],
     "plan.file-changed": [
       ["path"],
-      " changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
+      " changed after CedarLoom read it, so CedarLoom did not overwrite it. Review the file, then run the command again."
     ],
     "plan.folder-denied": [
       "The permissions of ",
@@ -140,7 +151,7 @@
     ],
     "plan.path-nested": [
       ["path"],
-      " and another path of the plan use one name as both a file and a folder, so the plan cannot be applied. Nothing was changed."
+      " and another path of the plan use one name as both a file and a folder, so the plan cannot be applied."
     ],
     "plan.path-outside-roots": [
       ["path"],
@@ -151,7 +162,7 @@
       ["path"],
       " is a file, so CedarLoom cannot write ",
       ["path"],
-      ". Nothing was changed."
+      "."
     ],
     "plan.spelling-clash": [
       ["path"],
@@ -239,9 +250,6 @@
       ["error"],
       "."
     ],
-    "server.open-hint": [
-      "If the browser shows an error about a file instead of CedarLoom, open the URL printed above."
-    ],
     "server.port-in-use": [
       "Port ",
       ["port"],
@@ -274,7 +282,7 @@
     ],
     "settings.unreadable": [
       ["path"],
-      " cannot be read, is not a JSON object, has a duplicate key CedarLoom would change, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
+      " cannot be read, starts with a byte order mark, is not a JSON object, has a duplicate key CedarLoom would change, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
     ],
     "store.locked": [
       "The CedarLoom state store ",
@@ -313,7 +321,7 @@
     ],
     "workflow.name-invalid": [
       ["name"],
-      " is not a valid workflow name. Use lowercase letters, digits and single hyphens."
+      " is not a valid workflow name. Use at most 166 lowercase letters, digits and single hyphens, and no name Windows keeps for a device, such as con, nul, com1 or lpt1."
     ],
     "workflow.name-taken": ["The name ", ["name"], " is already used by ", ["path"], "."],
     "workflow.no-script": [["name"], " has no workflow script to switch off."]
