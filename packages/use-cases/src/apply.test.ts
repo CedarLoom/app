@@ -24,13 +24,26 @@ import { type UndoRequest, undo } from './undo.ts';
 
 // link() refused as on a filesystem without hard links, such as exFAT, while `refuseLinks.on`.
 const refuseLinks = vi.hoisted(() => ({ on: false }));
+// Another process writes `racing.path` right before a rename or a new link puts something there.
+const racing = vi.hoisted(() => ({ path: '' }));
 vi.mock('node:fs', async (load) => {
   const fs = await load<typeof import('node:fs')>();
+  const raceAt = (to: unknown): void => {
+    if (to === racing.path) fs.writeFileSync(racing.path, 'theirs\n');
+  };
   const linkSync: typeof fs.linkSync = (from, to) => {
     if (refuseLinks.on) throw Object.assign(new Error('EPERM: operation not permitted, link'), { code: 'EPERM' });
     fs.linkSync(from, to);
   };
-  return { ...fs, linkSync };
+  const renamed: typeof fs.renameSync = (from, to) => {
+    raceAt(to);
+    fs.renameSync(from, to);
+  };
+  const linked: typeof fs.symlinkSync = (target, path, type) => {
+    raceAt(path);
+    fs.symlinkSync(target, path, type);
+  };
+  return { ...fs, linkSync, renameSync: renamed, symlinkSync: linked };
 });
 
 const folders: string[] = [];
@@ -215,8 +228,8 @@ describe('apply checks the plan paths', () => {
   // Past PATH_MAX of every platform, each name within 255 bytes.
   const deep = `.claude/${Array.from({ length: 22 }, () => 'n'.repeat(200)).join('/')}/a.md`;
   it.each([
-    ['plan.file-changed', [create('.claude/a', 'a\n'), create('.claude/a/b', 'b\n')], '.claude/a/b'],
-    ['plan.file-changed', [create('.claude/a/b', 'b\n'), create('.claude/a', 'a\n')], '.claude/a'],
+    ['plan.path-nested', [create('.claude/a', 'a\n'), create('.claude/a/b', 'b\n')], '.claude/a/b'],
+    ['plan.path-nested', [create('.claude/a/b', 'b\n'), create('.claude/a', 'a\n')], '.claude/a'],
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(long, 'x\n')], long],
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(longFolder, 'x\n')], longFolder],
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(decomposed, 'x\n')], decomposed],
@@ -303,6 +316,11 @@ const nextApplyRuns = (held: RunStore, root: string, state: string): void => {
   expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['pending'] });
 };
 
+// Past the check of the volume, as when the project moved to another one during the run.
+const linksGone = (boundary: Boundary): void => {
+  if (boundary === 'temp-written') refuseLinks.on = true;
+};
+
 const failAtSetAside = (boundary: Boundary): void => {
   if (boundary === 'set-aside') throw new Error('disk gone');
 };
@@ -379,9 +397,8 @@ describe('apply after a step throws', () => {
   it('puts the old file back where the filesystem refuses hard links, and the next apply runs', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     const held = store(state);
-    refuseLinks.on = true;
     try {
-      expect(() => apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toThrow('EPERM');
+      expect(() => apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), linksGone)).toThrow('EPERM');
     } finally {
       refuseLinks.on = false;
     }
@@ -411,6 +428,44 @@ describe('apply after a step throws', () => {
         findings: [{ code: 'recovery.skipped', severity: 'warning', params: { run: 'r1', path: '.claude/c.md' } }],
         cause: new Error('disk gone'),
       });
+    },
+  );
+});
+
+describe('apply on a volume without hard links, and a link put back', () => {
+  it('refuses a volume without hard links before any write, and leaves no probe', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    refuseLinks.on = true;
+    try {
+      expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toEqual(
+        refusedAt('apply.no-hard-links', '.claude/b.md'),
+      );
+    } finally {
+      refuseLinks.on = false;
+    }
+    expect([listing(root), text(join(root, '.claude/b.md')), runs(state)]).toEqual([['b.md'], 'old\n', []]);
+  });
+
+  // Windows makes a file link only with a privilege.
+  it.skipIf(process.platform === 'win32')(
+    'keeps a file another process writes while a link swapped in during the step goes back',
+    () => {
+      const { root, state } = project({ '.claude/b.md': 'old\n' });
+      const path = join(root, '.claude/b.md');
+      const swap = (boundary: Boundary): void => {
+        if (boundary !== 'temp-written') return;
+        rmSync(path);
+        symlinkSync('elsewhere.md', path);
+        racing.path = path;
+      };
+      try {
+        expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), swap)).toEqual(
+          refusedAt('plan.file-changed', '.claude/b.md', 'r1'),
+        );
+      } finally {
+        racing.path = '';
+      }
+      expect(text(path)).toBe('theirs\n');
     },
   );
 });

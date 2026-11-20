@@ -44,6 +44,14 @@ msgid "plan.name-too-long"
 msgstr "The path of {path} leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use shorter names, or a project folder with a shorter path."
 
 #. js-lingui-explicit-id
+msgid "plan.path-nested"
+msgstr "{path} and another path of the plan use one name as both a file and a folder, so the plan cannot be applied. Nothing was changed."
+
+#. js-lingui-explicit-id
+msgid "apply.no-hard-links"
+msgstr "{path} is on a volume without hard links, such as exFAT, FAT or some network shares. CedarLoom needs them to replace a file without leaving it half written. Nothing was changed. Move the project to a volume with hard links, such as APFS, NTFS or ext4."
+
+#. js-lingui-explicit-id
 msgid "apply.backup-failed"
 msgstr "The backup of {path} failed, so run {run} stopped and the file was not changed."
 
