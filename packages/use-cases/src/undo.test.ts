@@ -107,10 +107,10 @@ describe('undo', () => {
   });
 
   it.each([
-    ['undo.backup-missing', (backup: string) => rmSync(backup)],
-    ['undo.backup-changed', (backup: string) => writeFileSync(backup, 'other\n')],
-    ['plan.not-text', (backup: string) => truncateSync(backup, 2 ** 31)],
-  ] as const)('undo refuses with %s when the backup is missing, changed or larger than undo reads', (code, spoil) => {
+    ['undo.backup-missing', 'is missing', (backup: string) => rmSync(backup)],
+    ['undo.backup-changed', 'changed', (backup: string) => writeFileSync(backup, 'other\n')],
+    ['undo.backup-changed', 'grew past 16 MiB', (backup: string) => truncateSync(backup, 16 * 1024 * 1024 + 1)],
+  ] as const)('undo refuses with %s when the backup %s', (code, _, spoil) => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     const held = store(state, 'r1', 'u1');
     apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));

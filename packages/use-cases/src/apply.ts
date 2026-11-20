@@ -155,7 +155,7 @@ const fileProblem = (root: string, op: PlanOperation, chain: Chain | undefined):
   fileOnWay(root, op.path) ??
   (chain === undefined ? diskProblem(root, op) : chainProblem(root, op, chain));
 
-// A text the step writes that its hash does not name, or that a later plan or undo would not read, fails after the write.
+// A text its hash does not name, or one apply would write but a later plan or undo would not read, is refused first.
 const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined => {
   if (after === null) return undefined;
   const bytes = Buffer.from(after);

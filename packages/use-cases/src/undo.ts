@@ -10,7 +10,7 @@ import {
   type Run,
 } from '@cedarloom/core';
 import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
-import { entryAt, errorCode, type FileFound, fileAt, removeEmptyFolder, sha256 } from './project-files.ts';
+import { entryAt, errorCode, type FileFound, fileAt, hashAt, removeEmptyFolder, sha256 } from './project-files.ts';
 import { type Operation, recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
 import { inWriteRoots, linkOnWay } from './write-roots.ts';
@@ -91,9 +91,13 @@ interface Walk {
 // The text the step found, from the backup it made; a create found nothing.
 const textBefore = ({ store, run }: Walk, position: number, step: Operation): string | null | Refusal => {
   if (step.beforeHash === null) return null;
-  const found = fileAt(store.backupPath(run, position));
+  const backup = store.backupPath(run, position);
+  const found = fileAt(backup);
   if (found === 'absent') return refusal('undo.backup-missing', step.path);
-  if (found === 'too-large') return refusal('plan.not-text', step.path);
+  // Only a run recorded before the size limit holds a backup this large as the step found it.
+  if (found === 'too-large') {
+    return refusal(hashAt(backup) === step.beforeHash ? 'plan.not-text' : 'undo.backup-changed', step.path);
+  }
   if (typeof found !== 'object' || sha256(found.bytes) !== step.beforeHash) {
     return refusal('undo.backup-changed', step.path);
   }

@@ -183,7 +183,7 @@ describe('apply checks the whole plan first', () => {
 });
 
 describe('apply writes only a text it reads back whole', () => {
-  it('refuses a new text larger than 16 MiB, which the check after the write would not read', () => {
+  it('refuses a new text larger than 16 MiB, which apply would write but a later plan or undo would not read', () => {
     const { root, state } = project();
     const plan = [create('.claude/a.md', 'a'.repeat(16 * 1024 * 1024 + 1))];
     expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.not-text', '.claude/a.md'));
