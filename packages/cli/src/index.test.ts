@@ -703,12 +703,12 @@ it('lists a definition nested too deep with the error finding definition.not-jso
   });
 });
 
-it('answers with workflows show a name too long for a file with definition.not-found, exit 3', () => {
+it('answers with workflows show a name too long for its files with workflow.name-invalid, exit 3', () => {
   const { workflows } = workflowsSetup({});
-  const name = 'a'.repeat(300);
+  const name = 'a'.repeat(167);
   expect(workflows('show', name)).toMatchObject({
     code: 3,
-    document: { refusals: [{ code: 'definition.not-found', params: { name, source: 'project' } }] },
+    document: { refusals: [{ code: 'workflow.name-invalid', params: { name } }] },
   });
 });
 
