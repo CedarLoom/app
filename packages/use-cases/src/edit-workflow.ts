@@ -31,12 +31,15 @@ const withOutputsLeft = (root: string, name: string, generation: Generation): Ge
   if (plan === null || generatedFrom.every((each) => each.name === name)) return generation;
   const handled = [...plan.operations.map(({ path }) => path), ...plan.skipped.map(({ params }) => params['path'])];
   const keys = new Set(handled.filter((path) => typeof path === 'string').map(fileKey));
-  const paths = [...generatedFiles(root).files.keys()].filter(
-    (path) => isOwnPath(path, name) && !keys.has(fileKey(path)),
+  const { files, unreadable } = generatedFiles(root);
+  const paths = [...files.keys()].filter((path) => isOwnPath(path, name) && !keys.has(fileKey(path))).toSorted();
+  // A folder or file of the old name the app may not read can hide more of them.
+  const hidden = unreadable.filter(
+    ({ params: { path } }) => typeof path === 'string' && [path, `${path}/`].some((each) => isOwnPath(each, name)),
   );
-  if (paths.length === 0) return generation;
-  const left: Finding = { code: 'edit.outputs-left', severity: 'warning', params: { name, paths } };
-  return { ...generation, findings: [...generation.findings, left] };
+  const left: Finding[] =
+    paths.length === 0 ? [] : [{ code: 'edit.outputs-left', severity: 'warning', params: { name, paths } }];
+  return { ...generation, findings: [...generation.findings, ...left, ...hidden] };
 };
 
 /**
