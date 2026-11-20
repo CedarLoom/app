@@ -156,9 +156,10 @@ const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): 
   return op.beforeHash === left ? undefined : refusal('plan.file-changed', op.path);
 };
 
-// One key for the spellings a volume may read as one file: NFC, then upper and lower case, which folds ß to ss and ﬁ
-// to fi as full case folding does. The spelling probe decides whether a key's spellings chain or clash.
-export const fileKey = (path: string): string => path.normalize('NFC').toUpperCase().toLowerCase().normalize('NFC');
+// One key for the spellings a volume may read as one file: NFC, then lower, upper and lower case, which folds ẞ and ß
+// to ss and ﬁ to fi as full case folding does. The spelling probe decides whether a key's spellings chain or clash.
+export const fileKey = (path: string): string =>
+  path.normalize('NFC').toLowerCase().toUpperCase().toLowerCase().normalize('NFC');
 
 // What the disk shows wrong with an operation, as the operations before it on the same file leave it.
 const fileProblem = (root: string, op: PlanOperation, chain: Chain | undefined): Refusal | undefined =>

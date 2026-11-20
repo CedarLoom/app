@@ -221,18 +221,20 @@ describe('apply checks the plan paths', () => {
   });
 });
 
-// Whether a fresh folder of the volume reads ss.md and ß.md as one file, as APFS does.
-const foldsSharpS = (): boolean => {
+// Whether a fresh folder of the volume reads two names as one file, as APFS does with ss.md, ß.md and ẞ.md.
+const readsAsOne = (name: string, other: string) => (): boolean => {
   const folder = fresh();
-  writeFileSync(join(folder, 'ss.md'), '');
-  return existsSync(join(folder, 'ß.md'));
+  writeFileSync(join(folder, name), '');
+  return existsSync(join(folder, other));
 };
+const foldsSharpS = readsAsOne('ss.md', 'ß.md');
 
 describe('apply refuses two spellings of one path on every volume', () => {
   it.each([
     ['.claude/Foo.md', '.claude/foo.md', foldsCase],
     ['.claude/A/b.md', '.claude/a/b.md', foldsCase],
     ['.claude/ss.md', '.claude/ß.md', foldsSharpS],
+    ['.claude/ẞ.md', '.claude/ß.md', readsAsOne('ẞ.md', 'ß.md')],
   ] as const)(
     'refuses %s beside %s, before any write: as changed on a volume that reads them as one file, else as a clash',
     (first, second, folds) => {
