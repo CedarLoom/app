@@ -193,9 +193,29 @@
     "session.host": ["This server answers only at 127.0.0.1."],
     "session.origin": ["Requests from other sites are refused."],
     "session.token": ["This link was already used or has expired. Run cedarloom-app again for a new one."],
+    "settings.owner-entry": [
+      [
+        "kept",
+        "select",
+        {
+          "false": [
+            ["key"],
+            " in ",
+            ["path"],
+            " was set outside CedarLoom, and this plan changes it from true to false. Undo the run to set it back."
+          ],
+          "other": [
+            ["key"],
+            " in ",
+            ["path"],
+            " was set, changed or removed outside CedarLoom, so CedarLoom did not touch it. Change it yourself if needed."
+          ]
+        }
+      ]
+    ],
     "settings.unreadable": [
       ["path"],
-      " cannot be read, is not a JSON object, or its enabledPlugins is not an object, so CedarLoom will not use or change it. Fix the file first."
+      " cannot be read, is not a JSON object, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
     ],
     "store.locked": [
       "The CedarLoom state store ",
@@ -236,6 +256,7 @@
       ["name"],
       " is not a valid workflow name. Use lowercase letters, digits and single hyphens."
     ],
-    "workflow.name-taken": ["The name ", ["name"], " is already used by ", ["path"], "."]
+    "workflow.name-taken": ["The name ", ["name"], " is already used by ", ["path"], "."],
+    "workflow.no-script": [["name"], " has no workflow script to switch off."]
   }
 }

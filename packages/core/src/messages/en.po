@@ -145,7 +145,15 @@ msgstr "{path, select, null {No settings file enables cl-workflow@cedarloom} oth
 
 #. js-lingui-explicit-id
 msgid "settings.unreadable"
-msgstr "{path} cannot be read, is not a JSON object, or its enabledPlugins is not an object, so CedarLoom will not use or change it. Fix the file first."
+msgstr "{path} cannot be read, is not a JSON object, or its enabledPlugins, permissions or permissions.deny has the wrong type, so CedarLoom will not use or change it. Fix the file first."
+
+#. js-lingui-explicit-id
+msgid "settings.owner-entry"
+msgstr "{kept, select, false {{key} in {path} was set outside CedarLoom, and this plan changes it from true to false. Undo the run to set it back.} other {{key} in {path} was set, changed or removed outside CedarLoom, so CedarLoom did not touch it. Change it yourself if needed.}}"
+
+#. js-lingui-explicit-id
+msgid "workflow.no-script"
+msgstr "{name} has no workflow script to switch off."
 
 #. js-lingui-explicit-id
 msgid "definition.invalid"

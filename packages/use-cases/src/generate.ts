@@ -2,6 +2,7 @@ import { isUtf8 } from 'node:buffer';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  type Action,
   type Finding,
   type GeneratorRefusal,
   JsonValue,
@@ -10,6 +11,7 @@ import {
   planHash,
   type Refusal,
   type Run,
+  type SettingsEntry,
 } from '@cedarloom/core';
 import { apply, fileKey, linkRefusal, precheck, refusal } from './apply.ts';
 import { definitionBytes, nameMismatch } from './definition-files.ts';
@@ -109,12 +111,12 @@ const previousFiles = (store: RunStore, names: readonly string[]): Map<string, s
 
 // The project's file at a planned path; a path outside the write roots, through a link or that the app may not read
 // is refused.
-const foundAt = (root: string, path: string): Found | Refusal => {
+export const foundAt = (root: string, path: string): Found | Refusal => {
   if (!inWriteRoots(path)) return refusal('plan.path-outside-roots', path);
   return linkRefusal(root, path) ?? reached(() => readFound(join(root, path))) ?? refusal('plan.not-text', path);
 };
 
-const isRefusal = (value: Found | Refusal): value is Refusal => typeof value === 'object' && 'code' in value;
+export const isRefusal = (value: Found | Refusal): value is Refusal => typeof value === 'object' && 'code' in value;
 
 // The write that makes the project's file the output; none when it already is, up to line ends.
 const write = (root: string, path: string, output: Buffer): PlanOperation | Refusal | undefined => {
@@ -261,17 +263,21 @@ export const planGeneration = (store: RunStore, request: GenerateRequest): Gener
   });
 };
 
-/** Applies a generation's plan as a run, crash-ordered; a generation with nothing to apply is returned as it is. */
+/**
+ * Applies a generation's plan as a run, crash-ordered, with the settings entries of its first operation; a generation
+ * with nothing to apply is returned as it is.
+ */
 export const appliedAs = (
   store: RunStore,
   root: string,
   generation: Generation,
-  { action, subject }: { action: 'workflow.generate' | 'workflow.new'; subject: string | null },
+  { action, subject, entries }: { action: Exclude<Action, 'undo'>; subject: string | null; entries?: SettingsEntry[] },
 ): Generation => {
   const { plan, generatedFrom } = generation;
   if (plan === null || plan.operations.length === 0) return generation;
   const run = { kind: 'apply', action, subject, undoes: null, generatedFrom } as const;
-  const applied = apply(store, { root, plan, run, earlier: generation.findings });
+  const settings = new Map(entries === undefined ? [] : [[0, entries]]);
+  const applied = apply(store, { root, plan, run, earlier: generation.findings, entries: settings });
   return {
     ...generation,
     run: applied.run,

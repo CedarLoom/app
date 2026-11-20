@@ -5,6 +5,7 @@ export { type CompiledMessage, messageText, printable, printableLines } from './
 export type { MessagePlaceholders } from './messages/catalog.ts';
 export { CreateFile, DeleteFile, Hash, PlanOperation, PlanPreview, planHash, ReplaceFile } from './plan.ts';
 export { Action, Run, RunId, RunOperation, RunSummary, SettingsEntry } from './run.ts';
+export { type SwitchRecord, type SwitchTarget, switchedOff, switchedOn } from './settings-switch.ts';
 export {
   GeneratorRefusal,
   WorkflowList,

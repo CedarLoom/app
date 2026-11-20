@@ -33,6 +33,25 @@ const COMMANDS = {
     from: false,
   },
   'workflows new': { argument: '<name>', variadic: false, change: true, pluginRoot: true, shipped: false, from: true },
+  // The switches check their own arguments, as <id> and --plugin rule each other out.
+  'workflows off': {
+    argument: '<id>',
+    variadic: true,
+    change: true,
+    pluginRoot: true,
+    shipped: false,
+    from: false,
+    flags: ['plugin', 'script-only'],
+  },
+  'workflows on': {
+    argument: '<id>',
+    variadic: true,
+    change: true,
+    pluginRoot: false,
+    shipped: false,
+    from: false,
+    flags: ['plugin'],
+  },
 } as const;
 type CommandName = keyof typeof COMMANDS;
 const NOUNS = ['runs', 'workflows'] as const;
@@ -49,6 +68,8 @@ export type Request =
       json: boolean;
       pluginRoot: string | null;
       from: string | null;
+      plugin: boolean;
+      scriptOnly: boolean;
     }
   | { kind: 'help'; topic: CommandName | Noun | null }
   | { kind: 'version' };
@@ -127,6 +148,8 @@ const allowedFlags = (name: CommandName | Noun | null): Set<string> => {
   if (COMMANDS[name].pluginRoot) allowed.add('plugin-root');
   if (COMMANDS[name].shipped) allowed.add('shipped');
   if (COMMANDS[name].from) allowed.add('from');
+  const command = COMMANDS[name];
+  if ('flags' in command) for (const flag of command.flags) allowed.add(flag);
   return allowed;
 };
 
@@ -197,6 +220,8 @@ export const parse = (argv: readonly string[]): Parsed => {
       json: line.json,
       pluginRoot: valueOf('plugin-root'),
       from: valueOf('from'),
+      plugin: has('plugin'),
+      scriptOnly: has('script-only'),
     },
   };
 };

@@ -14,4 +14,5 @@ export {
   type StoreClock,
 } from './store.ts';
 export { planUndo, type Undone, type UndoPlan, type UndoRequest, undo } from './undo.ts';
+export { type SwitchOffRequest, type SwitchOnRequest, workflowsOff, workflowsOn } from './workflow-switch.ts';
 export { listWorkflows, showWorkflow, validateWorkflows, type WorkflowsRequest } from './workflows.ts';

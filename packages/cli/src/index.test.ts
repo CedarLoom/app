@@ -1,6 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,6 +126,21 @@ it.each([
     ['workflows', 'generate', '--from=dev'],
     'cli.unknown-flag',
     { flag: '--from', command: 'cedarloom workflows generate' },
+  ],
+  [['workflows', 'off'], 'cli.missing-argument', { argument: '<id>', command: 'cedarloom workflows off' }],
+  [['workflows', 'off', 'dev', 'plain'], 'cli.unknown-command', { command: 'plain', bin: 'cedarloom' }],
+  [['workflows', 'off', 'dev', '--plugin'], 'cli.flag-conflict', { flags: '<id>, --plugin' }],
+  [['workflows', 'off', '--plugin', '--script-only'], 'cli.flag-conflict', { flags: '--script-only, --plugin' }],
+  [['workflows', 'off', '--plugin', '--plugin-root', 'x'], 'cli.flag-conflict', { flags: '--plugin-root, --plugin' }],
+  [
+    ['workflows', 'on', 'dev', '--script-only'],
+    'cli.unknown-flag',
+    { flag: '--script-only', command: 'cedarloom workflows on' },
+  ],
+  [
+    ['workflows', 'on', 'dev', '--plugin-root=x'],
+    'cli.unknown-flag',
+    { flag: '--plugin-root', command: 'cedarloom workflows on' },
   ],
 ])('refuses %j as a usage error, exit 2', (argv, code, params) => {
   const { root } = project();
@@ -591,4 +615,25 @@ it('plans with workflows new a copy of the shipped dev without --yes, exit 4, an
     code: 0,
     document: { result: { plan, applied: true, run: 'u1' }, refusals: [] },
   });
+});
+
+it('switches with workflows off a workflow off in the settings after --yes, and workflows on switches it back on', () => {
+  const { root, workflows } = workflowsSetup({ mine: '{"script":true}' });
+  const env = { CEDARLOOM_STATE_DIR: fresh() };
+  const settings = join(root, '.claude', 'settings.json');
+  writeFileSync(settings, '{"model": "opus"}\n');
+  const after = '{"model": "opus", "permissions": {"deny":["Skill(mine)", "Workflow(mine-run)"]}}\n';
+  expect(ran(['workflows', 'off', 'mine', '--json'], root, { env })).toMatchObject({
+    code: 4,
+    document: { result: { plan: { operations: [{ kind: 'replace', after }] }, applied: false } },
+  });
+  expect(ran(['workflows', 'off', 'mine', '--yes', '--json'], root, { env })).toMatchObject({
+    code: 0,
+    document: { result: { applied: true, run: 'u1' }, refusals: [] },
+  });
+  expect(readFileSync(settings, 'utf8')).toBe(after);
+  const clock = { now: () => new Date('2026-11-19T08:00:00.000Z'), newRunId: () => 'u2' };
+  expect(ran(['workflows', 'on', 'mine', '--yes', '--json'], root, { env, clock })).toMatchObject({ code: 0 });
+  expect(readFileSync(settings, 'utf8')).toBe('{"model": "opus", "permissions": {"deny":[]}}\n');
+  expect(workflows('off', 'nope').document).toMatchObject({ refusals: [{ code: 'definition.not-found' }] });
 });
