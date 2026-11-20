@@ -2,7 +2,7 @@ import { readdirSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { Refusal } from '@cedarloom/core';
 import { PROJECT_FOLDER } from './definition-files.ts';
-import { reached } from './plugin-folder.ts';
+import { reached, realOf } from './plugin-folder.ts';
 import { entryAt, readFound } from './project-files.ts';
 
 // The folders from cwd up to the project root, each of which may hold a .claude folder Claude Code reads.
@@ -19,10 +19,19 @@ const foldersUp = (cwd: string, root: string): string[] => {
 const entryTaken = (path: string): boolean => reached(() => entryAt(path)) !== undefined;
 
 // Whether a folder holds anything but folders at any depth, links not walked; a folder the app cannot list may.
-const holdsFile = (folder: string): boolean =>
-  reached(() => readdirSync(folder, { withFileTypes: true, recursive: true }))?.some(
-    (entry) => !entry.isDirectory(),
-  ) !== false;
+const holdsFile = (folder: string): boolean => {
+  const folders = [folder];
+  // A list, not recursion, so no depth overflows the stack; the loop also takes the folders pushed while it runs.
+  for (const path of folders) {
+    const entries = reached(() => readdirSync(path, { withFileTypes: true }));
+    if (entries === undefined) return true;
+    for (const entry of entries) {
+      if (!entry.isDirectory()) return true;
+      folders.push(join(path, entry.name));
+    }
+  }
+  return false;
+};
 
 // Generate and undo can leave empty folders, so a skill folder holding only folders is no use of the name.
 const skillTaken = (path: string): boolean => {
@@ -34,10 +43,10 @@ type Check = [path: string, taken: (path: string) => boolean];
 
 // The front matter sits at the top of SKILL.md.
 const FRONT_LIMIT = 64 * 1024;
-// shortcut: reads a one-line, plain or quoted `name:` only; take a YAML parser once skills use other forms.
+// shortcut: reads the first one-line, plain or quoted `name:` only; take a YAML parser once skills use other forms.
 const frontName = (text: string): string | undefined => {
-  const front = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1];
-  return front === undefined ? undefined : /^name:[ \t]*(["']?)(.*?)\1(?:[ \t]+#.*)?[ \t]*\r?$/m.exec(front)?.[2];
+  const front = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1];
+  return front === undefined ? undefined : /^name:[ \t]+(["']?)(.*?)\1(?:[ \t]+#.*)?[ \t]*\r?$/m.exec(front)?.[2];
 };
 
 // Claude Code takes the front matter name of a skill as its command name, whatever the skill folder is called.
@@ -49,7 +58,8 @@ const namedSkills = (skills: string, names: string[]): Check[] =>
       (folder): Check => [
         join(skills, folder, 'SKILL.md'),
         (path) => {
-          const found = reached(() => readFound(path, FRONT_LIMIT));
+          // Claude Code follows a link to SKILL.md.
+          const found = reached(() => readFound(realOf(path) ?? path, FRONT_LIMIT));
           const named = typeof found === 'object' ? frontName(found.bytes.toString('utf8')) : undefined;
           return named !== undefined && names.includes(named);
         },

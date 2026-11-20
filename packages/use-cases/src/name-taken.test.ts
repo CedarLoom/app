@@ -110,7 +110,7 @@ it('stops at the project root also when its path ends in a separator', () => {
   expect(nameTaken(join(base, 'project'), join(base, 'project') + sep, 'mine')).toEqual([]);
 });
 
-// Path limits keep a tree this deep only on Windows, so a small stack stands in for the depth.
+// A small stack stands in for a depth macOS and Linux paths do not reach; Windows may refuse a path this long.
 it.skipIf(process.platform === 'win32')('walks a skill folder hundreds of folders deep without recursion', () => {
   const root = projectWith();
   mkdirSync(join(root, '.claude/skills/mine', ...Array.from({ length: 400 }, () => 'a')), { recursive: true });
