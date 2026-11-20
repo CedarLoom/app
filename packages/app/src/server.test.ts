@@ -36,6 +36,10 @@ writeFileSync(join(base, 'outside', 'secret.txt'), 'secret');
 // A junction needs no privilege on Windows; other platforms ignore the type.
 symlinkSync(join(base, 'outside'), join(built, 'assets', 'out'), 'junction');
 symlinkSync(built, join(built, 'assets', 'up'), 'junction');
+// A UI in base/linked whose assets folder links to the folder outside it.
+const linked = join(base, 'linked');
+mkdirSync(linked);
+symlinkSync(join(base, 'outside'), join(linked, 'assets'), 'junction');
 
 // Secrets in order: the URL token secret-0, then the cookie secret-1 and the CSRF value secret-2.
 // Most tests have no UI built: the folder does not exist.
@@ -300,6 +304,12 @@ describe('UI files', () => {
   ])('answers %s with 404 api.not-found', async (_case, url) => {
     const { app } = await server(built);
     const reply = await app.inject({ method: 'GET', url, headers: { host: HOST } });
+    expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
+  });
+
+  it('answers a file of an assets folder that links out of the UI folder with 404 api.not-found', async () => {
+    const { app } = await server(linked);
+    const reply = await app.inject({ method: 'GET', url: '/assets/secret.txt', headers: { host: HOST } });
     expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
   });
 });
