@@ -113,7 +113,7 @@ const socketAnswer = (code: string | undefined): string => {
 // Node's answers at the socket, before any route (a request timeout, a malformed request), with Node's statuses.
 const clientErrorHandler = (error: Error & { code?: string }, socket: Socket): void => {
   if (error.code === 'ECONNRESET' || socket.destroyed) return;
-  // Node raises the parse error again on every later chunk; its request timeout ends the wait.
+  // Node raises a parse error again on every later chunk; a request timeout ends the parse error's wait.
   if (answering.has(socket)) {
     if (error.code === 'ERR_HTTP_REQUEST_TIMEOUT') socket.destroy(error);
     return;
@@ -129,6 +129,8 @@ const clientErrorHandler = (error: Error & { code?: string }, socket: Socket): v
   // Written earlier, the answer would land inside or ahead of the responses before it.
   const before = [...(unfinished.get(socket) ?? [])].findLast((response) => response !== own);
   if (before === undefined) answer();
+  // After a request timeout the parser still runs: waiting would serve the timed-out request.
+  else if (error.code === 'ERR_HTTP_REQUEST_TIMEOUT') socket.destroy(error);
   else before.once('finish', answer).once('close', answer);
 };
 

@@ -398,6 +398,33 @@ describe('errors at the socket during a response', () => {
     expect(text).toContain('partial');
     expect(text).not.toContain('api.bad-request');
   });
+
+  it('closes at a request timeout behind an unfinished response, and the timed-out request never reaches its route', async () => {
+    const { app } = await server();
+    let reached = false;
+    let streams: (() => void) | undefined;
+    // Node's timeout, raised here once 'partial' is out; /fast ends /streams so that a served /fast cannot hang the test.
+    app.get('/streams', (req, reply) => {
+      reply.hijack();
+      streams = () => void reply.raw.end('rest');
+      reply.raw.writeHead(200, { 'content-type': 'text/plain' });
+      const timeout = Object.assign(new Error('timeout'), { code: 'ERR_HTTP_REQUEST_TIMEOUT' });
+      reply.raw.write('partial', () => void app.server.emit('clientError', timeout, req.raw.socket));
+    });
+    app.get('/fast', () => {
+      reached = true;
+      streams?.();
+      return 'fast';
+    });
+    // The headers of /fast end only once 'partial' has arrived.
+    const text = await received(
+      app,
+      (self) => `GET /streams HTTP/1.1\r\nHost: ${self}\r\n\r\nGET /fast HTTP/1.1\r\nHost: ${self}\r\n`,
+      ['partial', '\r\n'],
+    );
+    expect([reached, text.match(/HTTP\/1\.1 \d{3}/g)]).toEqual([false, ['HTTP/1.1 200']]);
+    expect(text).toContain('partial');
+  });
 });
 
 describe('errors inside routes', () => {
