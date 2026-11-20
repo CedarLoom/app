@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type AppIo, openPage, type Started, start } from './start.ts';
+import { type AppIo, closed, openPage, type Started, start } from './start.ts';
 
 const folders: string[] = [];
-const servers: (() => Promise<void>)[] = [];
+const servers: (() => Promise<number>)[] = [];
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((close) => close()));
   for (const dir of folders.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -75,9 +75,9 @@ const raw = (port: number, request: string): Promise<string> =>
   });
 
 // Each bind fails with this system code, so start stops without listening.
-const failingBind = (code: string) =>
+const failingBind = (code: string, syscall = 'listen') =>
   vi.spyOn(Server.prototype, 'listen').mockImplementation(function (this: Server) {
-    process.nextTick(() => this.emit('error', Object.assign(new Error(code), { code, syscall: 'listen' })));
+    process.nextTick(() => this.emit('error', Object.assign(new Error(code), { code, syscall })));
     return this;
   });
 
@@ -165,6 +165,14 @@ describe('openPage', () => {
   });
 });
 
+describe('closed', () => {
+  it('reports a failed close by its stack on stderr and no second document, exit 5', async () => {
+    const { io, out, errors } = appIo(['--json']);
+    const failure = new Error('close failed');
+    expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([5, [], [`${failure.stack}\n`]]);
+  });
+});
+
 describe('start without a server', () => {
   it('binds 127.0.0.1 only', async () => {
     const listen = failingBind('EADDRINUSE');
@@ -189,6 +197,12 @@ describe('start without a server', () => {
       }
     },
   );
+
+  it('lets a system error of another syscall than listen propagate', async () => {
+    const listen = failingBind('ENOENT', 'open');
+    const starting = start(appIo(['--no-open', '--json']).io).finally(() => listen.mockRestore());
+    await expect(starting).rejects.toThrow('ENOENT');
+  });
 
   it.each(['--port 80', '--port=80'])('refuses %s with cli.bad-value, exit 2', async (words) => {
     expect(await started(['--json', ...words.split(' ')])).toEqual({

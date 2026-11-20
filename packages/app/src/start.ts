@@ -41,8 +41,8 @@ interface Options {
   help: boolean;
 }
 
-/** A listening server, or the exit code of a start that stopped. */
-export type Started = { close: () => Promise<void> } | { exitCode: number };
+/** A listening server, whose close resolves to the exit code, or the exit code of a start that stopped. */
+export type Started = { close: () => Promise<number> } | { exitCode: number };
 
 const BIN = 'cedarloom-app';
 const catalog: Readonly<Record<string, CompiledMessage>> = { ...core.messages, ...own.messages };
@@ -133,14 +133,25 @@ export const openPage = (
   return redirect;
 };
 
-// A system error of the bind (it names its syscall), as EADDRINUSE or EACCES, is refused; other errors are bugs.
+// The refusal of a bind the system failed, as with EADDRINUSE or EACCES; other errors are bugs and propagate.
 const bindRefusal = (error: unknown, port: number): Refusal | undefined => {
-  if (!(error instanceof Error && 'syscall' in error && 'code' in error)) return undefined;
+  if (!(error instanceof Error && 'syscall' in error && error.syscall === 'listen' && 'code' in error))
+    return undefined;
   if (error.code === 'EADDRINUSE') return { code: 'server.port-in-use', params: { port } };
   return typeof error.code === 'string'
     ? { code: 'server.listen-failed', params: { port, error: error.code } }
     : undefined;
 };
+
+/** The exit code of a closing server: a failure prints only its stack, since --json printed the start document. */
+export const closed = (io: Pick<AppIo, 'stderr'>, closing: Promise<void>): Promise<number> =>
+  closing.then(
+    () => 0,
+    (error: unknown) => {
+      io.stderr(`${error instanceof Error ? error.stack : String(error)}\n`);
+      return 5;
+    },
+  );
 
 type Stop = (refusal: Refusal, exitCode: number) => Started;
 
@@ -200,7 +211,7 @@ export const start = async (io: AppIo): Promise<Started> => {
   return {
     close: () => {
       removePage();
-      return app.close();
+      return closed(io, app.close());
     },
   };
 };

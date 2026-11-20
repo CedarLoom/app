@@ -19,11 +19,10 @@ const openFile = (path: string): void => {
   child.unref();
 };
 
-// After the start document only the stack is printed, since --json prints one document.
-const crashed = (error: unknown, documented = false): void => {
+const crashed = (error: unknown): void => {
   process.stderr.write(`${error instanceof Error ? error.stack : String(error)}\n`);
   const refusal = { code: 'cli.internal', params: {} };
-  if (!documented && process.argv.includes('--json'))
+  if (process.argv.includes('--json'))
     process.stdout.write(`${JSON.stringify({ result: null, findings: [], refusals: [refusal] })}\n`);
   process.exitCode = 5;
 };
@@ -56,12 +55,9 @@ export const run = (): void => {
       return;
     }
     const stop = (): void => {
-      started.close().then(
-        () => {
-          process.exitCode = 0;
-        },
-        (error) => crashed(error, true),
-      );
+      void started.close().then((exitCode) => {
+        process.exitCode = exitCode;
+      });
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
