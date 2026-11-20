@@ -104,7 +104,8 @@ const sameFile = (root: string, first: string, path: string): boolean => {
   const folder = join(root, ...a.slice(0, depth));
   const [one, two] = [entryAt(folder), entryAt(join(root, ...b.slice(0, depth)))];
   if (one === undefined || two === undefined || one.dev !== two.dev || one.ino !== two.ino) return false;
-  return readsAsOne(folder, a.slice(depth).join('/'), b.slice(depth).join('/'));
+  const [rest, otherRest] = [a.slice(depth).join('/'), b.slice(depth).join('/')];
+  return rest === otherRest || readsAsOne(folder, rest, otherRest);
 };
 
 /** The operations on one file so far: the path the first one named, and the hash the last one leaves. */
@@ -128,7 +129,7 @@ const fileOnWay = (root: string, path: string): Refusal | undefined => {
   return undefined;
 };
 
-// Paths the volume reads as one file chain as one; elsewhere two such paths are refused before the first write.
+// Paths of one key chain where the volume reads them as one file, else are refused; other folds (ß, ss) get two keys.
 export const fileKey = (path: string): string => path.normalize('NFC').toLowerCase();
 
 // What the disk shows wrong with an operation, as the operations before it on the same file leave it.
