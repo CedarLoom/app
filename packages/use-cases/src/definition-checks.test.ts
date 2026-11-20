@@ -364,6 +364,29 @@ describe('reports each definition it cannot use with its finding', () => {
   });
 });
 
+describe('reports a definition no reader can take with definition.not-json', () => {
+  it.skipIf(isWindows)('a socket', () => {
+    const { project, check } = setup();
+    // Bound by a relative name, as a socket path is limited to about 100 bytes; exit leaves the socket file.
+    const bind = "require('node:net').createServer().listen('socket.json', () => process.exit())";
+    execFileSync(process.execPath, ['-e', bind], { cwd: join(project, '.cedarloom', 'workflows') });
+    expect(check().definitions).toEqual(notJson('.cedarloom/workflows/socket.json').definitions);
+  });
+
+  it('a file of 2 GiB, reading only its head', () => {
+    const { project, check } = setup();
+    large(join(project, '.cedarloom', 'workflows', 'large.json'));
+    expect(check().definitions).toEqual(notJson('.cedarloom/workflows/large.json').definitions);
+  });
+
+  it('one nested deeper than 100 levels, as workflows validate answers', () => {
+    const { project, check } = setup();
+    const deep = { name: 'deep', text: 'Run deep.', stages: JSON.parse(`${'['.repeat(100)}${']'.repeat(100)}`) };
+    write(join(project, '.cedarloom', 'workflows', 'deep.json'), JSON.stringify(deep));
+    expect(check().definitions).toEqual(notJson('.cedarloom/workflows/deep.json').definitions);
+  });
+});
+
 describe('reports a generator that fails with generator.failed', () => {
   it('with the exit code and the error output, once for all definitions', () => {
     const { project, check } = setup("process.stderr.write('broken');\nprocess.exit(3);\n");
