@@ -145,9 +145,9 @@
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],
     "server.listen-failed": [
-      "The server cannot listen on 127.0.0.1 port ",
-      ["port"],
-      ": the system answered ",
+      "The server cannot listen on ",
+      ["port", "plural", { "0": ["a free port"], "other": ["port ", "#"] }],
+      " of 127.0.0.1: the system answered ",
       ["error"],
       "."
     ],

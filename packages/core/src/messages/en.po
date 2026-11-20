@@ -189,7 +189,7 @@ msgstr "Port {port} is in use. Choose another with --port, or leave it out to us
 
 #. js-lingui-explicit-id
 msgid "server.listen-failed"
-msgstr "The server cannot listen on 127.0.0.1 port {port}: the system answered {error}."
+msgstr "The server cannot listen on {port, plural, =0 {a free port} other {port #}} of 127.0.0.1: the system answered {error}."
 
 #. js-lingui-explicit-id
 msgid "server.open-hint"

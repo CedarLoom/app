@@ -133,10 +133,9 @@ export const openPage = (
   return redirect;
 };
 
-// The refusal of a bind the system failed, as with EADDRINUSE or EACCES; other errors are bugs and propagate.
+// A system error of the bind (it names its syscall), as EADDRINUSE or EACCES, is refused; other errors are bugs.
 const bindRefusal = (error: unknown, port: number): Refusal | undefined => {
-  if (!(error instanceof Error && 'syscall' in error && error.syscall === 'listen' && 'code' in error))
-    return undefined;
+  if (!(error instanceof Error && 'syscall' in error && 'code' in error)) return undefined;
   if (error.code === 'EADDRINUSE') return { code: 'server.port-in-use', params: { port } };
   return typeof error.code === 'string'
     ? { code: 'server.listen-failed', params: { port, error: error.code } }

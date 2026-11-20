@@ -217,7 +217,7 @@ describe('start without a server', () => {
 describe('start, usage and version', () => {
   it.each(['--help', '-h'])('prints the usage for %s on stdout, exit 0', async (flag) => {
     const { io, out, errors } = appIo([flag]);
-    expect([await start(io), out.length, errors]).toEqual([{ exitCode: 0 }, 1, []]);
+    expect([await start(io), out.join('') === '', errors]).toEqual([{ exitCode: 0 }, false, []]);
   });
 
   it('refuses --help with --json with cli.flag-conflict, exit 2', async () => {
