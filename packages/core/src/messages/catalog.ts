@@ -19,6 +19,7 @@ export const MESSAGE_IDS = [
   'cli.unknown-command',
   'cli.unknown-flag',
   'definition.invalid',
+  'definition.name-mismatch',
   'definition.not-found',
   'definition.not-json',
   'definition.stale',
@@ -79,6 +80,7 @@ export interface MessagePlaceholders {
   'cli.unknown-command': 'bin' | 'command';
   'cli.unknown-flag': 'command' | 'flag';
   'definition.invalid': 'count' | 'path';
+  'definition.name-mismatch': 'file' | 'name';
   'definition.not-found': 'name' | 'source';
   'definition.not-json': 'path';
   'definition.stale': 'name' | 'paths';

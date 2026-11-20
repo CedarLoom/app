@@ -200,7 +200,8 @@ describe('names the generated files of a definition that is gone with definition
 
   it('renamed, by the name their header gives', () => {
     const { project, check } = setup();
-    write(join(project, '.cedarloom', 'workflows', 'dev.json'), JSON.stringify({ ...DEV, name: 'study' }));
+    rmSync(join(project, '.cedarloom', 'workflows', 'dev.json'));
+    write(join(project, '.cedarloom', 'workflows', 'study.json'), JSON.stringify({ ...DEV, name: 'study' }));
     expect(check()).toEqual({
       definitions: [],
       generated: [
@@ -228,10 +229,25 @@ it('leaves the generated files of other definitions alone while a definition fil
   expect(check()).toEqual(notJson('.cedarloom/workflows/research.json'));
 });
 
+it('reports a definition whose name is not its file name with definition.name-mismatch, without generating it', () => {
+  const { project, check } = setup();
+  write(join(project, '.cedarloom', 'workflows', 'build.json'), JSON.stringify({ ...DEV, refusals: ['/stages'] }));
+  expect(check()).toEqual({
+    definitions: [
+      {
+        code: 'definition.name-mismatch',
+        severity: 'error',
+        params: { file: '.cedarloom/workflows/build.json', name: 'dev' },
+      },
+    ],
+    generated: [],
+  });
+});
+
 it('reports each definition the generator refuses with definition.invalid, its file and its refusal count', () => {
   const { project, check } = setup();
   const workflows = join(project, '.cedarloom', 'workflows');
-  write(join(workflows, 'dev.json'), JSON.stringify({ ...DEV, name: 'study', refusals: ['/name', '/stages'] }));
+  write(join(workflows, 'dev.json'), JSON.stringify({ ...DEV, refusals: ['/name', '/stages'] }));
   write(join(workflows, 'other.json'), JSON.stringify({ name: 'other', text: 'Run other.' }));
   expect(check()).toEqual({
     definitions: [

@@ -33,6 +33,13 @@
       ["count", "plural", { "one": ["#", " problem"], "other": ["#", " problems"] }],
       ". The plugin's generator/generate.mjs names them when run on it from the project's root with --prefix '' --out .claude --check."
     ],
+    "definition.name-mismatch": [
+      "The workflow definition ",
+      ["file"],
+      " has the name ",
+      ["name"],
+      ", which is not its file name without .json. Rename the file or change its name field so that both match."
+    ],
     "definition.not-found": [
       "No ",
       ["source", "select", { "shipped": ["shipped"], "other": ["project"] }],

@@ -12,8 +12,14 @@ import {
   type WorkflowValidation,
 } from '@cedarloom/core';
 import { z } from 'zod';
-import { definitionBytes, definitionFileNames, PROJECT_FOLDER, SHIPPED_FOLDER } from './definition-files.ts';
-import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
+import {
+  definitionBytes,
+  definitionFileNames,
+  nameMismatch,
+  PROJECT_FOLDER,
+  SHIPPED_FOLDER,
+} from './definition-files.ts';
+import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
 import { locatePlugin } from './plugin-locator.ts';
 import { type ClaudeDirInputs, pluginsRoot } from './plugins-root.ts';
 import { sha256 } from './project-files.ts';
@@ -175,16 +181,23 @@ export const chosen = (place: Place, names: readonly string[]): { name: string; 
 interface Entry {
   name: string;
   path: string;
-  /** Undefined when the app cannot read the file. */
+  /** Undefined when the app refuses the file before the generator runs. */
   bytes: Buffer | undefined;
+  refusals: Refusal[];
 }
 
-// Each chosen definition with its bytes; a file removed since the folder was listed is left out.
+// Each chosen definition with its bytes, or the app's refusal of it; a file removed since the folder was listed is left
+// out.
 const entriesOf = (place: Place, list: { name: string; path: string }[]): Entry[] =>
-  list.flatMap(({ name, path }) => {
+  list.flatMap(({ name, path }): Entry[] => {
     const bytes = definitionBytes(place.base, path);
     if (bytes === 'absent') return [];
-    return [{ name, path, bytes: bytes === 'unreadable' ? undefined : bytes }];
+    const file = place.shown(path);
+    if (bytes === 'unreadable') return [{ name, path, bytes: undefined, refusals: [notJson(file)] }];
+    // A shipped definition is the plugin's to name, and no project run generates it.
+    const mismatch = place.source === 'project' ? nameMismatch(file, jsonOf(bytes.toString('utf8'))) : undefined;
+    if (mismatch !== undefined) return [{ name, path, bytes: undefined, refusals: [mismatch] }];
+    return [{ name, path, bytes, refusals: [] }];
   });
 
 // One generator run over the chosen readable definitions; each refusal names the file as shown, not the temporary copy.
@@ -199,14 +212,14 @@ const checked = (place: Place, root: string, entries: Entry[], env: WorkflowsReq
   }
   const refused = generated !== undefined && 'refusals' in generated ? generated.refusals : [];
   let index = 0;
-  return entries.map(({ name, path, bytes }) => {
+  return entries.map(({ name, path, bytes, refusals }) => {
     const file = place.shown(path);
     const own: GeneratorRefusal[] = bytes === undefined ? [] : (refused[index++] ?? []);
     return {
       name,
       source: place.source,
       generatorRefusals: own.map(({ field, rule }) => ({ file, field, rule })),
-      refusals: bytes === undefined ? [notJson(file)] : [],
+      refusals,
     };
   });
 };
