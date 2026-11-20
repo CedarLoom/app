@@ -76,6 +76,8 @@ const everyFieldStored = {
       afterHash: 'b'.repeat(64),
       status: 'pending',
       entries: null,
+      mode: null,
+      madeFolders: 2,
     },
     {
       kind: 'replace',
@@ -84,6 +86,8 @@ const everyFieldStored = {
       afterHash: 'd'.repeat(64),
       status: 'pending',
       entries,
+      mode: 0o640,
+      madeFolders: 0,
     },
   ],
   generatedFrom: [{ name: 'demo', definition: '{"name":"demo"}\n' }],
@@ -174,7 +178,10 @@ describe('the store lock', () => {
 describe('the run store', () => {
   it('keeps every field of a run', () => {
     const dir = fresh();
-    const id = value(store(dir).begin(everyField));
+    const held = store(dir);
+    const id = value(held.begin(everyField));
+    held.madeFolders(id, 0, 2);
+    held.deleting(id, 1, 0o640);
     expect(value(view(dir).run(id))).toEqual({ id, ...everyFieldStored });
   });
 
@@ -279,9 +286,9 @@ describe('the store refusals', () => {
     store(dir).close();
     opened.length = 0;
     const db = new DatabaseSync(join(dir, 'runs.sqlite'));
-    db.exec('PRAGMA user_version = 2');
+    db.exec('PRAGMA user_version = 3');
     db.close();
-    const refused = { ok: false, refusal: { code: 'store.version-unsupported', params: { found: 2, supported: 1 } } };
+    const refused = { ok: false, refusal: { code: 'store.version-unsupported', params: { found: 3, supported: 2 } } };
     expect([openStore(dir, clock), openRunView(dir)]).toEqual([refused, refused]);
   });
 

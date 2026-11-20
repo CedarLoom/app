@@ -65,10 +65,16 @@ export const SettingsEntry = z.strictObject({
   before: z.exactOptional(JsonValue),
 });
 
-// An operation as the journal records it: the plan's hashes without the texts, its step status and its settings entries.
+// An operation as the journal records it: the plan's hashes without the texts, its step status, its settings entries,
+// and what its undo needs.
 const journal = {
-  status: z.enum(['pending', 'done', 'failed', 'settled']),
+  /** failed and settled: the step may have changed its path; untouched: it stopped before any change. */
+  status: z.enum(['pending', 'done', 'failed', 'settled', 'untouched']),
   entries: z.array(SettingsEntry).nullable(),
+  /** The permission bits of the file a delete removed, which its undo gives back; null for any other step. */
+  mode: z.int().min(0).max(0o777).nullable(),
+  /** How many of the innermost folders of the path the step made, which its undo removes while they hold nothing. */
+  madeFolders: z.int().nonnegative(),
 };
 const texts = { before: true, after: true } as const;
 

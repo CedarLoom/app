@@ -5,7 +5,7 @@ import { type Refusal, Run, RunOperation, RunSummary } from '@cedarloom/core';
 import { entryAt, errorCode } from './project-files.ts';
 
 /** The store schema version this CedarLoom reads and writes; a store of any other version is refused. */
-const VERSION = 1;
+const VERSION = 2;
 // How long a process waits for another one: for the store lock, and for WAL cleanup and recovery in runs.sqlite.
 const WAIT_MS = 1000;
 
@@ -32,6 +32,8 @@ CREATE TABLE operations (
   afterHash TEXT,
   status TEXT NOT NULL,
   entries TEXT,
+  mode INTEGER,
+  madeFolders INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (runId, position)
 ) STRICT;
 CREATE INDEX runs_undoes ON runs (undoes);
@@ -49,11 +51,11 @@ export type Opened<T> = { ok: true; value: T } | { ok: false; refusal: Refusal }
 export type NewRun = Pick<Run, 'kind' | 'action' | 'subject' | 'undoes' | 'planHash' | 'generatedFrom'> & {
   operations: Pending<Run['operations'][number]>[];
 };
-// Omit per member of the union, so each operation kind keeps its own hashes.
-type Pending<T> = T extends unknown ? Omit<T, 'status'> : never;
+// Omit per member of the union, so each operation kind keeps its own hashes; a step records the rest as it runs.
+type Pending<T> = T extends unknown ? Omit<T, 'status' | 'mode' | 'madeFolders'> : never;
 
 /** How a step ended. */
-type StepEnd = 'done' | 'failed' | 'settled';
+type StepEnd = 'done' | 'failed' | 'settled' | 'untouched';
 
 const parsedJson = (value: SQLOutputValue | undefined): unknown =>
   typeof value === 'string' ? JSON.parse(value) : value;
@@ -62,7 +64,8 @@ const parsedJson = (value: SQLOutputValue | undefined): unknown =>
 const operationsOf = (db: DatabaseSync, id: string): unknown[] =>
   db
     .prepare(
-      'SELECT kind, path, beforeHash, afterHash, status, entries FROM operations WHERE runId = ? ORDER BY position',
+      `SELECT kind, path, beforeHash, afterHash, status, entries, mode, madeFolders FROM operations
+       WHERE runId = ? ORDER BY position`,
     )
     .all(id)
     .map((operation) => Object.assign(operation, { entries: parsedJson(operation['entries']) }));
@@ -170,7 +173,7 @@ const writeProbe = (db: DatabaseSync, version: SQLOutputValue | undefined): void
   }
 };
 
-// runs.sqlite for writing, given the store lock; a new store gets schema version 1, another version is refused.
+// runs.sqlite for writing, given the store lock; a new store gets the schema version, another version is refused.
 const connectWriter = (path: string): Opened<DatabaseSync> => {
   const db = new DatabaseSync(path, { timeout: WAIT_MS });
   try {
@@ -217,7 +220,9 @@ export class RunStore {
       startedAt: this.#clock.now().toISOString(),
       endedAt: null,
       undoneBy: null,
-      operations: run.operations.map((operation) => Object.assign({ status: 'pending' }, operation)),
+      operations: run.operations.map((operation) =>
+        Object.assign({ status: 'pending', mode: null, madeFolders: 0 }, operation),
+      ),
     });
     try {
       this.#insert(id, startedAt, run);
@@ -244,7 +249,10 @@ export class RunStore {
           run.planHash,
           JSON.stringify(run.generatedFrom),
         );
-      const operation = this.#db.prepare(`INSERT INTO operations VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`);
+      const operation = this.#db.prepare(
+        `INSERT INTO operations (runId, position, kind, path, beforeHash, afterHash, status, entries)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
+      );
       for (const [position, { kind, path, beforeHash, afterHash, entries }] of run.operations.entries()) {
         operation.run(
           id,
@@ -289,6 +297,18 @@ export class RunStore {
   /** Where the backup of the file at `position` of a run is kept, for undo. */
   backupPath(runId: string, position: number): string {
     return join(this.#dir, 'backups', runId, String(position));
+  }
+
+  /** Records the mode of the file the delete at `position` of a run removes, before it does. */
+  deleting(runId: string, position: number, mode: number): void {
+    this.#db.prepare('UPDATE operations SET mode = ? WHERE runId = ? AND position = ?').run(mode, runId, position);
+  }
+
+  /** Records how many folders the operation at `position` of a run made for its file. */
+  madeFolders(runId: string, position: number, count: number): void {
+    this.#db
+      .prepare('UPDATE operations SET madeFolders = ? WHERE runId = ? AND position = ?')
+      .run(count, runId, position);
   }
 
   /** Records how the operation at `position` of a run ended. */

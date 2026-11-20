@@ -30,6 +30,8 @@ const refuseLinks = vi.hoisted(() => ({ on: false, code: 'EPERM' }));
 const racing = vi.hoisted(() => ({ path: '' }));
 // Every path reads as absent while `driveGone.on`, as on a drive that was unplugged; `calls` ends a walk without end.
 const driveGone = vi.hoisted(() => ({ on: false, calls: 0 }));
+// Sees each path right before unlinkSync removes it.
+const unlinking = vi.hoisted(() => ({ check: (_path: string): void => undefined }));
 vi.mock('node:fs', async (load) => {
   const fs = await load<typeof import('node:fs')>();
   const raceAt = (to: unknown): void => {
@@ -57,12 +59,17 @@ vi.mock('node:fs', async (load) => {
     raceAt(path);
     fs.symlinkSync(target, path, type);
   };
-  return { ...fs, linkSync, lstatSync, renameSync: renamed, symlinkSync: linked };
+  const unlinkSync: typeof fs.unlinkSync = (path) => {
+    unlinking.check(String(path));
+    fs.unlinkSync(path);
+  };
+  return { ...fs, linkSync, lstatSync, renameSync: renamed, symlinkSync: linked, unlinkSync };
 });
 
 const folders: string[] = [];
 const opened: { close(): void }[] = [];
 afterEach(() => {
+  unlinking.check = () => undefined;
   for (const item of opened.splice(0)) item.close();
   for (const dir of folders.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -330,7 +337,7 @@ describe('apply keeps to the write roots', () => {
     };
     expect(apply(store(state), request(root, plan), swap)).toEqual(refusedAt('plan.symlink', '.claude/skills', 'r1'));
     expect(readdirSync(outside)).toEqual([]);
-    expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['done', 'failed'] });
+    expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['done', 'untouched'] });
   });
 });
 
@@ -350,7 +357,7 @@ describe('apply stops a step', () => {
       );
       expect(listing(root)).toEqual(['b.md']);
       expect(text(join(root, '.claude/b.md'))).toBe('theirs\n');
-      expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['failed'] });
+      expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['untouched'] });
     },
   );
 
@@ -363,7 +370,7 @@ describe('apply stops a step', () => {
       refused({ code: 'apply.backup-failed', params: { run: 'r1', path: '.claude/b.md' } }, 'r1'),
     );
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'old\n']);
-    expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['failed'] });
+    expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['untouched'] });
   });
 });
 
@@ -422,7 +429,7 @@ describe('apply stops a run', () => {
       cause: new Error('disk gone'),
     });
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'old\n']);
-    expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled'] });
+    expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['untouched'] });
   });
 
   it('leaves no half-written backup and no temporary file when the copy fails midway', () => {
@@ -447,6 +454,26 @@ describe('apply stops a run', () => {
       refused({ code: 'apply.write-mismatch', params: { run: 'r1', path: '.claude/a.md' } }, 'r1'),
     );
     expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['failed'] });
+  });
+});
+
+// Recovery reads a temporary file left without an aside as a step that kept the old file.
+describe('apply drops the temporary file before the old one', () => {
+  it.each([
+    ['linked its file', false],
+    ['met a file another process wrote after the old one was set aside', true],
+  ])('when the step %s', (_case, race) => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const temp = join(root, '.claude/.b.md.cedarloom-r1-0');
+    const tempLeft: boolean[] = [];
+    unlinking.check = (path) => {
+      if (path === `${temp}.old`) tempLeft.push(existsSync(temp));
+    };
+    const at = (boundary: Boundary): void => {
+      if (race && boundary === 'set-aside') writeFileSync(join(root, '.claude/b.md'), 'theirs\n');
+    };
+    apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), at);
+    expect(tempLeft).toEqual([false]);
   });
 });
 
@@ -660,13 +687,13 @@ const crash = async (
 
 describe('recovery', () => {
   it.each([
-    ['temp-written', 'old\n'],
-    ['set-aside', 'old\n'],
-    ['linked', 'new\n'],
-    ['written', 'new\n'],
+    ['temp-written', 'old\n', 'untouched'],
+    ['set-aside', 'old\n', 'untouched'],
+    ['linked', 'new\n', 'settled'],
+    ['written', 'new\n', 'settled'],
   ] as const)(
     'settles a replace killed after %s, and the run stays listed as interrupted',
-    async (boundary, left) => {
+    async (boundary, left, ended) => {
       const { root, state } = project({ '.claude/b.md': 'old\n' });
       const plan = request(root, [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]);
       await crash(state, plan, boundary, 1);
@@ -679,7 +706,7 @@ describe('recovery', () => {
       });
       expect(listing(root)).toEqual(['a.md', 'b.md']);
       expect(text(join(root, '.claude/b.md'))).toBe(left);
-      expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['done', 'settled'] });
+      expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['done', ended] });
       expect(apply(held, request(root, [])).findings).toEqual([]);
     },
     20_000,
@@ -698,16 +725,16 @@ const begin = (held: RunStore, root: string, path: string, before?: string): voi
 
 describe('recovery of a delete and of a step not started', () => {
   it.each([
-    ['set-aside', 'gone\n'],
-    ['written', null],
+    ['set-aside', 'gone\n', 'untouched'],
+    ['written', null, 'settled'],
   ] as const)(
     'settles a delete killed after %s',
-    async (boundary, left) => {
+    async (boundary, left, ended) => {
       const { root, state } = project({ '.claude/c.md': 'gone\n' });
       await crash(state, request(root, [remove('.claude/c.md', 'gone\n')]), boundary, 0);
       expect(apply(store(state), request(root, [])).findings).toEqual([recovered('.claude/c.md')]);
       expect([listing(root), text(join(root, '.claude/c.md'))]).toEqual([left === null ? [] : ['c.md'], left]);
-      expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled'] });
+      expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: [ended] });
     },
     20_000,
   );
@@ -717,7 +744,7 @@ describe('recovery of a delete and of a step not started', () => {
     const plan = request(root, [create('.claude/a.md', 'a\n'), remove('.claude/a.md', 'a\n')]);
     await crash(state, plan, 'temp-written', 0);
     expect(apply(store(state), request(root, [])).findings).toEqual([recovered('.claude/a.md')]);
-    expect([listing(root), run(state, 'r1')]).toEqual([[], { status: 'interrupted', steps: ['settled', 'pending'] }]);
+    expect([listing(root), run(state, 'r1')]).toEqual([[], { status: 'interrupted', steps: ['untouched', 'pending'] }]);
   }, 20_000);
 
   it('settles a run whose temporary name is too long to exist, so the next apply runs', () => {
@@ -759,6 +786,33 @@ describe('recovery of an aside', () => {
     const held = store(state);
     begin(held, root, '.claude/b.md', hash('old\n'));
     hardLink(join(root, '.claude/b.md'), join(root, '.claude/.b.md.cedarloom-r1-0.old'));
+    expect(apply(held, request(root, [])).findings).toEqual([recovered('.claude/b.md')]);
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
+    expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['untouched'] });
+  });
+});
+
+describe('recovery of a step that changed its path, then edited', () => {
+  it('settles a create killed after linked, so undo refuses the edited file', async () => {
+    const { root, state } = project();
+    await crash(state, request(root, [create('.claude/a.md', 'a\n')]), 'linked', 0);
+    writeFileSync(join(root, '.claude/a.md'), 'mine\n');
+    expect(undo(store(state, 'u1'), { root, run: 'r1' })).toMatchObject({
+      refusal: { code: 'undo.file-changed', params: { path: '.claude/a.md' } },
+      findings: [recovered('.claude/a.md')],
+    });
+    expect([run(state, 'r1'), text(join(root, '.claude/a.md'))]).toEqual([
+      { status: 'interrupted', steps: ['settled'] },
+      'mine\n',
+    ]);
+  }, 20_000);
+
+  // A replace that dropped its temporary file and stopped before it dropped the old one.
+  it('settles a replace whose aside holds the old text, without a temporary file', () => {
+    const { root, state } = project({ '.claude/b.md': 'theirs\n' });
+    const held = store(state);
+    begin(held, root, '.claude/b.md', hash('old\n'));
+    writeFileSync(join(root, '.claude/.b.md.cedarloom-r1-0.old'), 'old\n');
     expect(apply(held, request(root, [])).findings).toEqual([recovered('.claude/b.md')]);
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
     expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled'] });
@@ -924,7 +978,7 @@ describe('undo of an undo', () => {
       code: 'plan.file-changed',
       params: { path: '.claude/a.md' },
     });
-    expect([run(state, 'u1'), undone(state, 'r1')]).toEqual([{ status: 'failed', steps: ['done', 'failed'] }, null]);
+    expect([run(state, 'u1'), undone(state, 'r1')]).toEqual([{ status: 'failed', steps: ['done', 'untouched'] }, null]);
     expect(undo(held, { root, run: 'u1' }).run).toBe('u2');
     expect([text(join(root, '.claude/a.md')), text(join(root, '.claude/b.md'))]).toEqual(['theirs\n', 'new\n']);
   });
@@ -1107,9 +1161,14 @@ describe('undo of a chain on one file', () => {
 });
 
 describe('recovery of an undo', () => {
-  it.each(['temp-written', 'set-aside', 'linked', 'written'] as const)(
+  it.each([
+    ['temp-written', 'untouched'],
+    ['set-aside', 'untouched'],
+    ['linked', 'settled'],
+    ['written', 'settled'],
+  ] as const)(
     'settles an undo killed after %s like any run, and its undo leaves the run result',
-    async (boundary) => {
+    async (boundary, ended) => {
       const { root, state } = project({ '.claude/b.md': 'old\n' });
       const first = store(state);
       apply(first, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
@@ -1117,7 +1176,7 @@ describe('recovery of an undo', () => {
       await crash(state, { root, run: 'r1' }, boundary, 0);
       const result = undo(store(state, 'u2'), { root, run: 'u1' });
       expect([result.run, result.refusal, result.findings]).toEqual(['u2', null, [recovered('.claude/b.md', 'u1')]]);
-      expect([run(state, 'u1'), undone(state, 'u1')]).toEqual([{ status: 'interrupted', steps: ['settled'] }, 'u2']);
+      expect([run(state, 'u1'), undone(state, 'u1')]).toEqual([{ status: 'interrupted', steps: [ended] }, 'u2']);
       expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'new\n']);
     },
     20_000,
@@ -1131,4 +1190,90 @@ describe('recovery of an undo', () => {
     expect([result.run, result.refusal, result.findings]).toEqual(['u1', null, [recovered('.claude/b.md')]]);
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'old\n']);
   }, 20_000);
+});
+
+describe('undo of a step that wrote nothing', () => {
+  it('skips a step killed between its journal entry and its write, so a later edit of its file stays', async () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const plan = request(root, [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]);
+    await crash(state, plan, 'temp-written', 1);
+    const held = store(state, 'u1');
+    expect(apply(held, request(root, [])).findings).toEqual([recovered('.claude/b.md')]);
+    writeFileSync(join(root, '.claude/b.md'), 'theirs\n');
+    expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'u1', refusal: null });
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
+  }, 20_000);
+
+  it('skips a step that stopped at a file another process wrote before the old one was set aside', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const held = store(state, 'r1', 'u1');
+    const race = (boundary: Boundary, position: number): void => {
+      if (boundary === 'temp-written' && position === 1) writeFileSync(join(root, '.claude/b.md'), 'theirs\n');
+    };
+    apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')]), race);
+    expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'u1', refusal: null });
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
+  });
+});
+
+describe('undo of a delete', () => {
+  // 0o640 differs from a new file's mode under the umasks 022 and 077.
+  it.skipIf(process.platform === 'win32')('gives the file back its mode', () => {
+    const { root, state } = project({ '.claude/p.md': 'private\n' });
+    chmodSync(join(root, '.claude/p.md'), 0o640);
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [remove('.claude/p.md', 'private\n')]));
+    expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
+    expect(statSync(join(root, '.claude/p.md')).mode & 0o777).toBe(0o640);
+  });
+});
+
+describe('undo of a create', () => {
+  it.each([
+    ['no file added', null, []],
+    ['a file added in the inner folder', '.claude/skills/a/notes.md', ['skills']],
+    ['a file added in the outer folder', '.claude/skills/notes.md', ['skills']],
+  ] as const)('removes the folders it made while they hold nothing (%s)', (_case, added, left) => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/skills/a/SKILL.md', 'a\n')]));
+    if (added !== null) writeFileSync(join(root, added), 'mine\n');
+    expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
+    expect(listing(root)).toEqual(left);
+    if (added !== null) expect(text(join(root, added))).toBe('mine\n');
+  });
+
+  it('removes a folder a later step made inside one an earlier step made', () => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/skills/x.md', 'x\n'), create('.claude/skills/a/y.md', 'y\n')]));
+    expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
+    expect(listing(root)).toEqual([]);
+  });
+
+  it('removes no more folders than its path has, whatever the journal counts', () => {
+    const { root, state } = project();
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/x.md', 'x\n')]));
+    const db = new DatabaseSync(join(state, 'runs.sqlite'));
+    db.exec('UPDATE operations SET madeFolders = 1000000');
+    db.close();
+    expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  it('leaves a folder behind a link that took the place of a folder it made', () => {
+    const { root, state } = project();
+    const outside = fresh();
+    mkdirSync(join(outside, 'a'));
+    const held = store(state, 'r1', 'u1');
+    apply(held, request(root, [create('.claude/skills/a/SKILL.md', 'a\n')]));
+    const swap = (boundary: Boundary): void => {
+      if (boundary !== 'written') return;
+      renameSync(join(root, '.claude/skills'), join(root, '.claude/moved'));
+      symlinkSync(outside, join(root, '.claude/skills'), 'junction');
+    };
+    expect(undo(held, { root, run: 'r1' }, swap).refusal).toBeNull();
+    expect(readdirSync(outside)).toEqual(['a']);
+  });
 });
