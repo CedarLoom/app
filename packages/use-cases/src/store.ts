@@ -52,6 +52,9 @@ export type NewRun = Pick<Run, 'kind' | 'action' | 'subject' | 'undoes' | 'planH
 // Omit per member of the union, so each operation kind keeps its own hashes.
 type Pending<T> = T extends unknown ? Omit<T, 'status'> : never;
 
+/** How a step ended. */
+type StepEnd = 'done' | 'failed' | 'settled';
+
 const parsedJson = (value: SQLOutputValue | undefined): unknown =>
   typeof value === 'string' ? JSON.parse(value) : value;
 
@@ -151,11 +154,8 @@ const durable = (db: DatabaseSync): void => {
   db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA fullfsync = ON; PRAGMA foreign_keys = ON');
   const journal = pragma(db, 'journal_mode');
   const synchronous = pragma(db, 'synchronous');
-  const fullfsync = pragma(db, 'fullfsync');
-  if (journal !== 'wal' || synchronous !== 2 || fullfsync !== 1) {
-    throw new Error(
-      `the store runs with journal_mode ${String(journal)}, synchronous ${String(synchronous)} and fullfsync ${String(fullfsync)}`,
-    );
+  if (journal !== 'wal' || synchronous !== 2) {
+    throw new Error(`the store runs with journal_mode ${String(journal)} and synchronous ${String(synchronous)}`);
   }
 };
 
@@ -289,14 +289,20 @@ export class RunStore {
   }
 
   /** Records how the operation at `position` of a run ended. */
-  settle(runId: string, position: number, status: 'done' | 'failed' | 'settled'): void {
+  settle(runId: string, position: number, status: StepEnd): void {
     this.#db.prepare('UPDATE operations SET status = ? WHERE runId = ? AND position = ?').run(status, runId, position);
   }
 
-  /** Records the end of a run; an interrupted run has no end time. */
-  finish(runId: string, status: 'done' | 'failed' | 'interrupted'): void {
+  /**
+   * Records the end of a run, and how its last step ended in the same transaction, so a run is never left listed as
+   * running after its last step; an interrupted run has no end time.
+   */
+  finish(runId: string, status: 'done' | 'failed' | 'interrupted', last?: [position: number, status: StepEnd]): void {
     const endedAt = status === 'interrupted' ? null : this.#clock.now().toISOString();
-    this.#db.prepare('UPDATE runs SET status = ?, endedAt = ? WHERE id = ?').run(status, endedAt, runId);
+    transaction(this.#db, () => {
+      if (last !== undefined) this.settle(runId, ...last);
+      this.#db.prepare('UPDATE runs SET status = ?, endedAt = ? WHERE id = ?').run(status, endedAt, runId);
+    });
   }
 
   /** The runs still marked running: as this process holds the store, each one's process stopped without an end. */

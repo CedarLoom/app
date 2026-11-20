@@ -1,7 +1,7 @@
 import { rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Finding, Run } from '@cedarloom/core';
-import { asidePath, entryAt, hashAt, putBack, tempPath } from './project-files.ts';
+import type { Finding, Refusal, Run } from '@cedarloom/core';
+import { asidePath, entryAt, errorCode, hashAt, putBack, tempPath } from './project-files.ts';
 import type { RunStore } from './store.ts';
 import { linkOnWay } from './write-roots.ts';
 
@@ -30,7 +30,9 @@ const settleStep = ({ store, root, run }: Unsettled, position: number, op: Opera
   const temp = tempPath(path, run, position);
   const aside = asidePath(path, run, position);
   const tempLeft = entryAt(temp) !== undefined;
-  const started = tempLeft || entryAt(aside) !== undefined || hashAt(path) === op.afterHash;
+  // A path too long to exist holds nothing, so its step never started.
+  const started =
+    tempLeft || entryAt(aside) !== undefined || (entryAt(path) === undefined ? null : hashAt(path)) === op.afterHash;
   // rmSync throws for a name that cannot exist, also with force.
   if (tempLeft) rmSync(temp, { force: true });
   rmSync(`${store.backupPath(run, position)}.tmp`, { force: true });
@@ -38,9 +40,32 @@ const settleStep = ({ store, root, run }: Unsettled, position: number, op: Opera
   return started;
 };
 
+// The codes of a filesystem that refuses a change for now: no permission, a read-only volume, a file another process holds.
+const REFUSED = new Set(['EACCES', 'EPERM', 'EROFS', 'EBUSY']);
+
+// Whether the step's files were put in order: undefined when a link is on the way since the run, so nothing is moved
+// through it, or when the filesystem refused, as in a folder this user may not enter or write.
+const settled = (unsettled: Unsettled, position: number, op: Operation): boolean | undefined => {
+  try {
+    if (linkOnWay(unsettled.root, op.path) !== undefined) return undefined;
+    return settleStep(unsettled, position, op);
+  } catch (error) {
+    if (REFUSED.has(String(errorCode(error)))) return undefined;
+    throw error;
+  }
+};
+
+/** The refusal of any change while a run the recovery skipped is unsettled, as its files may lie on the change's paths. */
+export const unsettledBy = (findings: Finding[]): Refusal | undefined => {
+  const skipped = findings.find((finding) => finding.code === 'recovery.skipped');
+  return skipped && { code: 'apply.unsettled', params: skipped.params };
+};
+
 /**
  * Settles the steps of runs whose process stopped without an end, on the held store: a started step's files are put
- * in order and its path reported as apply.recovered, and the run stays listed as interrupted. Idempotent.
+ * in order and its path reported as apply.recovered, and the run stays listed as interrupted. A step a link or a
+ * refusing filesystem keeps from being settled is reported as recovery.skipped, and its run stays running for a later
+ * recovery; any other error propagates. Idempotent.
  */
 export const recover = (store: RunStore, root: string): Finding[] => {
   const findings: Finding[] = [];
@@ -48,13 +73,19 @@ export const recover = (store: RunStore, root: string): Finding[] => {
     // Steps run in order and each is journaled as it ends, so only the first pending one can have started.
     const position = operations.findIndex((op) => op.status === 'pending');
     const op = operations[position];
-    // A link on the way since the run: nothing is moved through it, and the run stays running for a later recovery.
-    if (op !== undefined && linkOnWay(root, op.path) !== undefined) continue;
-    if (op !== undefined && settleStep({ store, root, run }, position, op)) {
-      store.settle(run, position, 'settled');
-      findings.push({ code: 'apply.recovered', severity: 'info', params: { run, path: op.path } });
+    // Nothing to settle: a run without operations, such as an undo that restores nothing, or with every step journaled.
+    if (op === undefined) {
+      store.finish(run, 'interrupted');
+      continue;
     }
-    store.finish(run, 'interrupted');
+    const started = settled({ store, root, run }, position, op);
+    const params = { run, path: op.path };
+    if (started === undefined) {
+      findings.push({ code: 'recovery.skipped', severity: 'warning', params });
+      continue;
+    }
+    if (started) findings.push({ code: 'apply.recovered', severity: 'info', params });
+    store.finish(run, 'interrupted', started ? [position, 'settled'] : undefined);
   }
   return findings;
 };
