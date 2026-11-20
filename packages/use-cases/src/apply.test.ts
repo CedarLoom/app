@@ -761,7 +761,7 @@ describe('recovery of an aside', () => {
     hardLink(join(root, '.claude/b.md'), join(root, '.claude/.b.md.cedarloom-r1-0.old'));
     expect(apply(held, request(root, [])).findings).toEqual([recovered('.claude/b.md')]);
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
-    expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled'] });
+    expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['untouched'] });
   });
 });
 
