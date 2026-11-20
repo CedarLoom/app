@@ -180,6 +180,10 @@ msgid "workflow.name-invalid"
 msgstr "{name} is not a valid workflow name. Use lowercase letters, digits and single hyphens."
 
 #. js-lingui-explicit-id
+msgid "workflow.name-taken"
+msgstr "The name {name} is already used by {path}."
+
+#. js-lingui-explicit-id
 msgid "session.host"
 msgstr "This server answers only at 127.0.0.1."
 

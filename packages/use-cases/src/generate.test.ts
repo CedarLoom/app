@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 import { apply } from './apply.ts';
 import { type GenerateRequest, generateWorkflows, planGeneration } from './generate.ts';
+import { newWorkflow } from './new-workflow.ts';
 import { openStore } from './store.ts';
 import { undo } from './undo.ts';
 
@@ -76,7 +77,7 @@ const setup = (definition: object) => {
   const generated = (yes = true) => generateWorkflows(store, request, yes);
   const text = (path: string) => readFileSync(join(project, path), 'utf8');
   const edit = (path: string, value: string) => writeFileSync(join(project, path), value);
-  return { project, store, request, define, generated, text, edit };
+  return { project, plugin, store, request, define, generated, text, edit };
 };
 
 const hash = (text: string): string => createHash('sha256').update(text).digest('hex');
@@ -307,3 +308,73 @@ it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     }
   },
 );
+
+const MINE = '.cedarloom/workflows/mine.json';
+const MINE_SKILL = '.claude/skills/mine/SKILL.md';
+const MINE_SCRIPT = '.claude/workflows/mine.js';
+const COPY = '{\n  "schemaVersion": 2,\n  "name": "mine",\n  "skill": "Run.\\n",\n  "script": true\n}\n';
+
+// The generate setup with the shipped definition full, and workflows new applied in it.
+const newSetup = () => {
+  const context = setup({ name: 'dev', skill: 'Run dev.\n' });
+  put(
+    join(context.plugin, 'definitions', 'full.json'),
+    '{ "schemaVersion": 2, "name": "full", "skill": "Run.\\n", "script": true }',
+  );
+  const created = (name: string, from: string) => newWorkflow(context.store, { ...context.request, name, from }, true);
+  return { ...context, created };
+};
+
+it('workflows new --from full copies the shipped definition under the new name with its files, as one run', () => {
+  const { store, created, text } = newSetup();
+  const made = created('mine', 'full');
+  expect(kinds(made.plan)).toEqual([
+    ['create', MINE],
+    ['create', MINE_SKILL],
+    ['create', MINE_SCRIPT],
+  ]);
+  expect([made.refusals, text(MINE), text(MINE_SKILL)]).toEqual([[], COPY, 'Run.\n']);
+  expect(store.run(made.run ?? '')).toMatchObject({
+    action: 'workflow.new',
+    subject: 'mine',
+    status: 'done',
+    generatedFrom: [{ name: 'mine', definition: COPY }],
+  });
+});
+
+it.each([
+  ['dev', 'full', { code: 'workflow.name-taken', params: { name: 'dev', path: '.cedarloom/workflows/dev.json' } }],
+  ['../x', 'full', { code: 'workflow.name-invalid', params: { name: '../x' } }],
+  ['mine', '../../x', { code: 'workflow.name-invalid', params: { name: '../../x' } }],
+  ['mine', 'research', { code: 'definition.not-found', params: { name: 'research', source: 'shipped' } }],
+])('refuses workflows new %s --from %s with a typed refusal and writes nothing', (name, from, refusal) => {
+  const { project, created } = newSetup();
+  expect(created(name, from)).toMatchObject({ plan: null, run: null, refusals: [refusal] });
+  expect(existsSync(join(project, '.claude'))).toBe(false);
+});
+
+it('undo of an applied workflows new removes the definition and its generated files', () => {
+  const { project, store, created } = newSetup();
+  const made = created('mine', 'full');
+  const exist = () => [MINE, MINE_SKILL, MINE_SCRIPT].map((path) => existsSync(join(project, path)));
+  expect(exist()).toEqual([true, true, true]);
+  expect(undo(store, { root: project, run: made.run ?? '' }).refusal).toBeNull();
+  expect(exist()).toEqual([false, false, false]);
+  expect(created('mine', 'full')).toMatchObject({ refusals: [], run: expect.any(String) });
+});
+
+it('workflows new copies a shipped definition whose name is not its file name', () => {
+  const { plugin, created, text } = newSetup();
+  put(join(plugin, 'definitions', 'full.json'), '{ "schemaVersion": 2, "name": "other", "skill": "Run.\\n" }');
+  expect(created('mine', 'full').refusals).toEqual([]);
+  expect(text(MINE)).toBe('{\n  "schemaVersion": 2,\n  "name": "mine",\n  "skill": "Run.\\n"\n}\n');
+});
+
+it("counts a new workflow's files as generated: generate keeps its definition and deletes its dropped script", () => {
+  const { created, generated, define } = newSetup();
+  generated();
+  created('mine', 'full');
+  expect(generated().plan?.operations).toEqual([]);
+  define({ name: 'mine', skill: 'Run.\n', script: false }, 'mine');
+  expect(kinds(generated().plan)).toEqual([['delete', MINE_SCRIPT]]);
+});
