@@ -193,7 +193,7 @@ describe('undo of an undo', () => {
 });
 
 // r1 replaces old with new, then each id is undone in turn; `!` marks an undo stopped after its write.
-const undos = (ids: string[]) => {
+const undos = (ids: readonly string[]) => {
   const { root, state } = project({ '.claude/b.md': 'old\n' });
   const held = store(state, 'r1', 'u1', 'u2', 'u3', 'u4', 'u5', 'u6');
   apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
@@ -210,25 +210,18 @@ describe('undo of a replaced undo', () => {
     [['r1', 'u1', 'r1'], 'old\n', 'run.already-undone'],
     [['r1', 'u1', 'r1', 'u3'], 'new\n', 'undo.replaced'],
   ] as const)('refuses to undo u2 after the undos of %j: u3 replaced u1 as the undo of r1', (before, left, code) => {
-    const { root, state } = project({ '.claude/b.md': 'old\n' });
-    const held = store(state, 'r1', 'u1', 'u2', 'u3', 'u4', 'u5');
-    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
-    for (const id of before) expect(undo(held, { root, run: id }).refusal).toBeNull();
+    const { root, held, file } = undos(before);
     expect(undo(held, { root, run: 'u2' }).refusal).toEqual({ code, params: { run: 'r1', by: 'u3' } });
-    expect(text(join(root, '.claude/b.md'))).toBe(left);
+    expect(file()).toBe(left);
   });
 
   it('refuses to undo an interrupted undo once a newer undo of the run is recorded', () => {
-    const { root, state } = project({ '.claude/b.md': 'old\n' });
-    const held = store(state, 'r1', 'u1', 'u2', 'u3');
-    apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
-    expect(() => undo(held, { root, run: 'r1' }, failAt('linked', 0))).toThrow('disk gone');
-    expect(undo(held, { root, run: 'r1' }).run).toBe('u2');
+    const { root, held, file } = undos(['r1!', 'r1']);
     expect(undo(held, { root, run: 'u1' }).refusal).toEqual({
       code: 'run.already-undone',
       params: { run: 'r1', by: 'u2' },
     });
-    expect(text(join(root, '.claude/b.md'))).toBe('old\n');
+    expect(file()).toBe('old\n');
   });
 
   it('refuses to bring back an undo that restored nothing once the file holds the run result again', () => {
