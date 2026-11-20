@@ -1185,7 +1185,8 @@ describe('undo of a create', () => {
     apply(held, request(root, [create('.claude/skills/a/SKILL.md', 'a\n')]));
     if (added !== null) writeFileSync(join(root, added), 'mine\n');
     expect(undo(held, { root, run: 'r1' }).refusal).toBeNull();
-    expect(listing(root)).toEqual(left);
+    const seen = existsSync(join(root, '.claude/skills')) ? readdirSync(join(root, '.claude/skills'), { recursive: true }) : null;
+    expect([listing(root), seen, view(state).run('r1')]).toEqual([left, null, null]);
     if (added !== null) expect(text(join(root, added))).toBe('mine\n');
   });
 
