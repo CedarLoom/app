@@ -1,6 +1,6 @@
 #!/bin/sh
-# Packs core, use-cases and cli as they would be published, installs the three tarballs together in an empty folder
-# and runs both bins from there, so the packed files run without the workspace.
+# Packs core, use-cases and cli as they would be published, installs the three tarballs and the locked zod in an empty
+# folder and runs both bins from there, so the packed files run without the workspace.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -13,6 +13,10 @@ for package in core use-cases cli; do
   pnpm --filter "@cedarloom/$package" run build
   pnpm --filter "@cedarloom/$package" pack --pack-destination "$work"
 done
+
+# zod comes from the installed workspace, the version the lockfile pins, so npm needs no registry lookup for it.
+zod=$(pnpm --filter @cedarloom/core exec node -p "require('node:path').dirname(require.resolve('zod/package.json'))")
+npm pack --ignore-scripts --pack-destination "$work" "$zod"
 
 cd "$work"
 echo '{ "private": true }' >package.json
