@@ -150,6 +150,7 @@ it.each([
   [['workflows', 'off', 'dev', '--plugin'], 'cli.flag-conflict', { flags: '<id>, --plugin' }],
   [['workflows', 'off', '--plugin', '--script-only'], 'cli.flag-conflict', { flags: '--script-only, --plugin' }],
   [['workflows', 'off', '--plugin', '--plugin-root', 'x'], 'cli.flag-conflict', { flags: '--plugin-root, --plugin' }],
+  [['workflows', 'on', 'dev', 'plain'], 'cli.unknown-command', { command: 'plain', bin: 'cedarloom' }],
   [
     ['workflows', 'on', 'dev', '--script-only'],
     'cli.unknown-flag',

@@ -56,7 +56,7 @@ const unreadable = (): Refusal => ({ code: 'settings.unreadable', params: { path
 
 const nameOf = (id: string): string => (id.startsWith(SHIPPED) ? id.slice(SHIPPED.length) : id);
 
-// Recovery first, as start does; an id whose name is not valid is refused as typed.
+// As start, with the name's refusal naming the id as typed.
 const started = (store: RunStore, root: string, id: string | null): ReturnType<typeof start> =>
   id !== null && invalidName([nameOf(id)]) !== undefined
     ? { recovered: [], stop: { code: 'workflow.name-invalid', params: { name: id } } }
