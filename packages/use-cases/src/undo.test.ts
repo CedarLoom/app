@@ -8,6 +8,7 @@ import {
   crash,
   create,
   failAt,
+  foldsCase,
   fresh,
   listing,
   project,
@@ -296,8 +297,8 @@ describe('undo of a replaced undo on two files', () => {
 });
 
 describe('undo matches files and runs as apply and the store do', () => {
-  // Linux filesystems tell the two names apart, so apply never chains them as one file there.
-  it.skipIf(process.platform === 'linux')('undoes two steps on one file named in two letter cases', () => {
+  // A volume that tells the two names apart never has apply chain them as one file.
+  it.skipIf(!foldsCase())('undoes two steps on one file named in two letter cases', () => {
     const { root, state } = project();
     const held = store(state, 'r1', 'u1');
     apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/A.md', 'a\n', 'b\n')]));

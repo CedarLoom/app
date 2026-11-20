@@ -10,7 +10,6 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
-  readFileSync,
   readlinkSync,
   readSync,
   renameSync,
@@ -49,26 +48,41 @@ export class Changed extends Error {}
 /** What is at a path: a regular file's bytes and mode, nothing, a link, or something that is not a file. */
 export type Found = { bytes: Buffer; mode: number } | 'absent' | 'link' | 'not-file';
 
+/** What fileAt finds: as readFound, or a regular file larger than FILE_LIMIT. */
+export type FileFound = Found | 'too-large';
+
+/** The most bytes of a project file, a backup or a planned text CedarLoom reads or writes whole. */
+export const FILE_LIMIT = 16 * 1024 * 1024;
+
 // No link followed, and no wait on a FIFO.
 const READ = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-// Opening a socket: ENXIO on Linux, EOPNOTSUPP on macOS, which Node.js names by its number alone.
-const SOCKET = new Set<unknown>([-os.errno.ENXIO, -os.errno.EOPNOTSUPP]);
+// Opening a socket: ENXIO on Linux, EOPNOTSUPP on macOS, which Node.js names by its number alone; elsewhere these
+// numbers mean another failure.
+const SOCKET = new Map<string, number>([
+  ['linux', -os.errno.ENXIO],
+  ['darwin', -os.errno.EOPNOTSUPP],
+]).get(process.platform);
 const errorNumber = (error: unknown): unknown => (error instanceof Error && 'errno' in error ? error.errno : undefined);
+// Read in steps, so a small file takes no buffer of the limit's size.
+const CHUNK = 64 * 1024;
 
-// The first length bytes of the file open at fd.
+// At most the first length bytes of the file open at fd, up to its end; the size fstat reports is not trusted, as a
+// file that grows meanwhile or one that reports 0, as on procfs, is read on past it.
 const headOf = (fd: number, length: number): Buffer => {
-  const bytes = Buffer.alloc(length);
+  const chunks: Buffer[] = [];
   let filled = 0;
   while (filled < length) {
-    const count = readSync(fd, bytes, filled, length - filled, filled);
+    const chunk = Buffer.alloc(Math.min(CHUNK, length - filled));
+    const count = readSync(fd, chunk, 0, chunk.length, filled);
     if (count === 0) break;
+    chunks.push(chunk.subarray(0, count));
     filled += count;
   }
-  return bytes.subarray(0, filled);
+  return Buffer.concat(chunks, filled);
 };
 
-/** Reads a regular file, or its first limit bytes, from one open handle, so what is checked is what is read. */
-export const readFound = (path: string, limit = Number.POSITIVE_INFINITY): Found => {
+/** Reads a regular file's first limit bytes from one open handle, so what is checked is what is read. */
+export const readFound = (path: string, limit: number): Found => {
   let fd: number;
   try {
     fd = openSync(path, READ);
@@ -79,22 +93,28 @@ export const readFound = (path: string, limit = Number.POSITIVE_INFINITY): Found
     if (code === 'ELOOP') return 'link';
     // ENOTDIR: a folder on the way is a file.
     if (code === 'EISDIR' || code === 'ENOTDIR') return 'not-file';
-    if (SOCKET.has(errorNumber(error))) return 'not-file';
+    if (SOCKET !== undefined && errorNumber(error) === SOCKET) return 'not-file';
     throw error;
   }
   try {
     const info = fstatSync(fd);
     // Permission bits only: like a write by the kernel, a replace drops setuid and setgid.
     if (!info.isFile()) return 'not-file';
-    return { bytes: info.size > limit ? headOf(fd, limit) : readFileSync(fd), mode: info.mode & 0o777 };
+    return { bytes: headOf(fd, limit), mode: info.mode & 0o777 };
   } finally {
     closeSync(fd);
   }
 };
 
-/** The hash of the regular file at a path; null for anything else. */
+/** Reads a whole regular file of at most FILE_LIMIT bytes from one open handle; too-large for a larger one. */
+export const fileAt = (path: string): FileFound => {
+  const found = readFound(path, FILE_LIMIT + 1);
+  return typeof found === 'object' && found.bytes.length > FILE_LIMIT ? 'too-large' : found;
+};
+
+/** The hash of the regular file at a path; null for anything else, also for a file larger than FILE_LIMIT. */
 export const hashAt = (path: string): string | null => {
-  const found = readFound(path);
+  const found = fileAt(path);
   return typeof found === 'object' ? sha256(found.bytes) : null;
 };
 
@@ -198,7 +218,7 @@ export const setAside = (path: string, aside: string, before: string): void => {
   } catch (error) {
     throw errorCode(error) === 'ENOENT' ? new Changed() : error;
   }
-  const found = readFound(aside);
+  const found = fileAt(aside);
   if (typeof found === 'object' && sha256(found.bytes) === before) return;
   putBack(aside, path);
   throw new Changed();
