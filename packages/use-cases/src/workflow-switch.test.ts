@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { type ApplyRequest, apply } from './apply.ts';
+import { type ApplyRequest, type At, apply } from './apply.ts';
 import { failAt, fresh, project, store, text } from './test-fixtures.ts';
 import { undo } from './undo.ts';
 import { workflowsOff, workflowsOn } from './workflow-switch.ts';
@@ -46,10 +47,24 @@ const setup = (settings?: string) => {
   const read = () => text(join(root, SETTINGS));
   const edit = (value: string) => writeFileSync(join(root, SETTINGS), value);
   const entries = (id: string) => held.run(id)?.operations.map((operation) => operation.entries);
-  return { root, held, off, on, read, edit, entries };
+  return { root, state, held, off, on, read, edit, entries };
 };
+type Context = ReturnType<typeof setup>;
 
 const withDeny = (rules: string) => OWNER.replace('["Read(.env)"]', rules);
+const DEV = withDeny('["Read(.env)", "Skill(dev)", "Workflow(dev-run)"]');
+
+// The switch of dev planned without --yes, then applied as its run with `at`, which stops it.
+const stopped = ({ root, held, off, on }: Context, action: 'workflow.off' | 'workflow.on', at: At): void => {
+  const { plan } = action === 'workflow.off' ? off('dev', { yes: false }) : on('dev', false);
+  if (plan === null) throw new Error('no plan');
+  const run = { kind: 'apply', action, subject: 'dev', undoes: null, generatedFrom: [] } satisfies ApplyRequest['run'];
+  const written = [
+    { pointer: '/permissions/deny', value: 'Skill(dev)' },
+    { pointer: '/permissions/deny', value: 'Workflow(dev-run)' },
+  ];
+  expect(() => apply(held, { root, plan, run, entries: new Map([[0, written]]) }, at)).toThrow('disk gone');
+};
 
 describe('workflows off for a workflow', () => {
   it('appends the rules to owner settings byte for byte as a run with its entries, and undo restores the file', () => {
@@ -87,6 +102,15 @@ describe('workflows off for a workflow', () => {
       ],
     ]);
     expect(on('dev')).toMatchObject({ run: null, plan: { operations: [], skipped: [] } });
+  });
+
+  it('on removes the rules of the off run that last wrote them, also after the owner removed them in between', () => {
+    const { off, on, read, edit } = setup(OWNER);
+    off('dev');
+    edit(OWNER);
+    off('dev');
+    expect(on('dev')).toMatchObject({ run: 'r3', plan: { skipped: [] } });
+    expect(read()).toBe(OWNER);
   });
 });
 
@@ -147,25 +171,92 @@ describe('workflows on after an off run that is not in effect', () => {
     ownerRuleStays(context);
   });
 
-  it('an off run stopped before its write owns nothing', () => {
+  it('an off run stopped before its write owns nothing, also when the owner writes its result by hand', () => {
+    const context = setup(OWNER);
+    stopped(context, 'workflow.off', failAt('temp-written', 0));
+    context.edit(DEV);
+    expect(context.on('dev')).toMatchObject({ run: null, plan: { operations: [] } });
+    expect(context.read()).toBe(DEV);
+  });
+
+  it.each([
+    ['the off run', [], 'r1'],
+    ['an undo of the undo of the off run', ['r1', 'r2'], 'r3'],
+    ['the off run after an undo of its undo', ['r1', 'r2'], 'r1'],
+  ])('no run owns the rules while an undo of %s stopped after its write', (_, done, last) => {
     const context = setup(OWNER);
     const { root, held, off } = context;
-    const { plan } = off('dev', { yes: false });
-    if (plan === null) throw new Error('no plan');
-    const run = {
-      kind: 'apply',
-      action: 'workflow.off',
-      subject: 'dev',
-      undoes: null,
-      generatedFrom: [],
-    } satisfies ApplyRequest['run'];
-    const written = [
-      { pointer: '/permissions/deny', value: 'Skill(dev)' },
-      { pointer: '/permissions/deny', value: 'Workflow(dev-run)' },
-    ];
-    expect(() => apply(held, { root, plan, run, entries: new Map([[0, written]]) }, failAt('temp-written', 0))).toThrow(
-      'disk gone',
-    );
+    off('dev');
+    for (const run of done) expect(undo(held, { root, run }).refusal).toBeNull();
+    expect(() => undo(held, { root, run: last }, failAt('written', 0))).toThrow('disk gone');
+    ownerRuleStays(context);
+  });
+
+  it('a rule the owner adds stays after a second undo of the off run done over an undo of its undo', () => {
+    const context = setup(OWNER);
+    context.off('dev');
+    for (const run of ['r1', 'r2', 'r1']) expect(undo(context.held, { root: context.root, run }).refusal).toBeNull();
+    expect(context.read()).toBe(OWNER);
+    ownerRuleStays(context);
+  });
+});
+
+describe('workflows on after an off run stopped after its write', () => {
+  it.each([
+    ['at its result', () => undefined, OWNER],
+    [
+      'where the first later run on it started',
+      ({ off }: Context) => off('plain'),
+      withDeny('["Read(.env)", "Skill(plain)"]'),
+    ],
+  ])('the off run owns its rules while the file is %s, and on removes them', (_, between, left) => {
+    const context = setup(OWNER);
+    stopped(context, 'workflow.off', failAt('written', 0));
+    between(context);
+    expect(context.on('dev')).toMatchObject({ plan: { skipped: [] }, refusals: [] });
+    expect(context.read()).toBe(left);
+  });
+
+  const elsewhere = withDeny('["Read(.env)", "Bash(rm)", "Skill(dev)", "Workflow(dev-run)"]');
+  it.each([
+    ['elsewhere with no later run', ({ edit }: Context) => edit(elsewhere)],
+    [
+      'at its result only for a run after the first later one',
+      ({ edit, off }: Context) => {
+        edit(elsewhere);
+        off('plain');
+        edit(DEV);
+        off('plain');
+      },
+    ],
+  ])('the off run owns nothing while the file is %s, and on leaves the rules', (_, between) => {
+    const context = setup(OWNER);
+    stopped(context, 'workflow.off', failAt('written', 0));
+    between(context);
+    const before = context.read();
+    expect(context.on('dev')).toMatchObject({ run: null, plan: { operations: [] } });
+    expect(context.read()).toBe(before);
+  });
+});
+
+describe('workflows on after an on run stopped after its write', () => {
+  it.each([
+    ['after recovery', 'settled', () => failAt('written', 0)],
+    [
+      'before recovery',
+      'pending',
+      ({ edit }: Context): At =>
+        (boundary) => {
+          if (boundary !== 'written') return;
+          edit(withDeny('["Read(.env)", "Skill(dev)"]'));
+          throw new Error('disk gone');
+        },
+    ],
+  ])('a rule the owner adds back %s stays', (_, step, at) => {
+    const context = setup(OWNER);
+    context.off('dev');
+    stopped(context, 'workflow.on', at(context));
+    expect(context.held.run('r2')?.operations[0]?.status).toBe(step);
     ownerRuleStays(context);
   });
 });
@@ -204,7 +295,83 @@ describe('workflows off and on for the plugin', () => {
   });
 });
 
+describe('workflows on after undo runs', () => {
+  it.each([
+    ['the rules', OWNER, 'dev', DEV],
+    ['the plugin entry', plugins(true), null, plugins(false)],
+  ])('switches %s back on after undo of the off run and then of the on run', (_, settings, id, switchedOff) => {
+    const { root, held, off, on, read } = setup(settings);
+    off(id);
+    on(id);
+    expect(undo(held, { root, run: 'r1' })).toMatchObject({ run: 'r3', refusal: null, plan: { operations: [] } });
+    expect(undo(held, { root, run: 'r2' })).toMatchObject({ run: 'r4', refusal: null });
+    expect(read()).toBe(switchedOff);
+    expect(on(id)).toMatchObject({ run: 'r5', plan: { skipped: [] } });
+    expect(read()).toBe(settings);
+  });
+
+  it.each([
+    ['after an undo of the off run', ['r1'], 'r4'],
+    ['with the off run in effect', [], 'r3'],
+  ])('an undo of an on run that wrote nothing owns nothing, %s', (_, done, last) => {
+    const { root, held, off, on, read, edit } = setup(OWNER);
+    off('dev');
+    on('dev');
+    for (const run of done) expect(undo(held, { root, run }).refusal).toBeNull();
+    edit(DEV);
+    expect(undo(held, { root, run: 'r2' })).toMatchObject({ run: last, plan: { operations: [] } });
+    expect(on('dev')).toMatchObject({ run: null, plan: { operations: [] } });
+    expect(read()).toBe(DEV);
+  });
+});
+
+describe('workflows on after an undo of the undo of an on run', () => {
+  it.each([
+    [
+      'stopped after its write, with the off run in effect',
+      ({ root, held }: Context) =>
+        expect(() => undo(held, { root, run: 'r3' }, failAt('written', 0))).toThrow('disk gone'),
+    ],
+    [
+      'done, with a later off run in effect',
+      ({ root, held, off, on }: Context) => {
+        on('dev');
+        off('dev');
+        expect(undo(held, { root, run: 'r3' })).toMatchObject({ run: 'r6', refusal: null });
+      },
+    ],
+    [
+      'undone twice down its chain and then stopped after its write',
+      ({ root, held }: Context) => {
+        for (const run of ['r3', 'r4']) expect(undo(held, { root, run }).refusal).toBeNull();
+        expect(() => undo(held, { root, run: 'r3' }, failAt('written', 0))).toThrow('disk gone');
+      },
+    ],
+  ])('a rule the owner adds stays after the undo %s', (_, last) => {
+    const context = setup(OWNER);
+    context.off('dev');
+    context.on('dev');
+    expect(undo(context.held, { root: context.root, run: 'r2' })).toMatchObject({ run: 'r3', refusal: null });
+    last(context);
+    expect(context.read()).toBe(OWNER);
+    ownerRuleStays(context);
+  });
+});
+
 describe('a settings file workflows off and on do not change', () => {
+  it('refuses with store.unreadable a run row that does not parse, and writes nothing', () => {
+    const { state, off, on, read } = setup(OWNER);
+    off('dev');
+    const db = new DatabaseSync(join(state, 'runs.sqlite'));
+    db.exec(`UPDATE runs SET startedAt = 'yesterday'`);
+    db.close();
+    expect(on('dev')).toMatchObject({
+      plan: null,
+      refusals: [{ code: 'store.unreadable', params: { path: join(state, 'runs.sqlite') } }],
+    });
+    expect(read()).toBe(DEV);
+  });
+
   it.each([
     ['is not JSON', Buffer.from('{"permissions": {"deny": [],}}')],
     ['has a deny that is not an array', Buffer.from('{"permissions": {"deny": "Skill(dev)"}}')],

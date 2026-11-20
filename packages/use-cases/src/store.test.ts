@@ -14,7 +14,9 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { Readable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ZodError } from 'zod';
 import {
   connectReader,
   type NewRun,
@@ -122,7 +124,18 @@ const view = (dir: string) => {
   return result;
 };
 
-const unreadable = (path: string) => ({ ok: false, refusal: { code: 'store.unreadable', params: { path } } });
+const unreadable = (path: string) => ({
+  ok: false,
+  refusal: { code: 'store.unreadable', params: { path } },
+  cause: expect.any(Error),
+});
+
+// A child that fails before it says it is ready fails the test instead of leaving it waiting.
+const ready = (child: ChildProcess & { stdout: Readable }): Promise<unknown> =>
+  Promise.race([
+    once(child.stdout, 'data'),
+    once(child, 'exit').then(([code]) => Promise.reject(new Error(`the child exited with ${String(code)}`))),
+  ]);
 
 // Another process that opens the store, starts a run and holds the store until it is killed.
 const holder = async (dir: string): Promise<ChildProcess> => {
@@ -139,11 +152,7 @@ const holder = async (dir: string): Promise<ChildProcess> => {
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   children.push(child);
-  // A child that fails before it holds the store fails the test instead of leaving it waiting.
-  await Promise.race([
-    once(child.stdout, 'data'),
-    once(child, 'exit').then(([code]) => Promise.reject(new Error(`the holder exited with ${String(code)}`))),
-  ]);
+  await ready(child);
   return child;
 };
 
@@ -177,7 +186,7 @@ describe('the store lock', () => {
       out += chunk.toString();
     });
     // Released when the other process starts opening, not after a set time that a slow machine can overrun.
-    await once(child.stdout, 'data');
+    await ready(child);
     opened.length = 0;
     held.close();
     await once(child, 'close');
@@ -190,6 +199,7 @@ describe('the store lock', () => {
     expect(openStore(dir, clock)).toEqual({
       ok: false,
       refusal: { code: 'store.locked', params: { path: join(dir, 'runs.sqlite') } },
+      cause: expect.any(Error),
     });
   }, 20_000);
 
@@ -318,6 +328,20 @@ describe('the store refusals', () => {
     db.close();
     const refused = { ok: false, refusal: { code: 'store.version-unsupported', params: { found: 3, supported: 2 } } };
     expect([openStore(dir, clock), openRunView(dir)]).toEqual([refused, refused]);
+  });
+
+  it.each([
+    ['a value out of schema', `startedAt = 'yesterday'`, ZodError],
+    ['text that is not JSON', `generatedFrom = '{'`, SyntaxError],
+  ])('refuses a row with %s with the parse error as the cause, for the held store and for reading', (_, set, error) => {
+    const dir = fresh();
+    const held = store(dir);
+    const id = value(held.begin(newRun));
+    const db = new DatabaseSync(join(dir, 'runs.sqlite'));
+    db.exec(`UPDATE runs SET ${set}`);
+    db.close();
+    const refused = { ...unreadable(join(dir, 'runs.sqlite')), cause: expect.any(error) };
+    expect([held.read(() => held.run(id)), view(dir).run(id)]).toEqual([refused, refused]);
   });
 
   it('refuses a store that is not a database, for writing and for reading', () => {
