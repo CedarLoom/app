@@ -166,12 +166,13 @@ const bindRefusal = (error: unknown, port: number): Refusal | undefined => {
     : undefined;
 };
 
-/** The exit code of a closing server: a failure prints only its stack, since --json printed the start document. */
-export const closed = (io: Pick<AppIo, 'stderr'>, closing: Promise<void>): Promise<number> =>
+/** The exit code of a closing server: a failure prints its stack escaped on stderr, then cli.internal as text; with --json no second document after the start document. */
+export const closed = (io: Pick<AppIo, 'argv' | 'stderr'>, closing: Promise<void>): Promise<number> =>
   closing.then(
     () => 0,
     (error: unknown) => {
       io.stderr(`${printableStack(error)}\n`);
+      if (!io.argv.includes('--json')) io.stderr(text('cli.internal', {}));
       return 5;
     },
   );

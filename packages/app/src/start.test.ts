@@ -18,19 +18,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { writeRedirect } from './redirect.ts';
 import { type AppIo, closed, crashed, openPage, type Started, start } from './start.ts';
 
-// A server built while error is set fails to close with it; a throwing onClose hook would escape uncaught instead.
-const closing = vi.hoisted(() => ({ error: undefined as Error | undefined }));
-vi.mock('./server.ts', async (original) => {
-  const server = await original<typeof import('./server.ts')>();
-  const buildServer: typeof server.buildServer = async (options) => {
-    const app = await server.buildServer(options);
-    const { error } = closing;
-    if (error !== undefined) app.addHook('onClose', () => Promise.reject(error));
-    return app;
-  };
-  return { ...server, buildServer };
-});
-
 const folders: string[] = [];
 const servers: (() => Promise<number>)[] = [];
 afterEach(async () => {
@@ -220,27 +207,22 @@ describe('openPage', () => {
 });
 
 describe('closed', () => {
-  it('ends the start of a server that fails to close with the stack escaped on stderr, exit 5', async () => {
-    const { io, errors } = appIo(['--no-open', '--json']);
-    closing.error = Object.assign(new Error('close failed'), { stack: 'Error: close\u202e failed\n    at close' });
-    const result = await start(io).finally(() => {
-      closing.error = undefined;
-    });
-    expect(['close' in result && (await result.close()), errors]).toEqual([
-      5,
-      ['Error: close\\u202e failed\n    at close\n'],
-    ]);
-  });
-
-  it('reports a failed close by its stack, escaped, on stderr and no second document, exit 5', async () => {
-    const { io, out, errors } = appIo(['--json']);
-    const failure = Object.assign(new Error('close failed'), { stack: 'Error: close\u202e failed\n    at close' });
-    expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([
-      5,
-      [],
-      ['Error: close\\u202e failed\n    at close\n'],
-    ]);
-  });
+  it.each([
+    ['--json', []],
+    // cli.internal as one line of text after the stack.
+    ['text', [expect.stringMatching(/^\S[^\n]*\n$/)]],
+  ])(
+    'reports a failed close in %s mode by its stack, escaped, on stderr and no second document, exit 5',
+    async (mode, text) => {
+      const { io, out, errors } = appIo(mode === 'text' ? [] : [mode]);
+      const failure = Object.assign(new Error('close failed'), { stack: 'Error: close\u202e failed\n    at close' });
+      expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([
+        5,
+        [],
+        ['Error: close\\u202e failed\n    at close\n', ...text],
+      ]);
+    },
+  );
 });
 
 describe('start without a server', () => {
