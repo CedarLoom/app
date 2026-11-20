@@ -100,7 +100,8 @@
                     "undo.file-changed",
                     "undo.replaced",
                     "undo.result-kept",
-                    "workflow.name-invalid"
+                    "workflow.name-invalid",
+                    "workflow.name-taken"
                   ]
                 },
                 "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -450,7 +451,8 @@
                             "undo.file-changed",
                             "undo.replaced",
                             "undo.result-kept",
-                            "workflow.name-invalid"
+                            "workflow.name-invalid",
+                            "workflow.name-taken"
                           ]
                         },
                         "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -545,7 +547,8 @@
                     "undo.file-changed",
                     "undo.replaced",
                     "undo.result-kept",
-                    "workflow.name-invalid"
+                    "workflow.name-invalid",
+                    "workflow.name-taken"
                   ]
                 },
                 "params": {
@@ -683,7 +686,8 @@
               "undo.file-changed",
               "undo.replaced",
               "undo.result-kept",
-              "workflow.name-invalid"
+              "workflow.name-invalid",
+              "workflow.name-taken"
             ]
           },
           "params": {
@@ -812,7 +816,8 @@
                     "undo.file-changed",
                     "undo.replaced",
                     "undo.result-kept",
-                    "workflow.name-invalid"
+                    "workflow.name-invalid",
+                    "workflow.name-taken"
                   ]
                 },
                 "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -1162,7 +1167,8 @@
                             "undo.file-changed",
                             "undo.replaced",
                             "undo.result-kept",
-                            "workflow.name-invalid"
+                            "workflow.name-invalid",
+                            "workflow.name-taken"
                           ]
                         },
                         "severity": { "type": "string", "enum": ["error", "warning", "info"] },
@@ -1257,7 +1263,8 @@
                     "undo.file-changed",
                     "undo.replaced",
                     "undo.result-kept",
-                    "workflow.name-invalid"
+                    "workflow.name-invalid",
+                    "workflow.name-taken"
                   ]
                 },
                 "params": {
@@ -1395,7 +1402,8 @@
               "undo.file-changed",
               "undo.replaced",
               "undo.result-kept",
-              "workflow.name-invalid"
+              "workflow.name-invalid",
+              "workflow.name-taken"
             ]
           },
           "params": {

@@ -52,13 +52,13 @@ export interface Generation {
   findings: Finding[];
 }
 
-interface Definition {
+export interface Definition {
   name: string;
   path: string;
   text: string;
 }
 
-const stoppedBy = (refusals: Refusal[], findings: Finding[]): Generation => ({
+export const stoppedBy = (refusals: Refusal[], findings: Finding[]): Generation => ({
   plan: null,
   generatorRefusals: [],
   generatedFrom: [],
@@ -69,15 +69,16 @@ const stoppedBy = (refusals: Refusal[], findings: Finding[]): Generation => ({
 
 // A definition's text; one that is not UTF-8 JSON or is named other than its file stops the generation before the
 // generator runs.
-const definitionOf = (place: Place, { name, path }: { name: string; path: string }): Definition | Refusal => {
+export const definitionOf = (place: Place, { name, path }: { name: string; path: string }): Definition | Refusal => {
   const bytes = definitionBytes(place.base, path);
   if (bytes === 'absent') return { code: 'definition.not-found', params: { name, source: place.source } };
-  if (bytes === 'unreadable' || !isUtf8(bytes)) return notJson(path);
+  const shown = place.shown(path);
+  if (bytes === 'unreadable' || !isUtf8(bytes)) return notJson(shown);
   const text = bytes.toString('utf8');
   const json = jsonOf(text);
   // JsonValue also refuses a __proto__ member, as the definition readers do.
-  if (!JsonValue.safeParse(json).success) return notJson(path);
-  return nameMismatch(path, json) ?? { name, path, text };
+  if (!JsonValue.safeParse(json).success) return notJson(shown);
+  return nameMismatch(shown, json) ?? { name, path, text };
 };
 
 // The generator's outputs by their project path; a file that is not UTF-8 is output the app cannot read.
@@ -88,7 +89,7 @@ const projectOutputs = (outputs: Map<string, Buffer>): Map<string, Buffer> | Ref
 };
 
 // The hash each file had when the newest generation in effect wrote it, for the files below the names the generator
-// writes under (all files, for none).
+// writes under (all its files, for none); a definition file a generating run wrote is no output.
 const previousFiles = (store: RunStore, names: readonly string[]): Map<string, string> => {
   const hashes = new Map<string, string | null>();
   for (const generation of store.generations().filter((each) => inEffect(store, each))) {
@@ -99,7 +100,9 @@ const previousFiles = (store: RunStore, names: readonly string[]): Map<string, s
   }
   return new Map(
     [...hashes].flatMap(([path, hash]): [string, string][] =>
-      hash !== null && (names.length === 0 || names.some((name) => isOwnPath(path, name))) ? [[path, hash]] : [],
+      hash !== null && (names.length === 0 ? path.startsWith('.claude/') : names.some((name) => isOwnPath(path, name)))
+        ? [[path, hash]]
+        : [],
     ),
   );
 };
@@ -161,43 +164,44 @@ const planned = (root: string, outputs: Map<string, Buffer>, previous: Map<strin
   return { planHash: planHash(operations, sha256), operations, skipped };
 };
 
-// A name's refusal before recovery runs; then a run recovery left unsettled stops the generation, as apply would refuse
-// its plan.
-const start = (store: RunStore, request: GenerateRequest): { recovered: Finding[]; stop: Refusal | undefined } => {
-  const invalid = invalidName(request.names);
+// A name's refusal before recovery runs; then a run recovery left unsettled stops the change, as apply would refuse its
+// plan.
+export const start = (
+  store: RunStore,
+  root: string,
+  names: readonly string[],
+): { recovered: Finding[]; stop: Refusal | undefined } => {
+  const invalid = invalidName(names);
   if (invalid !== undefined) return { recovered: [], stop: invalid };
-  const recovered = recover(store, request.root);
+  const recovered = recover(store, root);
   return { recovered, stop: unsettledBy(recovered) };
 };
 
+/** What a generation plans from: the definitions, the plugin root of the generator, and project files to write beside. */
+export interface GenerationInputs {
+  root: string;
+  names: readonly string[];
+  env: WorkflowsRequest['env'];
+  generator: string;
+  definitions: Definition[];
+  files: Map<string, Buffer>;
+  findings: Finding[];
+}
+
 /**
- * Plans the generation of the project's definitions into `.claude/`: the plugin's generator writes their outputs into
- * a temporary folder, and the plan creates or replaces each project file that differs and deletes each file the last
- * generation wrote that no output holds any more, while it is unchanged. Recovery runs first.
+ * The plan of generating the definitions with the plugin's generator into a temporary folder, beside the project files
+ * given: each output or given file that differs is created or replaced, and each file the last generation for the
+ * names wrote that no output holds any more is deleted, while it is unchanged.
  */
-export const planGeneration = (store: RunStore, request: GenerateRequest): Generation => {
-  const { recovered, stop: first } = start(store, request);
-  if (first !== undefined) return stoppedBy([first], recovered);
-  const plugin = pluginPlace(request, request.root);
-  if (plugin.place === null) {
-    const stop = stoppedOn(plugin.findings);
-    return stoppedBy(stop.refusals, [...recovered, ...stop.findings]);
-  }
-  const findings = [...recovered, ...plugin.findings];
-  const place = projectPlace(request.root);
-  const list = chosen(place, request.names);
-  if (!Array.isArray(list)) return stoppedBy([list], findings);
-  const read = list.map((entry) => definitionOf(place, entry));
-  const unread = read.find((entry): entry is Refusal => 'code' in entry);
-  if (unread !== undefined) return stoppedBy([unread], findings);
-  const definitions = read.filter((entry): entry is Definition => 'text' in entry);
+export const generationOf = (store: RunStore, inputs: GenerationInputs): Generation => {
+  const { root, names, env, generator, definitions, files, findings } = inputs;
   const generatedFrom = definitions.map(({ name, text }) => ({ name, definition: text }));
   const generated =
     definitions.length === 0
       ? { outputs: new Map() }
       : generate(
           definitions.map(({ text }) => Buffer.from(text)),
-          { root: plugin.place.base, temp: tmpdir(), timeoutMs: GENERATOR_TIMEOUT_MS, env: request.env },
+          { root: generator, temp: tmpdir(), timeoutMs: GENERATOR_TIMEOUT_MS, env },
         );
   if ('finding' in generated)
     return stoppedBy([{ code: generated.finding.code, params: generated.finding.params }], findings);
@@ -209,33 +213,77 @@ export const planGeneration = (store: RunStore, request: GenerateRequest): Gener
   }
   const outputs = projectOutputs(generated.outputs);
   if (!(outputs instanceof Map)) return stoppedBy([outputs], findings);
-  const plan = planned(request.root, outputs, previousFiles(store, request.names));
+  const plan = planned(root, new Map([...outputs, ...files]), previousFiles(store, names));
   if (!('operations' in plan)) return stoppedBy([plan], findings);
   return { plan, generatorRefusals: [], generatedFrom, run: null, refusals: [], findings };
 };
 
-/** Generates the project's definitions: plans the generation, and with `yes` applies it as a run, crash-ordered. */
-export const generateWorkflows = (store: RunStore, request: GenerateRequest, yes: boolean): Generation => {
-  const generation = planGeneration(store, request);
-  const { plan, generatedFrom } = generation;
-  if (!yes || plan === null || plan.operations.length === 0) return generation;
-  const [only] = generatedFrom;
-  const applied = apply(store, {
-    root: request.root,
-    plan,
-    run: {
-      kind: 'apply',
-      action: 'workflow.generate',
-      subject: generatedFrom.length === 1 && only !== undefined ? only.name : null,
-      undoes: null,
-      generatedFrom,
-    },
-    earlier: generation.findings,
+/** The located plugin with the findings so far, recovery's first; without a usable plugin, the generation it stops. */
+export const locatedAfter = (
+  recovered: Finding[],
+  request: WorkflowsRequest,
+  root: string,
+): { place: Place; findings: Finding[] } | Generation => {
+  const plugin = pluginPlace(request, root);
+  if (plugin.place !== null) return { place: plugin.place, findings: [...recovered, ...plugin.findings] };
+  const stop = stoppedOn(plugin.findings);
+  return stoppedBy(stop.refusals, [...recovered, ...stop.findings]);
+};
+
+/**
+ * Plans the generation of the project's definitions into `.claude/`: the plugin's generator writes their outputs into
+ * a temporary folder, and the plan creates or replaces each project file that differs and deletes each file the last
+ * generation wrote that no output holds any more, while it is unchanged. Recovery runs first.
+ */
+export const planGeneration = (store: RunStore, request: GenerateRequest): Generation => {
+  const { recovered, stop } = start(store, request.root, request.names);
+  if (stop !== undefined) return stoppedBy([stop], recovered);
+  const plugin = locatedAfter(recovered, request, request.root);
+  if (!('place' in plugin)) return plugin;
+  const { findings } = plugin;
+  const place = projectPlace(request.root);
+  const list = chosen(place, request.names);
+  if (!Array.isArray(list)) return stoppedBy([list], findings);
+  const read = list.map((entry) => definitionOf(place, entry));
+  const unread = read.find((entry): entry is Refusal => 'code' in entry);
+  if (unread !== undefined) return stoppedBy([unread], findings);
+  const definitions = read.filter((entry): entry is Definition => 'text' in entry);
+  const { root, names, env } = request;
+  return generationOf(store, {
+    root,
+    names,
+    env,
+    generator: plugin.place.base,
+    definitions,
+    files: new Map(),
+    findings,
   });
+};
+
+/** Applies a generation's plan as a run, crash-ordered; a generation with nothing to apply is returned as it is. */
+export const appliedAs = (
+  store: RunStore,
+  root: string,
+  generation: Generation,
+  { action, subject }: { action: 'workflow.generate' | 'workflow.new'; subject: string | null },
+): Generation => {
+  const { plan, generatedFrom } = generation;
+  if (plan === null || plan.operations.length === 0) return generation;
+  const run = { kind: 'apply', action, subject, undoes: null, generatedFrom } as const;
+  const applied = apply(store, { root, plan, run, earlier: generation.findings });
   return {
     ...generation,
     run: applied.run,
     refusals: applied.refusal === null ? [] : [applied.refusal],
     findings: applied.findings,
   };
+};
+
+/** Generates the project's definitions: plans the generation, and with `yes` applies it as a run, crash-ordered. */
+export const generateWorkflows = (store: RunStore, request: GenerateRequest, yes: boolean): Generation => {
+  const generation = planGeneration(store, request);
+  if (!yes) return generation;
+  const [only] = generation.generatedFrom;
+  const subject = generation.generatedFrom.length === 1 && only !== undefined ? only.name : null;
+  return appliedAs(store, request.root, generation, { action: 'workflow.generate', subject });
 };

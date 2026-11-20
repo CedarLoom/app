@@ -273,11 +273,14 @@ export class RunStore {
       .map((row) => runOf(this.#db, row));
   }
 
-  /** The ended generation runs, also over no definition, newest first; a failed or interrupted one keeps its done steps. */
+  /**
+   * The ended runs that generated, also over no definition, newest first; a failed or interrupted one keeps its done
+   * steps.
+   */
   generations(): Run[] {
     return this.#db
       .prepare(
-        `SELECT ${RUN_COLUMNS} FROM runs r WHERE r.status <> 'running' AND r.action = 'workflow.generate' ORDER BY r.rowid DESC`,
+        `SELECT ${RUN_COLUMNS} FROM runs r WHERE r.status <> 'running' AND r.action IN ('workflow.generate', 'workflow.new') ORDER BY r.rowid DESC`,
       )
       .all()
       .map((row) => runOf(this.#db, row));

@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { inspect } from 'node:util';
 import { doctorRun } from './doctor.ts';
-import { workflowsGenerate } from './generate.ts';
+import { workflowsGenerate, workflowsNew } from './generate.ts';
 import { type Parsed, parse, type Request } from './grammar.ts';
 import type { Io } from './io.ts';
 import { message } from './message.ts';
@@ -23,21 +23,29 @@ const HELP = {
   'workflows show': 'help.workflows-show',
   'workflows validate': 'help.workflows-validate',
   'workflows generate': 'help.workflows-generate',
+  'workflows new': 'help.workflows-new',
   runs: 'help.runs',
   workflows: 'help.workflows',
 } as const;
 
-const commandOutcome = (io: Io, request: Extract<Request, { kind: 'command' }>): Outcome => {
-  const { name, args, yes, shipped, pluginRoot } = request;
-  const [argument = ''] = args;
-  if (name === 'doctor') return doctorRun(io, pluginRoot);
-  if (name === 'runs list') return runsList(io);
-  if (name === 'runs show') return runsShow(io, argument);
-  if (name === 'workflows list') return workflowsList(io, pluginRoot);
-  if (name === 'workflows show') return workflowsShow(io, argument, shipped, pluginRoot);
-  if (name === 'workflows validate') return workflowsValidate(io, args, shipped, pluginRoot);
-  if (name === 'workflows generate') return workflowsGenerate(io, args, yes, pluginRoot);
-  return undoRun(io, argument, yes);
+type Command = Extract<Request, { kind: 'command' }>;
+
+const OUTCOMES: Record<Command['name'], (io: Io, command: Command, argument: string) => Outcome> = {
+  doctor: (io, { pluginRoot }) => doctorRun(io, pluginRoot),
+  'runs list': (io) => runsList(io),
+  'runs show': (io, _, argument) => runsShow(io, argument),
+  undo: (io, { yes }, argument) => undoRun(io, argument, yes),
+  'workflows list': (io, { pluginRoot }) => workflowsList(io, pluginRoot),
+  'workflows show': (io, { shipped, pluginRoot }, argument) => workflowsShow(io, argument, shipped, pluginRoot),
+  'workflows validate': (io, { args, shipped, pluginRoot }) => workflowsValidate(io, args, shipped, pluginRoot),
+  'workflows generate': (io, { args, yes, pluginRoot }) => workflowsGenerate(io, args, yes, pluginRoot),
+  'workflows new': (io, { from, yes, pluginRoot }, name) =>
+    workflowsNew(io, { name, from: from ?? 'dev', pluginRoot }, yes),
+};
+
+const commandOutcome = (io: Io, command: Command): Outcome => {
+  const [argument = ''] = command.args;
+  return OUTCOMES[command.name](io, command, argument);
 };
 
 const textOf = (request: Exclude<Request, { kind: 'command' }>, io: Io): string => {

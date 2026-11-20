@@ -64,6 +64,7 @@ export const MESSAGE_IDS = [
   'undo.replaced',
   'undo.result-kept',
   'workflow.name-invalid',
+  'workflow.name-taken',
 ] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
@@ -127,4 +128,5 @@ export interface MessagePlaceholders {
   'undo.replaced': 'by' | 'run';
   'undo.result-kept': 'path' | 'run';
   'workflow.name-invalid': 'name';
+  'workflow.name-taken': 'name' | 'path';
 }
