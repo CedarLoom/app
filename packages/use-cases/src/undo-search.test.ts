@@ -340,7 +340,8 @@ const history = ({ name, ending, status }: FirstRun, draw: () => number, tally: 
   }
 };
 
-describe('undo over a search of run histories', () => {
+// Each case flushes the disk a few hundred times, for the store's commits and the files' crash order.
+describe('undo over a search of run histories', { timeout: 20_000 }, () => {
   it.each(FIRST_RUNS)('keeps its rules after r1 $name', (first) => {
     // A Lehmer generator from a fixed seed, so each run of the test walks the same histories.
     let next = first.seed;
