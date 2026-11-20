@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { inspect } from 'node:util';
+import { printableLines } from '@cedarloom/core';
 import { doctorRun } from './doctor.ts';
 import { workflowsGenerate } from './generate.ts';
 import { workflowsNew } from './new-workflow.ts';
@@ -71,7 +72,7 @@ export const main = (io: Io): number => {
     return exitCode(outcome);
   } catch (error) {
     // inspect, unlike stack, also prints the cause, such as a step's own error inside StepFailed.
-    io.stderr(`${inspect(error)}\n`);
+    io.stderr(`${printableLines(inspect(error))}\n`);
     const crashed = refused({ code: 'cli.internal', params: {} });
     write(crashed, json, io);
     return exitCode(crashed);

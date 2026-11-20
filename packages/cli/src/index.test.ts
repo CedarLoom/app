@@ -150,7 +150,9 @@ it('refuses a run id outside the run id form with run.not-found, exit 3, escaped
     code: 3,
     document: { result: null, refusals: [{ code: 'run.not-found', params: { run: '../r1' } }] },
   });
-  expect(ran(['runs', 'show', '\u001b[2J\u202e'], root).stderr).toContain('\\u001b[2J\\u202e');
+  expect(ran(['runs', 'show', '\u001b[2J\u202e\u2028\u{e0001}'], root).stderr).toContain(
+    '\\u001b[2J\\u202e\\u2028\\udb40\\udc01',
+  );
 });
 
 it('shows the undo plan without --yes and does not apply it, exit 4; applies it with --yes', () => {
@@ -199,14 +201,14 @@ it('looks for the plugin in .claude/plugins of the home folder without CLAUDE_CO
   ]);
 });
 
-it('reports a crash as cli.internal with the stack on standard error, exit 5', () => {
+it('reports a crash as cli.internal with the stack escaped on standard error, exit 5', () => {
   const { root } = project();
   const crashed = ran(['runs', 'list', '--json'], root, { realpath: lostDisk });
   expect(crashed).toMatchObject({
     code: 5,
     document: { result: null, refusals: [{ code: 'cli.internal', params: {} }] },
   });
-  expect(crashed.stderr).toMatch(/^Error: disk gone\n\s+at /);
+  expect(crashed.stderr).toMatch(/^Error: disk gone\\u202e\n\s+at /);
 });
 
 it('prints the cause of a crash with its stack', () => {
@@ -230,7 +232,7 @@ const started = (args: string[], options: { cwd: string; env?: Record<string, st
 };
 
 const lostDisk = (): string => {
-  throw new Error('disk gone');
+  throw new Error('disk gone\u202e');
 };
 
 const stoppedRun = (): string => {

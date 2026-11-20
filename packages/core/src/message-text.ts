@@ -4,9 +4,11 @@ import type { Params } from './finding.ts';
 export type CompiledMessage = string | readonly (string | readonly unknown[])[];
 
 const escaped = (unit: string): string => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`;
-/** A value as the terminal shows it: control, format and separator characters escaped, so names cannot alter the display. */
+/** A value as the terminal shows it: Cc, Cf, Zl and Zp escaped; blanks such as U+00A0, U+3000 and U+3164 pass. */
 export const printable = (value: string): string =>
   value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (character) => character.split('').map(escaped).join(''));
+/** A multi-line text, such as a stack, with each line printable and its line feeds kept. */
+export const printableLines = (text: string): string => text.split('\n').map(printable).join('\n');
 
 const argument = (id: string, params: Params, name: unknown): string => {
   const value = params[String(name)];

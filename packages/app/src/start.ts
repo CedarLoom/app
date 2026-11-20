@@ -1,6 +1,14 @@
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { type Code, type CompiledMessage, messageText, type Params, type Refusal } from '@cedarloom/core';
+import {
+  type Code,
+  type CompiledMessage,
+  messageText,
+  type Params,
+  printable,
+  printableLines,
+  type Refusal,
+} from '@cedarloom/core';
 import core from '@cedarloom/core/messages/en.json' with { type: 'json' };
 import { projectRoot, type StoreClock } from '@cedarloom/use-cases';
 import type { MessagePlaceholders } from './messages/catalog.ts';
@@ -113,7 +121,7 @@ const parse = (argv: readonly string[], cwd: string): Options | { refusal: Refus
   return options;
 };
 
-const message = (error: unknown): string => `${error instanceof Error ? error.message : String(error)}\n`;
+const message = (error: unknown): string => `${printable(error instanceof Error ? error.message : String(error))}\n`;
 
 /**
  * Opens the redirect page, then removes the pages of earlier starts whose token has expired; the URL is printed already,
@@ -153,7 +161,7 @@ export const closed = (io: Pick<AppIo, 'stderr'>, closing: Promise<void>): Promi
   closing.then(
     () => 0,
     (error: unknown) => {
-      io.stderr(`${error instanceof Error ? error.stack : String(error)}\n`);
+      io.stderr(`${printableLines(String(error instanceof Error ? error.stack : error))}\n`);
       return 5;
     },
   );
@@ -179,7 +187,7 @@ const request = (io: AppIo, json: boolean, stop: Stop): Options | Started => {
 export const start = async (io: AppIo): Promise<Started> => {
   const json = io.argv.includes('--json');
   const stop: Stop = (refusal, exitCode) => {
-    if (json) io.stdout(`${JSON.stringify({ result: null, findings: [], refusals: [refusal] })}\n`);
+    if (json) io.stdout(`${printable(JSON.stringify({ result: null, findings: [], refusals: [refusal] }))}\n`);
     else io.stderr(text(refusal.code, refusal.params));
     return { exitCode };
   };

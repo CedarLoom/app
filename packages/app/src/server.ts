@@ -3,7 +3,7 @@ import type { Socket } from 'node:net';
 import { inspect } from 'node:util';
 import helmet from '@fastify/helmet';
 import swagger from '@fastify/swagger';
-import type { Code, Params } from '@cedarloom/core';
+import { type Code, type Params, printableLines } from '@cedarloom/core';
 import { StepFailed } from '@cedarloom/use-cases';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import {
@@ -51,7 +51,7 @@ const errors = (app: FastifyInstance, log: (text: string) => void): void => {
     // The request stream's own error (a client gone mid-body), which Fastify's body reader passes on.
     if (error instanceof Error && error === req.raw.errored) return reply.code(400).send(refusal('api.bad-request'));
     // depth null: the default hides a finding's params, such as the path of a recovery.skipped in StepFailed.
-    log(`${inspect(error, { depth: null })}\n`);
+    log(`${printableLines(inspect(error, { depth: null }))}\n`);
     const run = error instanceof StepFailed ? { run: error.run } : {};
     return reply.code(500).send({ ...refusal('api.internal'), ...run });
   });
