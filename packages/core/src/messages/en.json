@@ -11,6 +11,13 @@
       " stopped and the file was not changed."
     ],
     "apply.recovered": [["path"], " was left from the interrupted run ", ["run"], " and was settled."],
+    "apply.unsettled": [
+      "The interrupted run ",
+      ["run"],
+      " is not settled yet at ",
+      ["path"],
+      ", so nothing was changed. Check that CedarLoom may change the files there and that no link is on the way, then try again."
+    ],
     "apply.write-mismatch": [
       ["path"],
       " does not match the plan after the write. Run ",
@@ -72,9 +79,9 @@
       " changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
     ],
     "plan.name-too-long": [
-      "The name of ",
+      "The path of ",
       ["path"],
-      " leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use a shorter name."
+      " leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use shorter names, or a project folder with a shorter path."
     ],
     "plan.not-text": [
       ["path"],
@@ -142,6 +149,12 @@
       " is not cl-workflow from the CedarLoom marketplace, so CedarLoom will not run its generator."
     ],
     "project.not-found": [["cwd"], " is not inside a Git repository. Run CedarLoom from your project folder."],
+    "recovery.skipped": [
+      ["path"],
+      " was left from the interrupted run ",
+      ["run"],
+      " and could not be settled: the filesystem refused a change there, or a link is on the way. No change is made until it is settled."
+    ],
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],
     "server.open-hint": [

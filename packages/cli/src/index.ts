@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { inspect } from 'node:util';
 import { doctorRun } from './doctor.ts';
 import { workflowsGenerate } from './generate.ts';
 import { type Parsed, parse, type Request } from './grammar.ts';
@@ -60,7 +61,8 @@ export const main = (io: Io): number => {
     write(outcome, json, io);
     return exitCode(outcome);
   } catch (error) {
-    io.stderr(`${error instanceof Error ? error.stack : String(error)}\n`);
+    // inspect, unlike stack, also prints the cause, such as a step's own error inside StepFailed.
+    io.stderr(`${inspect(error)}\n`);
     const crashed = refused({ code: 'cli.internal', params: {} });
     write(crashed, json, io);
     return exitCode(crashed);
