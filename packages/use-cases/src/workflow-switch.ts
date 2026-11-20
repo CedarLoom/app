@@ -4,12 +4,14 @@ import {
   type PlanOperation,
   planHash,
   type Refusal,
+  type Run,
+  type SettingsEntry,
   type SwitchRecord,
   type SwitchTarget,
   switchedOff,
   switchedOn,
 } from '@cedarloom/core';
-import { precheck, refusal } from './apply.ts';
+import { fileKey, precheck, refusal } from './apply.ts';
 import {
   appliedAs,
   definitionOf,
@@ -72,11 +74,49 @@ const settingsFile = (root: string): { bytes: Buffer; text: string } | null | Re
   return { bytes: found.bytes, text: found.bytes.toString('utf8') };
 };
 
-const records = (store: RunStore): SwitchRecord[] =>
-  store
-    .switches()
-    .filter((run) => inEffect(store, run))
-    .map(({ action, operations }) => ({ action, entries: operations.flatMap(({ entries }) => entries ?? []) }));
+const onSettings = ({ path }: { path: string }): boolean => fileKey(path) === fileKey(SETTINGS);
+
+const entriesOf = (run: Run): SettingsEntry[] => run.operations.flatMap(({ entries }) => entries ?? []);
+
+// A switch run as its record; an undo of one as the opposite switch, with the entries as it put them back.
+const recordOf = (store: RunStore, run: Run): SwitchRecord => {
+  const undid = run.undoes === null ? undefined : store.run(run.undoes);
+  if (undid === undefined) return { action: run.action, entries: entriesOf(run) };
+  return {
+    action: undid.action === 'workflow.off' ? 'workflow.on' : 'workflow.off',
+    entries: entriesOf(undid).map(({ pointer, value, before }) =>
+      before === undefined ? { pointer, value } : { pointer, value: before, before: value },
+    ),
+  };
+};
+
+// Whether an undo down the run's undoneBy chain did not finish, as its write may have taken back what the run wrote.
+const undoing = (store: RunStore, run: Run): boolean => {
+  const by = run.undoneBy === null ? undefined : store.run(run.undoneBy);
+  return store.unfinishedUndos(run.id).length > 0 || (by !== undefined && undoing(store, by));
+};
+
+// The first later run on the file planned from the hash, as every planner hashes what it reads; with none, the file now.
+const shownAt = (store: RunStore, run: Run, hash: string | null, now: string | null): boolean => {
+  const next = store.later(run.id).find(({ operations }) => operations.some(onSettings));
+  return (next === undefined ? now : next.operations.find(onSettings)?.beforeHash) === hash;
+};
+
+// A record that gives ownership needs a write shown to stand: done or shown at its result, and no undo unfinished.
+const written = (store: RunStore, run: Run, now: string | null): boolean => {
+  const step = run.operations.find(onSettings);
+  if (step === undefined || undoing(store, run)) return false;
+  if (run.status === 'done') return true;
+  return (step.status === 'failed' || step.status === 'settled') && shownAt(store, run, step.afterHash, now);
+};
+
+// The records in effect, newest first; `now` is the hash of the settings file read for the plan, null for none.
+const records = (store: RunStore, now: string | null): SwitchRecord[] =>
+  store.switches().flatMap((run) => {
+    if (!inEffect(store, run)) return [];
+    const record = recordOf(store, run);
+    return record.action === 'workflow.on' || written(store, run, now) ? [record] : [];
+  });
 
 const writeOf = (file: { bytes: Buffer; text: string } | null, after: string): PlanOperation => {
   const afterHash = sha256(Buffer.from(after));
@@ -90,7 +130,9 @@ const switchedRun = (store: RunStore, request: { root: string; yes: boolean }, r
   const { change, target, findings, action, subject } = run;
   const file = settingsFile(root);
   if (file !== null && 'code' in file) return stoppedBy([file], findings);
-  const switched = change({ text: file?.text ?? null, path: SETTINGS }, records(store), target);
+  const recorded = store.read(() => records(store, file === null ? null : sha256(file.bytes)));
+  if (!recorded.ok) return stoppedBy([recorded.refusal], findings);
+  const switched = change({ text: file?.text ?? null, path: SETTINGS }, recorded.value, target);
   if (switched === undefined) return stoppedBy([unreadable()], findings);
   const { text, entries, skipped } = switched;
   const operations = text === null ? [] : [writeOf(file, text)];

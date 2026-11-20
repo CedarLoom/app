@@ -2,6 +2,7 @@ import { closeSync, mkdirSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { type Refusal, Run, RunOperation, RunSummary } from '@cedarloom/core';
+import { ZodError } from 'zod';
 import { entryAt, errorCode } from './project-files.ts';
 
 /** The store schema version this CedarLoom reads and writes; a store of any other version is refused. */
@@ -44,8 +45,8 @@ const SUMMARY_COLUMNS = `r.id, r.kind, r.action, r.subject, r.status, r.startedA
   (SELECT u.id FROM runs u WHERE u.undoes = r.id AND u.status = 'done' ORDER BY u.rowid DESC LIMIT 1)
     AS undoneBy`;
 
-/** What a use case gets from the store: the value, or the refusal that stops it. */
-export type Opened<T> = { ok: true; value: T } | { ok: false; refusal: Refusal };
+/** What a use case gets from the store: the value, or the refusal that stops it and the error behind it, if any. */
+export type Opened<T> = { ok: true; value: T } | { ok: false; refusal: Refusal; cause?: unknown };
 
 /** A run as its use case starts it; the store adds the id, the status, the times and each operation's status. */
 export type NewRun = Pick<Run, 'kind' | 'action' | 'subject' | 'undoes' | 'planHash' | 'generatedFrom'> & {
@@ -102,11 +103,12 @@ const DENIED = new Set(['EACCES', 'EPERM', 'EROFS']);
 const resultCode = (error: unknown): number | undefined =>
   error instanceof Error && 'errcode' in error && typeof error.errcode === 'number' ? error.errcode & 0xff : undefined;
 
-// store.unreadable for an error about a store file or folder this process cannot use; any other error propagates.
+// store.unreadable for a store file or folder this process cannot use, or a row it cannot parse; else it throws.
 const unreadable = (error: unknown, file: string): Refusal => {
   const sqlite = resultCode(error);
   const node = errorCode(error);
-  if ((sqlite !== undefined && UNREADABLE.has(sqlite)) || (typeof node === 'string' && DENIED.has(node))) {
+  const row = error instanceof ZodError;
+  if (row || (sqlite !== undefined && UNREADABLE.has(sqlite)) || (typeof node === 'string' && DENIED.has(node))) {
     return { code: 'store.unreadable', params: { path: file } };
   }
   throw error;
@@ -227,7 +229,7 @@ export class RunStore {
     try {
       this.#insert(id, startedAt, run);
     } catch (error) {
-      return { ok: false, refusal: refusalFor(error, this.#dir, runsPath(this.#dir)) };
+      return { ok: false, refusal: refusalFor(error, this.#dir, runsPath(this.#dir)), cause: error };
     }
     return { ok: true, value: id };
   }
@@ -291,9 +293,31 @@ export class RunStore {
     );
   }
 
-  /** The done runs that switched off or on, newest first. */
+  /** The runs that may hold a switch, newest first: on runs, off runs done or stopped, and done undos of either. */
   switches(): Run[] {
-    return this.#newestFirst(`r.status = 'done' AND r.action IN ('workflow.off', 'workflow.on')`);
+    return this.#newestFirst(
+      `r.action = 'workflow.on' OR (r.action = 'workflow.off' AND r.status <> 'running') OR (r.status = 'done'
+        AND (SELECT t.action FROM runs t WHERE t.id = r.undoes) IN ('workflow.off', 'workflow.on'))`,
+    );
+  }
+
+  /** The runs started after the run with this id, oldest first. */
+  later(id: string): Run[] {
+    return this.#db
+      .prepare(
+        `SELECT ${RUN_COLUMNS} FROM runs r WHERE r.rowid > (SELECT rowid FROM runs WHERE id = ?) ORDER BY r.rowid`,
+      )
+      .all(id)
+      .map((row) => runOf(this.#db, row));
+  }
+
+  /** What `read` gives from the held store; a row this CedarLoom cannot parse refuses with store.unreadable. */
+  read<T>(read: () => T): Opened<T> {
+    try {
+      return { ok: true, value: read() };
+    } catch (error) {
+      return { ok: false, refusal: unreadable(error, runsPath(this.#dir)), cause: error };
+    }
   }
 
   #newestFirst(where: string): Run[] {
@@ -372,7 +396,7 @@ const takeLock = (dir: string): Opened<DatabaseSync> => {
     return { ok: true, value: lock };
   } catch (error) {
     lock?.close();
-    return { ok: false, refusal: refusalFor(error, dir, lockPath(dir)) };
+    return { ok: false, refusal: refusalFor(error, dir, lockPath(dir)), cause: error };
   }
 };
 
@@ -384,7 +408,7 @@ export const openStore = (dir: string, clock: StoreClock): Opened<RunStore> => {
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
   } catch (error) {
-    return { ok: false, refusal: unreadable(error, dir) };
+    return { ok: false, refusal: unreadable(error, dir), cause: error };
   }
   const taken = takeLock(dir);
   if (!taken.ok) return taken;
@@ -396,7 +420,7 @@ export const openStore = (dir: string, clock: StoreClock): Opened<RunStore> => {
     return db.ok ? { ok: true, value: new RunStore(db.value, lock, clock, dir) } : db;
   } catch (error) {
     lock.close();
-    return { ok: false, refusal: refusalFor(error, dir, runsPath(dir)) };
+    return { ok: false, refusal: refusalFor(error, dir, runsPath(dir)), cause: error };
   }
 };
 
@@ -472,7 +496,7 @@ export class RunView {
       file = runsPath(this.#dir);
       return { ok: true, value: snapshot(db, () => read(held)) };
     } catch (error) {
-      return { ok: false, refusal: readRefusal(error, file) };
+      return { ok: false, refusal: readRefusal(error, file), cause: error };
     } finally {
       lock?.close();
     }
@@ -497,6 +521,6 @@ export const openRunView = (dir: string): Opened<RunView> => {
     return found === 0 ? { ok: true, value: new RunView(null, dir) } : { ok: false, refusal: versionRefusal(found) };
   } catch (error) {
     db?.close();
-    return { ok: false, refusal: readRefusal(error, path) };
+    return { ok: false, refusal: readRefusal(error, path), cause: error };
   }
 };
