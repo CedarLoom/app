@@ -44,6 +44,7 @@ const planNewWorkflow = (store: RunStore, request: NewRequest): Generation => {
     generator: plugin.place.base,
     definitions: [{ name, path, text }],
     files: new Map([[path, Buffer.from(text)]]),
+    read: new Map([[path, null]]),
     findings,
   });
 };

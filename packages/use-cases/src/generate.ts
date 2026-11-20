@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import {
   type Finding,
   type GeneratorRefusal,
-  JsonValue,
   type PlanOperation,
   type PlanPreview,
   planHash,
@@ -12,8 +11,8 @@ import {
   type Run,
 } from '@cedarloom/core';
 import { apply, fileKey, linkRefusal, precheck, refusal } from './apply.ts';
-import { definitionBytes, nameMismatch } from './definition-files.ts';
-import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
+import { definitionBytes, jsonWithin, nameMismatch } from './definition-files.ts';
+import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
 import { type Found, readFound, sha256 } from './project-files.ts';
 import { recover, unsettledBy } from './recover.ts';
@@ -75,9 +74,8 @@ export const definitionOf = (place: Place, { name, path }: { name: string; path:
   const shown = place.shown(path);
   if (bytes === 'unreadable' || !isUtf8(bytes)) return notJson(shown);
   const text = bytes.toString('utf8');
-  const json = jsonOf(text);
-  // JsonValue also refuses a __proto__ member, as the definition readers do.
-  if (!JsonValue.safeParse(json).success) return notJson(shown);
+  const json = jsonWithin(text);
+  if (json === undefined) return notJson(shown);
   return (place.source === 'project' ? nameMismatch(shown, json) : undefined) ?? { name, path, text };
 };
 
@@ -116,9 +114,19 @@ const foundAt = (root: string, path: string): Found | Refusal => {
 
 const isRefusal = (value: Found | Refusal): value is Refusal => typeof value === 'object' && 'code' in value;
 
-// The write that makes the project's file the output; none when it already is, up to line ends.
-const write = (root: string, path: string, output: Buffer): PlanOperation | Refusal | undefined => {
+type ReadHashes = ReadonlyMap<string, string | null>;
+
+// The project's file at a path the caller read, unless it no longer hashes as read (null: read as absent).
+const asRead = (root: string, path: string, read: ReadHashes): Found | Refusal => {
   const found = foundAt(root, path);
+  if (isRefusal(found) || !read.has(path)) return found;
+  const now = typeof found === 'object' ? sha256(found.bytes) : found;
+  return now === (read.get(path) ?? 'absent') ? found : refusal('plan.file-changed', path);
+};
+
+// The write that makes the project's file the output; none when it already is, up to line ends.
+const write = (root: string, path: string, output: Buffer, read: ReadHashes): PlanOperation | Refusal | undefined => {
+  const found = asRead(root, path, read);
   if (isRefusal(found)) return found;
   const after = output.toString('utf8');
   const afterHash = sha256(output);
@@ -131,8 +139,13 @@ const write = (root: string, path: string, output: Buffer): PlanOperation | Refu
 };
 
 // The delete of a file no longer generated, while it is still as last generated; else it is kept and reported.
-const remove = (root: string, path: string, hash: string): PlanOperation | Finding | Refusal | undefined => {
-  const found = foundAt(root, path);
+const remove = (
+  root: string,
+  path: string,
+  hash: string,
+  read: ReadHashes,
+): PlanOperation | Finding | Refusal | undefined => {
+  const found = asRead(root, path, read);
   if (isRefusal(found)) return found;
   if (found === 'absent') return undefined;
   if (found === 'link') return refusal('plan.symlink', path);
@@ -146,13 +159,18 @@ const remove = (root: string, path: string, hash: string): PlanOperation | Findi
 const inPathOrder = <T>(files: Map<string, T>): [string, T][] => [...files].toSorted(([a], [b]) => (a < b ? -1 : 1));
 
 // The plan from the outputs and the files as last generated, in path order.
-const planned = (root: string, outputs: Map<string, Buffer>, previous: Map<string, string>): PlanPreview | Refusal => {
+const planned = (
+  root: string,
+  outputs: Map<string, Buffer>,
+  previous: Map<string, string>,
+  read: ReadHashes,
+): PlanPreview | Refusal => {
   const kept = new Set([...outputs.keys()].map(fileKey));
   const changes = [
-    ...inPathOrder(outputs).map(([path, bytes]) => write(root, path, bytes)),
+    ...inPathOrder(outputs).map(([path, bytes]) => write(root, path, bytes, read)),
     ...inPathOrder(previous)
       .filter(([path]) => !kept.has(fileKey(path)))
-      .map(([path, hash]) => remove(root, path, hash)),
+      .map(([path, hash]) => remove(root, path, hash, read)),
   ].filter((change) => change !== undefined);
   const stop = changes.find((change): change is Refusal => !('kind' in change) && !('severity' in change));
   if (stop !== undefined) return stop;
@@ -186,6 +204,10 @@ export interface GenerationInputs {
   generator: string;
   definitions: Definition[];
   files: Map<string, Buffer>;
+  /** Project files to delete while they hash as given, beside the outputs no longer generated. */
+  removed?: Map<string, string>;
+  /** The hash of each project file as the caller read it, null where it read none; a file that differs stops the plan. */
+  read?: ReadHashes;
   findings: Finding[];
 }
 
@@ -195,7 +217,7 @@ export interface GenerationInputs {
  * names wrote that no output holds any more is deleted, while it is unchanged.
  */
 export const generationOf = (store: RunStore, inputs: GenerationInputs): Generation => {
-  const { root, names, env, generator, definitions, files, findings } = inputs;
+  const { root, names, env, generator, definitions, files, removed = new Map(), read = new Map(), findings } = inputs;
   const generatedFrom = definitions.map(({ name, text }) => ({ name, definition: text }));
   const generated =
     definitions.length === 0
@@ -214,7 +236,8 @@ export const generationOf = (store: RunStore, inputs: GenerationInputs): Generat
   }
   const outputs = projectOutputs(generated.outputs);
   if (!(outputs instanceof Map)) return stoppedBy([outputs], findings);
-  const plan = planned(root, new Map([...outputs, ...files]), previousFiles(store, names));
+  const previous = new Map([...previousFiles(store, names), ...removed]);
+  const plan = planned(root, new Map([...outputs, ...files]), previous, read);
   if (!('operations' in plan)) return stoppedBy([plan], findings);
   return { plan, generatorRefusals: [], generatedFrom, run: null, refusals: [], findings };
 };
@@ -266,7 +289,7 @@ export const appliedAs = (
   store: RunStore,
   root: string,
   generation: Generation,
-  { action, subject }: { action: 'workflow.generate' | 'workflow.new'; subject: string | null },
+  { action, subject }: { action: 'workflow.generate' | 'workflow.new' | 'workflow.edit'; subject: string | null },
 ): Generation => {
   const { plan, generatedFrom } = generation;
   if (plan === null || plan.operations.length === 0) return generation;

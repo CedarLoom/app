@@ -113,6 +113,24 @@ it.each([
     'cli.missing-argument',
     { argument: '<shipped>', command: 'cedarloom workflows new --from' },
   ],
+  [['workflows', 'set', 'mine', '/model', 'opus'], 'cli.value-not-json', { argument: '<value>' }],
+  [['workflows', 'set', 'mine', '/model', '1', '--unset'], 'cli.flag-conflict', { flags: '<value>, --unset' }],
+  [
+    ['workflows', 'set', 'mine', '/model'],
+    'cli.missing-argument',
+    { argument: '<value>', command: 'cedarloom workflows set' },
+  ],
+  [
+    ['workflows', 'move', 'mine', '/stages/0'],
+    'cli.missing-argument',
+    { argument: '<to>', command: 'cedarloom workflows move' },
+  ],
+  [['workflows', 'remove', 'mine', '/stages/0', 'x'], 'cli.unknown-command', { command: 'x', bin: 'cedarloom' }],
+  [
+    ['workflows', 'add', 'mine', '/stages/-', '{}', '--unset'],
+    'cli.unknown-flag',
+    { flag: '--unset', command: 'cedarloom workflows add' },
+  ],
   [
     ['workflows', 'generate', '--from=dev'],
     'cli.unknown-flag',
@@ -588,6 +606,22 @@ it('plans with workflows new a copy of the shipped dev without --yes, exit 4, an
     document: { result: { plan, applied: false }, refusals: [{ code: 'cli.confirm-required', params: {} }] },
   });
   expect(workflows('new', 'mine', '--from', 'dev', '--yes')).toMatchObject({
+    code: 0,
+    document: { result: { plan, applied: true, run: 'u1' }, refusals: [] },
+  });
+});
+
+it('plans with workflows set the edited definition without --yes, exit 4, and applies it with --yes, exit 0', () => {
+  const { workflows } = workflowsSetup({ mine: '{"name":"mine"}' });
+  const after = '{\n  "name": "mine",\n  "description": "Mine."\n}\n';
+  const plan = {
+    operations: [{ kind: 'replace', path: '.cedarloom/workflows/mine.json', before: '{"name":"mine"}', after }],
+  };
+  expect(workflows('set', 'mine', '/description', '"Mine."')).toMatchObject({
+    code: 4,
+    document: { result: { plan, applied: false }, refusals: [{ code: 'cli.confirm-required', params: {} }] },
+  });
+  expect(workflows('set', 'mine', '/description', '"Mine."', '--yes')).toMatchObject({
     code: 0,
     document: { result: { plan, applied: true, run: 'u1' }, refusals: [] },
   });

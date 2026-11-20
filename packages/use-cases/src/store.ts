@@ -288,7 +288,7 @@ export class RunStore {
   generations(): Run[] {
     return this.#db
       .prepare(
-        `SELECT ${RUN_COLUMNS} FROM runs r WHERE r.status <> 'running' AND r.action IN ('workflow.generate', 'workflow.new') ORDER BY r.rowid DESC`,
+        `SELECT ${RUN_COLUMNS} FROM runs r WHERE r.status <> 'running' AND r.action IN ('workflow.generate', 'workflow.new', 'workflow.edit') ORDER BY r.rowid DESC`,
       )
       .all()
       .map((row) => runOf(this.#db, row));
