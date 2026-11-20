@@ -126,7 +126,7 @@
     ],
     "plan.not-text": [
       ["path"],
-      " is not a UTF-8 text file, or CedarLoom may not read it. CedarLoom writes only text files it can read."
+      " is not a UTF-8 text file of at most 16 MiB, or CedarLoom may not read it. CedarLoom writes only text files it can read."
     ],
     "plan.path-nested": [
       ["path"],

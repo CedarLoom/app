@@ -8,14 +8,15 @@ import {
   copyAtomic,
   dropAside,
   errorCode,
-  type Found,
   entryAt,
+  FILE_LIMIT,
+  type FileFound,
+  fileAt,
   hashAt,
   linkIn,
   makeFolders,
   makesHardLinks,
   putBack,
-  readFound,
   readsAsOne,
   setAside,
   sha256,
@@ -86,15 +87,15 @@ export const linkRefusal = (root: string, path: string): Refusal | undefined => 
 };
 
 // The file a step replaces or deletes, when it is the text file the plan expects.
-const expected = (path: string, before: string, found: Found): Refusal | { bytes: Buffer; mode: number } => {
+const expected = (path: string, before: string, found: FileFound): Refusal | { bytes: Buffer; mode: number } => {
   if (found === 'link') return refusal('plan.symlink', path);
-  if (found === 'not-file') return refusal('plan.not-text', path);
+  if (found === 'not-file' || found === 'too-large') return refusal('plan.not-text', path);
   if (found === 'absent' || sha256(found.bytes) !== before) return refusal('plan.file-changed', path);
   return isUtf8(found.bytes) ? found : refusal('plan.not-text', path);
 };
 
 const diskProblem = (root: string, { path, beforeHash }: PlanOperation): Refusal | undefined => {
-  const found = readFound(join(root, path));
+  const found = fileAt(join(root, path));
   if (beforeHash === null) return found === 'absent' ? undefined : refusal('plan.file-changed', path);
   const file = expected(path, beforeHash, found);
   return 'code' in file ? file : undefined;
@@ -135,7 +136,7 @@ const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): 
   op.beforeHash === left && sameFile(root, first, op.path) ? undefined : refusal('plan.file-changed', op.path);
 
 // A folder on the way that is a file; Windows reads a path below it as absent, not as ENOTDIR.
-const fileOnWay = (root: string, path: string): Refusal | undefined => {
+export const fileOnWay = (root: string, path: string): Refusal | undefined => {
   const parts = path.split('/');
   for (let end = 1; end < parts.length; end += 1) {
     const entry = entryAt(join(root, ...parts.slice(0, end)));
@@ -154,9 +155,13 @@ const fileProblem = (root: string, op: PlanOperation, chain: Chain | undefined):
   fileOnWay(root, op.path) ??
   (chain === undefined ? diskProblem(root, op) : chainProblem(root, op, chain));
 
-// The text a step writes is the one its hash names, so the check after the write cannot fail once the old file went.
-const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined =>
-  after === null || sha256(Buffer.from(after)) === afterHash ? undefined : refusal('plan.text-mismatch', path);
+// A text its hash does not name, or one apply would write but a later plan or undo would not read, is refused first.
+const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined => {
+  if (after === null) return undefined;
+  const bytes = Buffer.from(after);
+  if (sha256(bytes) !== afterHash) return refusal('plan.text-mismatch', path);
+  return bytes.length > FILE_LIMIT ? refusal('plan.not-text', path) : undefined;
+};
 
 // RunId allows 64 characters.
 const LONGEST_RUN_ID = 'r'.repeat(64);
@@ -315,7 +320,7 @@ const step = (context: Step, position: number, op: PlanOperation): Stop | undefi
   if (linked !== undefined) return untouched(linked);
   let mode = context.modes.get(position);
   if (op.beforeHash !== null) {
-    const file = orDenied(op.path, () => expected(op.path, op.beforeHash, readFound(path)));
+    const file = orDenied(op.path, () => expected(op.path, op.beforeHash, fileAt(path)));
     if ('code' in file) return untouched(file);
     if (!backUp(file.bytes, store.backupPath(run, position))) {
       return untouched({ code: 'apply.backup-failed', params: { run, path: op.path } });
