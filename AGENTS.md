@@ -4,7 +4,7 @@
 
 Node.js 26, pnpm 12 and uv. Install with `pnpm install --frozen-lockfile --ignore-scripts`.
 
-- `pnpm run check`: every gate ([scripts/check.sh](scripts/check.sh)), the one to run before a push. Its step `packed` ([scripts/packed.sh](scripts/packed.sh)) builds `core`, `use-cases` and `cli` into their `dist` folders, packs them, installs the three tarballs together in an empty folder and runs `cedarloom --version` and `cloom --version` from there.
+- `pnpm run check`: every gate ([scripts/check.sh](scripts/check.sh)), the one to run before a push. Its step `packed` ([scripts/packed.sh](scripts/packed.sh)) builds `core`, `use-cases` and `cli` into their `dist` folders, packs them, installs the three tarballs and the `zod` of the lockfile together in an empty folder and runs `cedarloom --version` and `cloom --version` from there.
 - `pnpm run build` builds every package, `ui` before `app`: the `app` build copies `packages/ui/dist` into `packages/app/dist/ui`, the folder its server serves `/` and `/assets/*` from, and leaves `dist/ui` absent while `ui` builds nothing.
 - Single gates, each as `pnpm run <name>`: `typecheck`, `lint`, `format:check` (`format` writes), `test`, `knip`, `jscpd`, `licenses`. Keep `run`: `pnpm licenses` alone is pnpm's built-in command.
 - The Python-packaged gate tools (typos, reuse, actionlint, zizmor) run through `uvx` with the versions of [tools/requirements.txt](tools/requirements.txt). In CI the zizmor action runs zizmor with its online audits instead.
