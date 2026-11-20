@@ -173,7 +173,7 @@ describe('undo below a folder the app may not enter', () => {
       try {
         expect(undo(held, { root, run: 'u2' }).refusal).toEqual({
           code: 'plan.folder-denied',
-          params: { path: '.claude/s/a.md' },
+          params: { path: '.claude/s/a.md', denied: '.claude/s' },
         });
       } finally {
         chmodSync(folder, 0o700);

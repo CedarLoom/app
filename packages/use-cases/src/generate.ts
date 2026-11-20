@@ -12,7 +12,7 @@ import {
   type Run,
   type SettingsEntry,
 } from '@cedarloom/core';
-import { apply, fileKey, fileOnWay, linkRefusal, precheck, refusal } from './apply.ts';
+import { apply, fileKey, precheck, refusal, wayRefusal } from './apply.ts';
 import { definitionBytes, isListed, jsonWithin } from './definition-files.ts';
 import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
@@ -112,11 +112,7 @@ const previousFiles = (store: RunStore, names: readonly string[]): Map<string, s
 // enter or below a file, or that the app may not read is refused.
 export const foundAt = (root: string, path: string): FileFound | Refusal => {
   if (!inWriteRoots(path)) return refusal('plan.path-outside-roots', path);
-  return (
-    linkRefusal(root, path) ??
-    reached(() => fileOnWay(root, path) ?? fileAt(join(root, path))) ??
-    refusal('plan.not-text', path)
-  );
+  return wayRefusal(root, path) ?? reached(() => fileAt(join(root, path))) ?? refusal('plan.not-text', path);
 };
 
 export const isRefusal = (value: FileFound | Refusal): value is Refusal => typeof value === 'object' && 'code' in value;

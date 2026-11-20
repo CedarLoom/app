@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { entryAt } from './project-files.ts';
+import { entryAt, errorCode } from './project-files.ts';
 
 // Windows ignores trailing dots and spaces in a name and compares names without case, so ".GIT." is ".git" there, and
 // "GIT~1" can be its 8.3 short name, which git's own path check refuses too.
@@ -17,14 +17,53 @@ export const inWriteRoots = (path: string): boolean => {
   );
 };
 
-/** The first link from the project root down to `path`, the path itself included, as a project-relative path. */
-export const linkOnWay = (root: string, path: string): string | undefined => {
+/** Whether a path holds none of the characters Windows refuses in a name: `<>"|?*` and the control characters. */
+export const isPortable = (path: string): boolean =>
+  !/[<>"|?*]/.test(path) && !path.split('').some((unit) => unit < ' ');
+
+/** Whether a file system call failed as one the app may not make: EACCES, or EPERM, as Windows reports a denied access. */
+export const isDenied = (error: unknown): boolean => {
+  const code = errorCode(error);
+  return code === 'EACCES' || code === 'EPERM';
+};
+
+// The entries from the project root down to path, the path itself included, while they exist.
+function* entriesOnWay(root: string, path: string) {
   const parts = path.split('/');
   for (let end = 1; end <= parts.length; end += 1) {
     const way = parts.slice(0, end).join('/');
-    const info = entryAt(join(root, way));
-    if (info === undefined) return undefined;
-    if (info.isSymbolicLink()) return way;
+    const entry = entryAt(join(root, way));
+    if (entry === undefined) return;
+    yield { way, entry };
+  }
+}
+
+/** The first link from the project root down to `path`, the path itself included, as a project-relative path. */
+export const linkOnWay = (root: string, path: string): string | undefined => {
+  for (const { way, entry } of entriesOnWay(root, path)) if (entry.isSymbolicLink()) return way;
+  return undefined;
+};
+
+/** What the way from the project root down to a path meets first, at a project-relative path; "." is the root. */
+export interface Block {
+  /** A link, the path itself included; a file where a folder of the path belongs; a folder the app may not enter. */
+  found: 'link' | 'file' | 'denied';
+  at: string;
+}
+
+/** What the way from the project root down to `path` meets first, as a write or a read must not pass it; none when clear. */
+export const blockOnWay = (root: string, path: string): Block | undefined => {
+  // The folder whose entry was read last; a denied read below it means the app may not enter it.
+  let folder = '.';
+  try {
+    for (const { way, entry } of entriesOnWay(root, path)) {
+      if (entry.isSymbolicLink()) return { found: 'link', at: way };
+      if (way !== path && !entry.isDirectory()) return { found: 'file', at: way };
+      folder = way;
+    }
+  } catch (error) {
+    if (isDenied(error)) return { found: 'denied', at: folder };
+    throw error;
   }
   return undefined;
 };

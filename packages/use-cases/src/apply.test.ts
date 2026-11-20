@@ -206,6 +206,7 @@ describe('apply checks the plan paths', () => {
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(longFolder, 'x\n')], longFolder],
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(decomposed, 'x\n')], decomposed],
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(deep, 'x\n')], deep],
+    ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/a?b.md', 'x\n')], '.claude/a?b.md'],
   ] as const)('refuses with %s a plan path its steps could not write, before any write', (code, plan, path) => {
     const { root, state } = project();
     expect(apply(store(state), request(root, [...plan]))).toEqual(refusedAt(code, path));
@@ -220,17 +221,42 @@ describe('apply checks the plan paths', () => {
   });
 });
 
+// Whether a fresh folder of the volume reads ss.md and ß.md as one file, as APFS does.
+const foldsSharpS = (): boolean => {
+  const folder = fresh();
+  writeFileSync(join(folder, 'ss.md'), '');
+  return existsSync(join(folder, 'ß.md'));
+};
+
 describe('apply refuses two spellings of one path on every volume', () => {
   it.each([
-    ['plan.file-changed', '.claude/Foo.md', '.claude/foo.md'],
-    ['plan.file-changed', '.claude/A/b.md', '.claude/a/b.md'],
-    ['plan.path-nested', '.claude/a', '.claude/A/b.md'],
-  ] as const)('refuses with %s %s beside %s, before any write', (code, first, second) => {
+    ['.claude/Foo.md', '.claude/foo.md', foldsCase],
+    ['.claude/A/b.md', '.claude/a/b.md', foldsCase],
+    ['.claude/ss.md', '.claude/ß.md', foldsSharpS],
+  ] as const)(
+    'refuses %s beside %s, before any write: as changed on a volume that reads them as one file, else as a clash',
+    (first, second, folds) => {
+      const { root, state } = project();
+      const expected = folds()
+        ? refusedAt('plan.file-changed', second)
+        : refused({ code: 'plan.spelling-clash', params: { path: second, other: first } });
+      expect(apply(store(state), request(root, [create(first, 'a\n'), create(second, 'b\n')]))).toEqual(expected);
+      expect([listing(root), runs(state)]).toEqual([[], []]);
+    },
+  );
+
+  it('refuses with plan.path-nested two spellings of a file and a folder, before any write', () => {
     const { root, state } = project();
-    expect(apply(store(state), request(root, [create(first, 'a\n'), create(second, 'b\n')]))).toEqual(
-      refusedAt(code, second),
-    );
+    const plan = [create('.claude/a', 'a\n'), create('.claude/A/b.md', 'b\n')];
+    expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.path-nested', '.claude/A/b.md'));
     expect([listing(root), runs(state)]).toEqual([[], []]);
+  });
+
+  it.skipIf(!foldsSharpS())('applies a chain over ss.md and ß.md on a volume that reads them as one file', () => {
+    const { root, state } = project();
+    const plan = [create('.claude/ss.md', 'a\n'), replace('.claude/ß.md', 'a\n', 'b\n')];
+    expect(apply(store(state), request(root, plan))).toEqual({ run: 'r1', refusal: null, findings: [] });
+    expect([listing(root).length, text(join(root, '.claude/ss.md'))]).toEqual([1, 'b\n']);
   });
 
   // Proves the rule only on a case-sensitive volume, as on Linux: elsewhere the two files are one, which reads as changed.
@@ -253,7 +279,9 @@ describe('apply probes two spellings in a private folder', () => {
       const plan = [replace('.claude/B.md', 'v1\n', 'v2\n'), replace('.claude/b.md', 'v2\n', 'v3\n')];
       chmodSync(folder, 0o500);
       try {
-        expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.folder-denied', '.claude/b.md'));
+        expect(apply(store(state), request(root, plan))).toEqual(
+          refused({ code: 'plan.folder-denied', params: { path: '.claude/b.md', denied: '.claude' } }),
+        );
         expect([listing(root), runs(state)]).toEqual([['B.md'], []]);
       } finally {
         chmodSync(folder, 0o700);
@@ -328,7 +356,7 @@ describe('apply stops the run at a path denied during the run', () => {
       const plan = [create('.claude/a.md', 'a\n'), replace('.claude/b.md', 'old\n', 'new\n')];
       try {
         expect(apply(store(state), request(root, plan), deny)).toEqual(
-          refusedAt('plan.folder-denied', '.claude/b.md', 'r1'),
+          refused({ code: 'plan.folder-denied', params: { path: '.claude/b.md', denied: '.claude/b.md' } }, 'r1'),
         );
       } finally {
         chmodSync(join(root, '.claude/b.md'), 0o700);
@@ -585,7 +613,9 @@ describe('apply probes the volume', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     chmodSync(join(root, denied), mode);
     try {
-      expect(apply(store(state), request(root, [operation]))).toEqual(refusedAt('plan.folder-denied', operation.path));
+      expect(apply(store(state), request(root, [operation]))).toEqual(
+        refused({ code: 'plan.folder-denied', params: { path: operation.path, denied } }),
+      );
     } finally {
       chmodSync(join(root, denied), 0o700);
     }

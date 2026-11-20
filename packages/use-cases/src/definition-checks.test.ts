@@ -260,6 +260,19 @@ describe.skipIf(isWindows || isRoot)('names a folder the app may not read with g
   });
 });
 
+it.skipIf(isWindows || isRoot)('names a skill file the app may not read with generated.file-unreadable', () => {
+  const { project, check } = setup();
+  const file = join(project, '.claude', 'skills', 'own', 'SKILL.md');
+  write(file, SKILL);
+  chmodSync(file, 0);
+  expect(check()).toEqual({
+    definitions: [],
+    generated: [
+      { code: 'generated.file-unreadable', severity: 'warning', params: { path: '.claude/skills/own/SKILL.md' } },
+    ],
+  });
+});
+
 it('leaves the generated files of other definitions alone while a definition file cannot be read', () => {
   const { project, check } = setup();
   write(join(project, '.cedarloom', 'workflows', 'research.json'), '{"name": ');

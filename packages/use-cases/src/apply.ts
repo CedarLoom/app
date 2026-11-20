@@ -1,6 +1,6 @@
 import { isUtf8 } from 'node:buffer';
 import { lstatSync, rmSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import type { Finding, PlanOperation, PlanPreview, Refusal, SettingsEntry } from '@cedarloom/core';
 import {
   asidePath,
@@ -23,10 +23,9 @@ import {
   tempPath,
   writeNew,
 } from './project-files.ts';
-import { reached } from './plugin-folder.ts';
 import { recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
-import { inWriteRoots, linkOnWay } from './write-roots.ts';
+import { blockOnWay, inWriteRoots, isDenied, isPortable } from './write-roots.ts';
 
 /**
  * The points between the crash-ordered parts of one step: the new file written beside its target, the old file set
@@ -79,15 +78,30 @@ class Dropped extends Changed {}
 
 export const refusal = (code: Refusal['code'], path: string): Refusal => ({ code, params: { path } });
 
-// A folder on the way that the app may not enter hides whether a link is below it.
-export const linkRefusal = (root: string, path: string): Refusal | undefined => {
-  const link = reached(() => linkOnWay(root, path) ?? null);
-  if (link === undefined) return refusal('plan.folder-denied', path);
-  return link === null ? undefined : refusal('plan.symlink', link);
+const denied = (path: string, at: string): Refusal => ({ code: 'plan.folder-denied', params: { path, denied: at } });
+
+// A link, a folder on the way that the app may not enter, which hides whether a link is below it, or a file on the way;
+// Windows reads a path below a file as absent, not as ENOTDIR.
+export const wayRefusal = (root: string, path: string): Refusal | undefined => {
+  const block = blockOnWay(root, path);
+  if (block === undefined) return undefined;
+  if (block.found === 'denied') return denied(path, block.at);
+  return block.found === 'link' ? refusal('plan.symlink', block.at) : refusal('plan.path-through-file', path);
 };
 
+const isRefused = (found: FileFound | Refusal): found is Refusal => typeof found === 'object' && 'code' in found;
+
+// The project's file at a planned path; a read the app may not make refuses it.
+const readAt = (root: string, path: string): FileFound | Refusal =>
+  orDenied(path, path, () => fileAt(join(root, path)));
+
 // The file a step replaces or deletes, when it is the text file the plan expects.
-const expected = (path: string, before: string, found: FileFound): Refusal | { bytes: Buffer; mode: number } => {
+const expected = (
+  path: string,
+  before: string,
+  found: FileFound | Refusal,
+): Refusal | { bytes: Buffer; mode: number } => {
+  if (isRefused(found)) return found;
   if (found === 'link') return refusal('plan.symlink', path);
   if (found === 'not-file' || found === 'too-large') return refusal('plan.not-text', path);
   if (found === 'absent' || sha256(found.bytes) !== before) return refusal('plan.file-changed', path);
@@ -95,14 +109,15 @@ const expected = (path: string, before: string, found: FileFound): Refusal | { b
 };
 
 const diskProblem = (root: string, { path, beforeHash }: PlanOperation): Refusal | undefined => {
-  const found = fileAt(join(root, path));
-  if (beforeHash === null) return found === 'absent' ? undefined : refusal('plan.file-changed', path);
+  const found = readAt(root, path);
+  if (beforeHash === null && found !== 'absent') return isRefused(found) ? found : refusal('plan.file-changed', path);
+  if (beforeHash === null) return undefined;
   const file = expected(path, beforeHash, found);
   return 'code' in file ? file : undefined;
 };
 
 // Two spellings are one file where they reach one existing folder and a probe there reads the rest as one file.
-const sameFile = (root: string, first: string, path: string): boolean => {
+const sameFile = (root: string, first: string, path: string): boolean | Refusal => {
   if (first === path) return true;
   const [a, b] = [first.split('/'), path.split('/')];
   let depth = a.length - 1;
@@ -111,7 +126,9 @@ const sameFile = (root: string, first: string, path: string): boolean => {
   const [one, two] = [entryAt(folder), entryAt(join(root, ...b.slice(0, depth)))];
   if (one === undefined || two === undefined || one.dev !== two.dev || one.ino !== two.ino) return false;
   const [rest, otherRest] = [a.slice(depth).join('/'), b.slice(depth).join('/')];
-  return rest === otherRest || readsAsOne(folder, rest, otherRest);
+  return (
+    rest === otherRest || orDenied(path, a.slice(0, depth).join('/') || '.', () => readsAsOne(folder, rest, otherRest))
+  );
 };
 
 /** The operations on one file so far: the path the first one named, and the hash the last one leaves. */
@@ -120,40 +137,32 @@ interface Chain {
   left: string | null;
 }
 
-// A read or a probe the app may not make: EACCES, or EPERM, as Windows reports a denied access.
-const DENIED = new Set<unknown>(['EACCES', 'EPERM']);
-const orDenied = <T>(path: string, act: () => T): T | Refusal => {
+// A read or a probe at a project-relative path the app may not make refuses the planned path.
+const orDenied = <T>(path: string, at: string, act: () => T): T | Refusal => {
   try {
     return act();
   } catch (error) {
-    if (DENIED.has(errorCode(error))) return refusal('plan.folder-denied', path);
+    if (isDenied(error)) return denied(path, at);
     throw error;
   }
 };
 
-// A later operation on a path starts from what the one before it leaves, at the file the chain began with.
-const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined =>
-  op.beforeHash === left && sameFile(root, first, op.path) ? undefined : refusal('plan.file-changed', op.path);
-
-// A folder on the way that is a file; Windows reads a path below it as absent, not as ENOTDIR.
-export const fileOnWay = (root: string, path: string): Refusal | undefined => {
-  const parts = path.split('/');
-  for (let end = 1; end < parts.length; end += 1) {
-    const entry = entryAt(join(root, ...parts.slice(0, end)));
-    if (entry === undefined) return undefined;
-    if (!entry.isDirectory()) return refusal('plan.path-through-file', path);
-  }
-  return undefined;
+// A later operation on a path starts from what the one before it leaves, at the file the chain began with; a spelling
+// the volume reads as another file clashes with it.
+const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined => {
+  const same = sameFile(root, first, op.path);
+  if (same === false) return { code: 'plan.spelling-clash', params: { path: op.path, other: first } };
+  if (same !== true) return same;
+  return op.beforeHash === left ? undefined : refusal('plan.file-changed', op.path);
 };
 
-// Paths of one key chain where the volume reads them as one file, else are refused; other folds (ß, ss) get two keys.
-export const fileKey = (path: string): string => path.normalize('NFC').toLowerCase();
+// One key for the spellings a volume may read as one file: NFC, then upper and lower case, which folds ß to ss and ﬁ
+// to fi as full case folding does. The spelling probe decides whether a key's spellings chain or clash.
+export const fileKey = (path: string): string => path.normalize('NFC').toUpperCase().toLowerCase().normalize('NFC');
 
 // What the disk shows wrong with an operation, as the operations before it on the same file leave it.
 const fileProblem = (root: string, op: PlanOperation, chain: Chain | undefined): Refusal | undefined =>
-  linkRefusal(root, op.path) ??
-  fileOnWay(root, op.path) ??
-  (chain === undefined ? diskProblem(root, op) : chainProblem(root, op, chain));
+  wayRefusal(root, op.path) ?? (chain === undefined ? diskProblem(root, op) : chainProblem(root, op, chain));
 
 // A text its hash does not name, or one apply would write but a later plan or undo would not read, is refused first.
 const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined => {
@@ -201,11 +210,12 @@ export const precheck = (root: string, operations: readonly PlanOperation[]): Re
   const folders = new Set<string>();
   for (const [position, op] of operations.entries()) {
     if (!inWriteRoots(op.path)) return refusal('plan.path-outside-roots', op.path);
+    if (!isPortable(op.path)) return refusal('plan.name-not-portable', op.path);
     const key = fileKey(op.path);
     const above = folderKeys(op.path);
     const nested = folders.has(key) || above.some((folder) => chains.has(folder));
     const chain = chains.get(key);
-    const problem = planProblem(root, op, position, nested) ?? orDenied(op.path, () => fileProblem(root, op, chain));
+    const problem = planProblem(root, op, position, nested) ?? fileProblem(root, op, chain);
     if (problem !== undefined) return problem;
     chains.set(key, { first: chain?.first ?? op.path, left: op.afterHash });
     for (const folder of above) folders.add(folder);
@@ -226,14 +236,17 @@ const linksAt = (root: string, op: PlanOperation, probed: Set<bigint>): Refusal 
   entry ??= lstatSync(folder, { bigint: true });
   if (probed.has(entry.dev)) return undefined;
   probed.add(entry.dev);
-  return makesHardLinks(folder) ? undefined : refusal('apply.no-hard-links', op.path);
+  const at = relative(root, folder).split(sep).join('/') || '.';
+  const makes = orDenied(op.path, at, () => makesHardLinks(folder));
+  if (typeof makes === 'object') return makes;
+  return makes ? undefined : refusal('apply.no-hard-links', op.path);
 };
 
 // A step on a volume without hard links would stop after it set the old file aside, and so would the undo of a delete.
 const linksProblem = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
   const probed = new Set<bigint>();
   for (const op of operations) {
-    const problem = orDenied(op.path, () => linksAt(root, op, probed));
+    const problem = linksAt(root, op, probed);
     if (problem !== undefined) return problem;
   }
   return undefined;
@@ -316,11 +329,11 @@ const written = (context: Step, position: number, op: PlanOperation, mode: numbe
 const step = (context: Step, position: number, op: PlanOperation): Stop | undefined => {
   const { store, run, root, at } = context;
   const path = join(root, op.path);
-  const linked = linkRefusal(root, op.path);
+  const linked = wayRefusal(root, op.path);
   if (linked !== undefined) return untouched(linked);
   let mode = context.modes.get(position);
   if (op.beforeHash !== null) {
-    const file = orDenied(op.path, () => expected(op.path, op.beforeHash, fileAt(path)));
+    const file = expected(op.path, op.beforeHash, readAt(root, op.path));
     if ('code' in file) return untouched(file);
     if (!backUp(file.bytes, store.backupPath(run, position))) {
       return untouched({ code: 'apply.backup-failed', params: { run, path: op.path } });
@@ -330,7 +343,7 @@ const step = (context: Step, position: number, op: PlanOperation): Stop | undefi
   }
   const made = makeFolders(dirname(path), 0o777, levels(op.path));
   if (made > 0) store.madeFolders(run, position, made);
-  const relinked = linkRefusal(root, op.path);
+  const relinked = wayRefusal(root, op.path);
   if (relinked !== undefined) return untouched(relinked);
   const stopped = written(context, position, op, mode);
   if (stopped === undefined) at('written', position);

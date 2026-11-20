@@ -9,10 +9,11 @@ import {
   type Refusal,
   type Run,
 } from '@cedarloom/core';
-import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
+import { type Applied, type ApplyRequest, type At, apply, fileKey, refusal, wayRefusal } from './apply.ts';
 import { entryAt, errorCode, type FileFound, fileAt, hashAt, removeEmptyFolder, sha256 } from './project-files.ts';
 import { type Operation, recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
+import { blockOnWay, isDenied } from './write-roots.ts';
 import { inWriteRoots, linkOnWay } from './write-roots.ts';
 
 export interface UndoRequest {
@@ -36,14 +37,14 @@ export type Undone = Applied & { plan: PlanPreview | null };
 
 const hashOf = (text: string | null): string | null => (text === null ? null : sha256(Buffer.from(text)));
 
-const DENIED = new Set<unknown>(['EACCES', 'EPERM']);
-
-// A file the undo plan reads that the app may not read, by its project-relative path.
+// A file the undo plan reads that the app may not read, and the folder or file that denies it, as project-relative paths.
 class Denied extends Error {
   readonly path: string;
-  constructor(path: string) {
+  readonly denied: string;
+  constructor(path: string, denied: string) {
     super();
     this.path = path;
+    this.denied = denied;
   }
 }
 
@@ -54,7 +55,9 @@ const textAt = (root: string, path: string): string | null | undefined => {
   try {
     found = fileAt(join(root, path));
   } catch (error) {
-    throw DENIED.has(errorCode(error)) ? new Denied(path) : error;
+    if (!isDenied(error)) throw error;
+    const block = blockOnWay(root, path);
+    throw new Denied(path, block?.found === 'denied' ? block.at : path);
   }
   if (found === 'absent') return null;
   return typeof found === 'object' && isUtf8(found.bytes) ? found.bytes.toString('utf8') : undefined;
@@ -107,7 +110,7 @@ const textBefore = ({ store, run }: Walk, position: number, step: Operation): st
 // A path as before the run's first step on it needs nothing; one that hashes as the step left it is restored, and one
 // that hashes as before another step of the run on it needs nothing either.
 const visit = (walk: Walk, position: number, step: Operation): Refusal | undefined => {
-  const link = linkRefusal(walk.root, step.path);
+  const link = wayRefusal(walk.root, step.path);
   if (link !== undefined) return link;
   const key = fileKey(step.path);
   const current = walk.now.has(key) ? walk.now.get(key) : textAt(walk.root, step.path);
@@ -194,7 +197,8 @@ const walked = (walk: Walk, run: Run): Refusal | undefined => {
     }
     return claimed(walk, run);
   } catch (error) {
-    if (error instanceof Denied) return refusal('plan.folder-denied', error.path);
+    if (error instanceof Denied)
+      return { code: 'plan.folder-denied', params: { path: error.path, denied: error.denied } };
     throw error;
   }
 };
