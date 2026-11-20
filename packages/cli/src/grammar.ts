@@ -3,7 +3,7 @@ import type { Refusal } from '@cedarloom/core';
 
 /**
  * A command's arguments in order, the last `optional` of them optional, or with `variadic` its one argument any number
- * of times; and the flags it takes beside --json and --help.
+ * of times; and the flags it takes beside --json and --help. The first argument names a run, a workflow or a plugin.
  */
 interface Command {
   args: readonly string[];
@@ -158,38 +158,52 @@ const flagRefusal = ({ flags, help, json }: Line, name: CommandName | Noun | nul
   return help && json ? { code: 'cli.flag-conflict', params: { flags: '--help, --json' } } : undefined;
 };
 
+// The argument a command misses: its first, when a word that names it is blank (every word of a variadic command, else
+// the first), else the first one it needs and was not given.
+const missingOf = ({ args, optional = 0, variadic = false }: Command, rest: string[]): string | undefined => {
+  const named = variadic ? rest : rest.slice(0, 1);
+  if (named.some((word) => word.trim() === '')) return args[0];
+  const required = variadic ? 0 : args.length - optional;
+  return args.find((_, index) => index < required && rest[index] === undefined);
+};
+
 // A surplus word is refused also with --help; a missing argument only without it, since the usage then names it.
 const argumentsOf = (name: CommandName, rest: string[], help: boolean): { args: string[] } | { refusal: Refusal } => {
-  const { args, optional = 0, variadic } = commandNamed(name);
-  if (variadic) return { args: rest };
+  const spec = commandNamed(name);
   const command = `${BIN} ${name}`;
-  const surplus = rest[args.length];
-  if (surplus !== undefined) return usage('cli.surplus-argument', { argument: surplus, command });
-  // An empty <run> names no run.
-  const given = (argument: string, index: number): boolean =>
-    rest[index] !== undefined && !(argument === '<run>' && rest[index] === '');
-  const missing = args.find((argument, index) => index < args.length - optional && !given(argument, index));
+  const surplus = spec.variadic ? undefined : rest[spec.args.length];
+  // An empty word is shown as the shell writes it.
+  if (surplus !== undefined) return usage('cli.surplus-argument', { argument: surplus || "''", command });
+  const missing = missingOf(spec, rest);
   if (!help && missing !== undefined) return usage('cli.missing-argument', { argument: missing, command });
   return { args: rest };
 };
 
-const isVersion = (argv: readonly string[]): boolean =>
-  argv.length === 1 && (argv[0] === '--version' || argv[0] === '-V');
+// --version or -V, given any number of times and with any value, and nothing else.
+const isVersion = ({ words, flags }: Line): boolean =>
+  words.length === 0 && flags.length > 0 && flags.every(({ name }) => name === 'version');
 
-// --version or -V beside another flag and no word; with a word, the command's own flags decide.
-const versionConflict = ({ words, flags }: Line): Refusal | undefined => {
-  const version = flags.find(({ name }) => name === 'version');
-  const other = flags.find(({ name }) => name !== 'version');
-  if (words.length > 0 || version === undefined || other === undefined) return undefined;
-  return { code: 'cli.flag-conflict', params: { flags: `${version.rawName}, ${other.rawName}` } };
+// --version or -V beside another flag and no word: an unknown flag or a wrong value, else a conflict; with a word, the command's
+// own flags decide.
+const versionRefusal = (line: Line): Refusal | undefined => {
+  const version = line.flags.find(({ name }) => name === 'version');
+  const flags = line.flags.filter(({ name }) => name !== 'version');
+  const [other] = flags;
+  if (line.words.length > 0 || version === undefined || other === undefined) return undefined;
+  return (
+    flagRefusal({ ...line, flags, help: false }, null) ?? {
+      code: 'cli.flag-conflict',
+      params: { flags: `${version.rawName}, ${other.rawName}` },
+    }
+  );
 };
 
 /** Reads a command line of cedarloom or cloom, without the node and bin words. */
 export const parse = (argv: readonly string[]): Parsed => {
-  if (isVersion(argv)) return { ok: true, value: { kind: 'version' } };
   const line = lineOf(argv);
+  if (isVersion(line)) return { ok: true, value: { kind: 'version' } };
   const refused = (refusal: Refusal): Parsed => ({ ok: false, refusal, json: line.json });
-  const conflict = versionConflict(line);
+  const conflict = versionRefusal(line);
   if (conflict !== undefined) return refused(conflict);
   const command = commandOf(line.words, line.help);
   if ('refusal' in command) return refused(command.refusal);

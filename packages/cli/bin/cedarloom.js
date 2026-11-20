@@ -28,6 +28,24 @@ function stop(document, problem, exitCode) {
   process.exitCode = exitCode;
 }
 
+// Every control, format and separator character escaped, line feeds too, as printable of core does, when core does not load.
+function escaped(value) {
+  return value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, function (character) {
+    return character
+      .split('')
+      .map(function (unit) {
+        return '\\u' + unit.charCodeAt(0).toString(16).padStart(4, '0');
+      })
+      .join('');
+  });
+}
+
+function crashed(report) {
+  process.stderr.write(report + '\n');
+  const refusal = { code: 'cli.internal', params: {} };
+  stop({ result: null, findings: [], refusals: [refusal] }, refusal, 5);
+}
+
 const required = manifest.engines.node;
 const found = process.versions.node;
 if (Number(found.split('.')[0]) < Number(required.replace('>=', ''))) {
@@ -39,8 +57,18 @@ if (Number(found.split('.')[0]) < Number(required.replace('>=', ''))) {
       cli.run(manifest);
     })
     .catch(function (error) {
-      process.stderr.write(String(error.stack) + '\n');
-      const refusal = { code: 'cli.internal', params: {} };
-      stop({ result: null, findings: [], refusals: [refusal] }, refusal, 5);
+      return import('@cedarloom/core')
+        .then(function (core) {
+          return core.printableStack(error);
+        })
+        .catch(function () {
+          // Any code may define what a thrown value holds, a getter that throws included.
+          try {
+            return escaped(String((error && error.stack) || error));
+          } catch {
+            return '[unreadable]';
+          }
+        })
+        .then(crashed);
     });
 }
