@@ -12,7 +12,7 @@ import {
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apply, type Boundary, StepFailed } from './apply.ts';
+import { apply, type Boundary, precheck, StepFailed } from './apply.ts';
 import type { RunStore } from './store.ts';
 import {
   begin,
@@ -199,11 +199,10 @@ describe('apply checks the plan paths', () => {
     expect([listing(root), runs(state)]).toEqual([[], []]);
   });
 
-  // Skipped on Windows: the path reads as absent there, so the run writes the first file and throws EEXIST at mkdir.
-  it.skipIf(process.platform === 'win32')('refuses a plan path through a file before any write', () => {
+  it('refuses a plan path through a file before any write', () => {
     const { root, state } = project({ '.claude/a.md': 'a\n' });
     const plan = [create('.claude/b.md', 'b\n'), create('.claude/a.md/c.md', 'c\n')];
-    expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.file-changed', '.claude/a.md/c.md'));
+    expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.path-through-file', '.claude/a.md/c.md'));
     expect([listing(root), runs(state)]).toEqual([['a.md'], []]);
   });
 });
@@ -221,13 +220,51 @@ describe('apply refuses two spellings of one path on every volume', () => {
     expect([listing(root), runs(state)]).toEqual([[], []]);
   });
 
-  // Skipped: on a case-sensitive volume, as on Linux, the chain passes the precheck and its second step stops the run.
-  it.skip('refuses a chain over two spellings before any write where the second spelling is another file', () => {
+  // Proves the rule only on a case-sensitive volume, as on Linux: elsewhere the two files are one, which reads as changed.
+  it('refuses a chain over two spellings before any write where the second spelling is another file', () => {
     const { root, state } = project({ '.claude/B.md': 'v1\n', '.claude/b.md': 'other\n' });
+    const before = listing(root);
     const plan = [replace('.claude/B.md', 'v1\n', 'v2\n'), replace('.claude/b.md', 'v2\n', 'v3\n')];
     expect(apply(store(state), request(root, plan)).run).toBeNull();
-    expect(runs(state)).toEqual([]);
+    expect([listing(root), runs(state)]).toEqual([before, []]);
   });
+});
+
+describe('apply probes two spellings in a private folder', () => {
+  // A folder mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'lets an error of the spelling probe through, before any write',
+    () => {
+      const { root, state } = project({ '.claude/B.md': 'v1\n' });
+      const folder = join(root, '.claude');
+      const plan = [replace('.claude/B.md', 'v1\n', 'v2\n'), replace('.claude/b.md', 'v2\n', 'v3\n')];
+      chmodSync(folder, 0o500);
+      try {
+        expect(thrownBy(() => apply(store(state), request(root, plan)))).toMatchObject({ code: 'EACCES' });
+        expect([listing(root), runs(state)]).toEqual([['B.md'], []]);
+      } finally {
+        chmodSync(folder, 0o700);
+      }
+    },
+  );
+
+  // Needs a volume that reads both folder names as one and a folder mode that keeps the process out, as on macOS.
+  it.skipIf(process.platform !== 'darwin' || process.getuid?.() === 0)(
+    'probes no spelling where the names below the shared folder are equal',
+    () => {
+      const { root } = project();
+      const folder = join(root, '.claude/Sub');
+      mkdirSync(folder);
+      writeFileSync(join(folder, 'x.md'), 'v1\n');
+      const plan = [replace('.claude/Sub/x.md', 'v1\n', 'v2\n'), replace('.claude/sub/x.md', 'v2\n', 'v3\n')];
+      chmodSync(folder, 0o500);
+      try {
+        expect(precheck(root, plan)).toBeUndefined();
+      } finally {
+        chmodSync(folder, 0o700);
+      }
+    },
+  );
 });
 
 describe('apply keeps to the write roots', () => {

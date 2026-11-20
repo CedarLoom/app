@@ -35,6 +35,7 @@ export const MESSAGE_IDS = [
   'plan.not-text',
   'plan.path-nested',
   'plan.path-outside-roots',
+  'plan.path-through-file',
   'plan.stale',
   'plan.symlink',
   'plan.text-mismatch',
@@ -103,6 +104,7 @@ export interface MessagePlaceholders {
   'plan.not-text': 'path';
   'plan.path-nested': 'path';
   'plan.path-outside-roots': 'path';
+  'plan.path-through-file': 'path';
   'plan.stale': never;
   'plan.symlink': 'path';
   'plan.text-mismatch': 'path';
