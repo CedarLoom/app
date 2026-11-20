@@ -1,6 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { expect, it, onTestFinished } from 'vitest';
 import { nameTaken } from './name-taken.ts';
 
@@ -90,4 +91,33 @@ it.skipIf(process.platform === 'win32')(
 it('looks only in the project root when cwd is outside it', () => {
   const base = projectWith('.claude/commands/mine.md', 'project/.claude/commands/other.md', 'elsewhere/notes.md');
   expect(nameTaken(join(base, 'elsewhere'), join(base, 'project'), 'mine')).toEqual([]);
+});
+
+it.each([
+  ['plain', '---\nname: mine\n---\nRun.\n'],
+  ['quoted, of the run name, with CRLF line ends', '---\r\ndescription: Runs.\r\nname: "mine-run"\r\n---\r\nRun.\r\n'],
+])('refuses a name the front matter of a skill in another folder gives it, %s', (_, text) => {
+  const root = projectWith('.claude/skills/other/SKILL.md', '.claude/skills/near/SKILL.md');
+  writeFileSync(join(root, '.claude/skills/other/SKILL.md'), text);
+  writeFileSync(join(root, '.claude/skills/near/SKILL.md'), '---\nname: mine-two\n---\nname: mine\n');
+  expect(nameTaken(root, root, 'mine')).toEqual([
+    { code: 'workflow.name-taken', params: { name: 'mine', path: '.claude/skills/other/SKILL.md' } },
+  ]);
+});
+
+it('stops at the project root also when its path ends in a separator', () => {
+  const base = projectWith('.claude/commands/mine.md', 'project/notes.md');
+  expect(nameTaken(join(base, 'project'), join(base, 'project') + sep, 'mine')).toEqual([]);
+});
+
+// A small stack stands in for a depth macOS and Linux paths do not reach; Windows may refuse a path this long.
+it.skipIf(process.platform === 'win32')('walks a skill folder hundreds of folders deep without recursion', () => {
+  const root = projectWith();
+  mkdirSync(join(root, '.claude/skills/mine', ...Array.from({ length: 400 }, () => 'a')), { recursive: true });
+  const script = `
+    import { nameTaken } from ${JSON.stringify(new URL('name-taken.ts', import.meta.url).href)};
+    process.stdout.write(JSON.stringify(nameTaken(process.argv[1], process.argv[1], 'mine')));
+  `;
+  const args = ['--stack-size=100', '--input-type=module', '--eval', script, root];
+  expect(execFileSync(process.execPath, args, { encoding: 'utf8' })).toBe('[]');
 });

@@ -3,8 +3,14 @@ import { JsonValue } from './canonical-json.ts';
 import { Refusal } from './finding.ts';
 import { Hash } from './plan.ts';
 
+// Device names Windows reserves in every folder, also with an extension.
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+
 /** A workflow name: it becomes a file and a folder name, so it is checked before it reaches a path. */
-export const WorkflowName = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+export const WorkflowName = z
+  .string()
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+  .refine((name) => !RESERVED.test(name));
 
 /** Where a definition comes from: the plugin's own, read only, or the project's in .cedarloom/workflows. */
 export const WorkflowSource = z.enum(['shipped', 'project']);
