@@ -17,7 +17,7 @@
     "jscpd": "jscpd .",
     "licenses": "pnpm licenses list --recursive --json | node scripts/licenses.ts",
     "check": "sh scripts/check.sh",
-    "check:changed": "git merge-base origin/main HEAD >/dev/null && git diff -z --name-only --diff-filter=d --merge-base origin/main | lefthook run pre-commit --files-from-stdin && git diff -z --name-only --diff-filter=d --merge-base origin/main | lefthook run pre-push --files-from-stdin"
+    "check:changed": "git merge-base origin/main HEAD && git diff -z --name-only --diff-filter=d --merge-base origin/main | lefthook run pre-commit --files-from-stdin && git diff -z --name-only --diff-filter=d --merge-base origin/main | lefthook run pre-push --files-from-stdin"
   },
   "knip": {
     "ignoreBinaries": [
