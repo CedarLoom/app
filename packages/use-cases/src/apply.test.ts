@@ -274,11 +274,10 @@ describe('apply checks the plan paths', () => {
     expect([listing(root), runs(state)]).toEqual([[], []]);
   });
 
-  // Skipped on Windows: the path reads as absent there, so the run writes the first file and throws EEXIST at mkdir.
-  it.skipIf(process.platform === 'win32')('refuses a plan path through a file before any write', () => {
+  it('refuses a plan path through a file before any write', () => {
     const { root, state } = project({ '.claude/a.md': 'a\n' });
     const plan = [create('.claude/b.md', 'b\n'), create('.claude/a.md/c.md', 'c\n')];
-    expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.file-changed', '.claude/a.md/c.md'));
+    expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.path-through-file', '.claude/a.md/c.md'));
     expect([listing(root), runs(state)]).toEqual([['a.md'], []]);
   });
 });
@@ -296,12 +295,19 @@ describe('apply refuses two spellings of one path on every volume', () => {
     expect([listing(root), runs(state)]).toEqual([[], []]);
   });
 
-  // Skipped: on a case-sensitive volume, as on Linux, the chain passes the precheck and its second step stops the run.
-  it.skip('refuses a chain over two spellings before any write where the second spelling is another file', () => {
+  // Proves the rule only on a case-sensitive volume, as on Linux: elsewhere the two files are one, which reads as changed.
+  it('refuses a chain over two spellings before any write where the second spelling is another file', () => {
     const { root, state } = project({ '.claude/B.md': 'v1\n', '.claude/b.md': 'other\n' });
     const plan = [replace('.claude/B.md', 'v1\n', 'v2\n'), replace('.claude/b.md', 'v2\n', 'v3\n')];
     expect(apply(store(state), request(root, plan)).run).toBeNull();
     expect(runs(state)).toEqual([]);
+  });
+
+  it('refuses a chain over two spellings that begins with a create, before any write', () => {
+    const { root, state } = project();
+    const plan = [create('.claude/a.md', 'a\n'), replace('.claude/A.md', 'a\n', 'b\n')];
+    expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.file-changed', '.claude/A.md'));
+    expect([listing(root), runs(state)]).toEqual([[], []]);
   });
 });
 
@@ -1089,11 +1095,12 @@ describe('undo of a replaced undo on two files', () => {
 describe('undo matches files and runs as apply and the store do', () => {
   // Linux filesystems tell the two names apart, so apply never chains them as one file there.
   it.skipIf(process.platform === 'linux')('undoes two steps on one file named in two letter cases', () => {
-    const { root, state } = project();
+    const { root, state } = project({ '.claude/a.md': 'a\n' });
     const held = store(state, 'r1', 'u1');
-    apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/A.md', 'a\n', 'b\n')]));
+    const plan = [replace('.claude/a.md', 'a\n', 'b\n'), replace('.claude/A.md', 'b\n', 'c\n')];
+    expect(apply(held, request(root, plan)).refusal).toBeNull();
     expect(undo(held, { root, run: 'r1' }).run).toBe('u1');
-    expect(listing(root)).toEqual([]);
+    expect(text(join(root, '.claude/a.md'))).toBe('a\n');
   });
 
   it('names the newest undo by the order it was recorded in, also when the clock went back', () => {

@@ -100,6 +100,13 @@
       ["path"],
       " is outside the folders CedarLoom writes to (.claude/ and .cedarloom/workflows/)."
     ],
+    "plan.path-through-file": [
+      "A folder on the way to ",
+      ["path"],
+      " is a file, so CedarLoom cannot write ",
+      ["path"],
+      ". Nothing was changed."
+    ],
     "plan.stale": ["The plan changed since it was shown. Review the new plan before you apply it."],
     "plan.symlink": [["path"], " is a symbolic link. CedarLoom does not write through links."],
     "plan.text-mismatch": [

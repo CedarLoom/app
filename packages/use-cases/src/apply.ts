@@ -94,12 +94,44 @@ const diskProblem = (root: string, { path, beforeHash }: PlanOperation): Refusal
   return 'code' in file ? file : undefined;
 };
 
-// A later operation on a path starts from what the one before it leaves.
-const chainProblem = (op: PlanOperation, left: string | null | undefined): Refusal | undefined =>
-  op.beforeHash === left ? undefined : refusal('plan.file-changed', op.path);
+// Whether two spellings name one existing file: on a volume that tells them apart, or before a create makes it, the
+// second spelling's step would stop the run after the first one wrote.
+const sameFile = (root: string, first: string, path: string): boolean => {
+  if (first === path) return true;
+  const [a, b] = [entryAt(join(root, first)), entryAt(join(root, path))];
+  return a !== undefined && b !== undefined && a.dev === b.dev && a.ino === b.ino;
+};
 
-// Paths macOS and Windows may read as one file chain as one; elsewhere two such paths are refused, never half written.
+/** The operations on one file so far: the path the first one named, and the hash the last one leaves. */
+interface Chain {
+  first: string;
+  left: string | null;
+}
+
+// A later operation on a path starts from what the one before it leaves, at the file the chain began with.
+const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined =>
+  op.beforeHash === left && sameFile(root, first, op.path) ? undefined : refusal('plan.file-changed', op.path);
+
+// A folder on the way that is a file; Windows reads a path below it as absent, not as ENOTDIR.
+const fileOnWay = (root: string, path: string): Refusal | undefined => {
+  const parts = path.split('/');
+  for (let end = 1; end < parts.length; end += 1) {
+    const entry = entryAt(join(root, ...parts.slice(0, end)));
+    if (entry === undefined) return undefined;
+    if (!entry.isDirectory()) return refusal('plan.path-through-file', path);
+  }
+  return undefined;
+};
+
+// Paths macOS and Windows may read as one file chain as one where they name one existing file; any other two such
+// paths are refused before the first write.
 export const fileKey = (path: string): string => path.normalize('NFC').toLowerCase();
+
+// What the disk shows wrong with an operation, as the operations before it on the same file leave it.
+const fileProblem = (root: string, op: PlanOperation, chain: Chain | undefined): Refusal | undefined =>
+  linkRefusal(root, op.path) ??
+  fileOnWay(root, op.path) ??
+  (chain === undefined ? diskProblem(root, op) : chainProblem(root, op, chain));
 
 // The text a step writes is the one its hash names, so the check after the write cannot fail once the old file went.
 const textProblem = ({ path, after, afterHash }: PlanOperation): Refusal | undefined =>
@@ -139,19 +171,17 @@ const planProblem = (root: string, op: PlanOperation, position: number, nested: 
 
 // Every operation is checked before the first write, each against what the ones before it leave: one problem writes none.
 export const precheck = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
-  const leaves = new Map<string, string | null>();
+  const chains = new Map<string, Chain>();
   const folders = new Set<string>();
   for (const [position, op] of operations.entries()) {
     if (!inWriteRoots(op.path)) return refusal('plan.path-outside-roots', op.path);
     const key = fileKey(op.path);
     const above = folderKeys(op.path);
-    const nested = folders.has(key) || above.some((folder) => leaves.has(folder));
-    const problem =
-      planProblem(root, op, position, nested) ??
-      linkRefusal(root, op.path) ??
-      (leaves.has(key) ? chainProblem(op, leaves.get(key)) : diskProblem(root, op));
+    const nested = folders.has(key) || above.some((folder) => chains.has(folder));
+    const chain = chains.get(key);
+    const problem = planProblem(root, op, position, nested) ?? fileProblem(root, op, chain);
     if (problem !== undefined) return problem;
-    leaves.set(key, op.afterHash);
+    chains.set(key, { first: chain?.first ?? op.path, left: op.afterHash });
     for (const folder of above) folders.add(folder);
   }
   return undefined;
