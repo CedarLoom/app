@@ -90,6 +90,10 @@
       ["path"],
       " is no longer generated, but it changed since it was written, so CedarLoom kept it. Delete it yourself if it is not needed."
     ],
+    "generated.file-unreadable": [
+      ["path"],
+      " cannot be read, so CedarLoom did not check whether it is a generated file."
+    ],
     "generated.folder-unreadable": [["path"], " cannot be read, so the generated files in it were not checked."],
     "generator.failed": [
       "The workflow generator ",
@@ -113,11 +117,17 @@
       " changed after the plan was made. Nothing was overwritten. Review the file and make the plan again."
     ],
     "plan.folder-denied": [
-      "CedarLoom may not enter a folder on the way to ",
+      "The permissions of ",
+      ["denied"],
+      " keep CedarLoom from reading or writing ",
       ["path"],
-      ", so it does not read or write ",
+      ", so it leaves ",
       ["path"],
-      ". Check the permissions of the folders on the way, then try again."
+      " as it is. Check those permissions, then try again."
+    ],
+    "plan.name-not-portable": [
+      ["path"],
+      " holds a character Windows does not allow in a file name (< > \" | ? * or a control character), so the plan cannot be applied."
     ],
     "plan.name-too-long": [
       "The path of ",
@@ -142,6 +152,12 @@
       " is a file, so CedarLoom cannot write ",
       ["path"],
       ". Nothing was changed."
+    ],
+    "plan.spelling-clash": [
+      ["path"],
+      " and ",
+      ["other"],
+      " differ only in letter case or Unicode form, and this volume keeps them as two files. CedarLoom treats them as one path, so the plan cannot be applied."
     ],
     "plan.stale": ["The plan changed since it was shown. Review the new plan before you apply it."],
     "plan.symlink": [["path"], " is a symbolic link. CedarLoom does not write through links."],

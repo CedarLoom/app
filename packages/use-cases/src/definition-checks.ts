@@ -64,10 +64,7 @@ const compared = (
   const gone = allRead
     ? [...orphans].filter(([name]) => !names.includes(name)).flatMap(([name, paths]) => stale(name, paths))
     : [];
-  const folders = unreadable.map(
-    (path): Finding => ({ code: 'generated.folder-unreadable', severity: 'warning', params: { path } }),
-  );
-  return { definitions: [], generated: [...present, ...gone, ...folders] };
+  return { definitions: [], generated: [...present, ...gone, ...unreadable] };
 };
 
 /**

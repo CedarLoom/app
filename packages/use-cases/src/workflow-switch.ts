@@ -148,7 +148,7 @@ const switchedRun = (store: RunStore, request: { root: string; yes: boolean }, r
   if (switched === undefined) return stoppedBy([unreadable()], findings);
   const { text, entries, skipped } = switched;
   const operations = text === null ? [] : [writeOf(file, text)];
-  const problem = precheck(root, operations);
+  const problem = precheck(root, operations, false);
   if (problem !== undefined) return stoppedBy([problem], findings);
   const plan = { planHash: planHash(operations, sha256), operations, skipped };
   const generation = { ...stoppedBy([], findings), plan };

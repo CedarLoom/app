@@ -12,7 +12,7 @@ import {
   type Run,
   type SettingsEntry,
 } from '@cedarloom/core';
-import { apply, fileKey, fileOnWay, linkRefusal, precheck, refusal } from './apply.ts';
+import { apply, fileKey, precheck, refusal, wayRefusal } from './apply.ts';
 import { definitionBytes, isListed, jsonWithin } from './definition-files.ts';
 import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
@@ -112,11 +112,7 @@ const previousFiles = (store: RunStore, names: readonly string[]): Map<string, s
 // enter or below a file, or that the app may not read is refused.
 export const foundAt = (root: string, path: string): FileFound | Refusal => {
   if (!inWriteRoots(path)) return refusal('plan.path-outside-roots', path);
-  return (
-    linkRefusal(root, path) ??
-    reached(() => fileOnWay(root, path) ?? fileAt(join(root, path))) ??
-    refusal('plan.not-text', path)
-  );
+  return wayRefusal(root, path) ?? reached(() => fileAt(join(root, path))) ?? refusal('plan.not-text', path);
 };
 
 export const isRefusal = (value: FileFound | Refusal): value is Refusal => typeof value === 'object' && 'code' in value;
@@ -189,7 +185,7 @@ const planned = (
   const skipped = changes.filter((change): change is Finding => 'severity' in change);
   // A plan apply would refuse for its paths or files is refused before it is shown. The hard-link probe stays with apply;
   // the spelling probe writes here only where a volume reads two spellings as two files, and the plan is then refused.
-  const unappliable = precheck(root, operations);
+  const unappliable = precheck(root, operations, false);
   if (unappliable !== undefined) return unappliable;
   return { planHash: planHash(operations, sha256), operations, skipped };
 };

@@ -316,7 +316,7 @@ it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     define({ name: 'dev', skill: 'Run dev twice.\n' });
     expect(generated()).toMatchObject({
       plan: null,
-      refusals: [{ code: 'plan.folder-denied', params: { path: SKILL } }],
+      refusals: [{ code: 'plan.folder-denied', params: { path: SKILL, denied: '.claude/skills' } }],
     });
   },
 );

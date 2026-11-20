@@ -1,24 +1,31 @@
 import { type Dirent, readdirSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { join, relative, sep } from 'node:path';
+import type { Finding } from '@cedarloom/core';
 import { filesBelow } from './files-below.ts';
 import { headerName, MARK } from './generated-header.ts';
-import { isUnreachable, reached } from './plugin-folder.ts';
-import { errorCode, readFound } from './project-files.ts';
-import { linkOnWay } from './write-roots.ts';
+import { isUnreachable } from './plugin-folder.ts';
+import { readFound } from './project-files.ts';
+import { blockOnWay, isDenied } from './write-roots.ts';
 
 const SKILLS = '.claude/skills';
 const WORKFLOWS = '.claude/workflows';
 
 // The mark sits in the header, which follows only the front matter of a few definition fields.
 const HEAD = 1024 * 1024;
-const DENIED = new Set<unknown>(['EACCES', 'EPERM']);
 
 // A project file's first limit bytes; undefined for anything but a regular file reached without a link, as a write
 // would refuse it.
-const bytesAt = (project: string, path: string, limit: number): Buffer | undefined => {
-  if (reached(() => linkOnWay(project, path) ?? null) !== null) return undefined;
-  const found = reached(() => readFound(join(project, path), limit));
-  return typeof found === 'object' ? found.bytes : undefined;
+const bytesAt = (project: string, path: string, limit: number): Buffer | { denied: string } | undefined => {
+  const block = blockOnWay(project, path);
+  if (block !== undefined) return block.found === 'denied' ? { denied: block.at } : undefined;
+  try {
+    const found = readFound(join(project, path), limit);
+    return typeof found === 'object' ? found.bytes : undefined;
+  } catch (error) {
+    if (isDenied(error)) return { denied: path };
+    if (isUnreachable(error)) return undefined;
+    throw error;
+  }
 };
 
 // Git for Windows checks text out with CRLF by default; the generator writes LF, except where it copies a file as read.
@@ -31,14 +38,15 @@ export const isOwnPath = (path: string, name: string): boolean =>
 
 /**
  * The project's files a generator run wrote before, by their head: those below a skill folder and the workflow scripts
- * that carry the mark; and the project-relative folders among them the app may not read.
+ * that carry the mark; and a finding for each folder or file among them the app may not read.
  */
-export const generatedFiles = (project: string): { files: Map<string, Buffer>; unreadable: string[] } => {
-  const unreadable = new Set<string>();
+export const generatedFiles = (project: string): { files: Map<string, Buffer>; unreadable: Finding[] } => {
+  const folders = new Set<string>();
+  const deniedFiles: string[] = [];
   // No entries for an error that says the app cannot reach folder, noting folder when the app may not read it.
   const unreached = (error: unknown, folder: string): Dirent[] => {
     if (!isUnreachable(error)) throw error;
-    if (DENIED.has(errorCode(error))) unreadable.add(relative(project, folder).split(sep).join('/'));
+    if (isDenied(error)) folders.add(relative(project, folder).split(sep).join('/'));
     return [];
   };
   // A folder's entries; none when the app cannot reach it.
@@ -49,15 +57,11 @@ export const generatedFiles = (project: string): { files: Map<string, Buffer>; u
       return unreached(error, folder);
     }
   };
-  // A project folder's entries; none when a link is on the way, as it may lead outside the project.
+  // A project folder's entries; none when a link or a file is on the way, as a link may lead outside the project.
   const entriesOf = (folder: string): Dirent[] => {
-    try {
-      if (linkOnWay(project, folder) !== undefined) return [];
-    } catch (error) {
-      // The project folder was searched for the definitions, so the folder the way could not pass is the parent.
-      return unreached(error, join(project, dirname(folder)));
-    }
-    return listed(join(project, folder));
+    const block = blockOnWay(project, folder);
+    if (block?.found === 'denied') folders.add(block.at);
+    return block === undefined ? listed(join(project, folder)) : [];
   };
   const skills = entriesOf(SKILLS)
     .filter((entry) => entry.isDirectory())
@@ -71,10 +75,21 @@ export const generatedFiles = (project: string): { files: Map<string, Buffer>; u
   const files = new Map(
     [...skills, ...scripts].flatMap((path): [string, Buffer][] => {
       const head = bytesAt(project, path, HEAD);
-      return head?.includes(MARK) ? [[path, head]] : [];
+      if (head === undefined || Buffer.isBuffer(head)) return head?.includes(MARK) ? [[path, head]] : [];
+      if (head.denied === path) deniedFiles.push(path);
+      else folders.add(head.denied);
+      return [];
     }),
   );
-  return { files, unreadable: [...unreadable] };
+  const unreadable = [
+    ...[...folders].map(
+      (path): Finding => ({ code: 'generated.folder-unreadable', severity: 'warning', params: { path } }),
+    ),
+    ...deniedFiles.map(
+      (path): Finding => ({ code: 'generated.file-unreadable', severity: 'warning', params: { path } }),
+    ),
+  ];
+  return { files, unreadable };
 };
 
 /**
@@ -91,7 +106,7 @@ export const stalePaths = (
   const differing = [...expected].filter(([path, bytes]) => {
     // A file longer than twice the bytes differs from them even with each of its line ends read as CRLF.
     const found = bytesAt(project, path, 2 * bytes.length + 1);
-    return found === undefined || !withLf(found).equals(withLf(bytes));
+    return !Buffer.isBuffer(found) || !withLf(found).equals(withLf(bytes));
   });
   const extra = [...generated.keys()].filter((path) => isOwnPath(path, name) && !expected.has(path));
   return [...differing.map(([path]) => path), ...extra].toSorted();

@@ -31,17 +31,20 @@ export const MESSAGE_IDS = [
   'edit.result-over-limits',
   'edit.target-invalid',
   'generate.delete-skipped',
+  'generated.file-unreadable',
   'generated.folder-unreadable',
   'generator.failed',
   'generator.output-unknown',
   'node.version-unsupported',
   'plan.file-changed',
   'plan.folder-denied',
+  'plan.name-not-portable',
   'plan.name-too-long',
   'plan.not-text',
   'plan.path-nested',
   'plan.path-outside-roots',
   'plan.path-through-file',
+  'plan.spelling-clash',
   'plan.stale',
   'plan.symlink',
   'plan.text-mismatch',
@@ -109,17 +112,20 @@ export interface MessagePlaceholders {
   'edit.result-over-limits': never;
   'edit.target-invalid': 'operation' | 'pointer';
   'generate.delete-skipped': 'path';
+  'generated.file-unreadable': 'path';
   'generated.folder-unreadable': 'path';
   'generator.failed': 'exitCode' | 'reason' | 'signal' | 'stderr';
   'generator.output-unknown': 'output';
   'node.version-unsupported': 'found' | 'required';
   'plan.file-changed': 'path';
-  'plan.folder-denied': 'path';
+  'plan.folder-denied': 'denied' | 'path';
+  'plan.name-not-portable': 'path';
   'plan.name-too-long': 'path';
   'plan.not-text': 'path';
   'plan.path-nested': 'path';
   'plan.path-outside-roots': 'path';
   'plan.path-through-file': 'path';
+  'plan.spelling-clash': 'other' | 'path';
   'plan.stale': never;
   'plan.symlink': 'path';
   'plan.text-mismatch': 'path';
