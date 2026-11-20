@@ -127,9 +127,9 @@ describe('start', () => {
 
   it('reports an opener that throws on stderr and keeps serving', async () => {
     const { result, document, errors } = await started(['--json'], () => {
-      throw new Error('no browser');
+      throw new Error('no browser\u202e');
     });
-    expect(['close' in result, document.refusals, errors]).toEqual([true, [], ['no browser\n']]);
+    expect(['close' in result, document.refusals, errors]).toEqual([true, [], ['no browser\\u202e\n']]);
   });
 });
 
@@ -199,10 +199,11 @@ describe('openPage', () => {
 });
 
 describe('closed', () => {
-  it('reports a failed close by its stack on stderr and no second document, exit 5', async () => {
+  it('reports a failed close by its stack, escaped, on stderr and no second document, exit 5', async () => {
     const { io, out, errors } = appIo(['--json']);
-    const failure = new Error('close failed');
-    expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([5, [], [`${failure.stack}\n`]]);
+    const failure = new Error('close failed\u202e');
+    const stack = failure.stack?.replace('\u202e', '\\u202e');
+    expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([5, [], [`${stack}\n`]]);
   });
 });
 
@@ -258,6 +259,17 @@ describe('start without a server', () => {
     const { result, document } = await started(['--json', flag, next]);
     const params = { argument, command: `cedarloom-app ${flag}` };
     expect([result, document.refusals]).toEqual([{ exitCode: 2 }, [{ code: 'cli.missing-argument', params }]]);
+  });
+});
+
+describe('start, the --json document', () => {
+  it('escapes a format character of a refused value in the --json document, equal after parsing', async () => {
+    const { io, out } = appIo(['--json', '--port=\u202e']);
+    await start(io);
+    expect([out.join(''), JSON.parse(out.join('')).refusals[0].params.value]).toEqual([
+      expect.stringContaining('"value":"\\u202e"'),
+      '\u202e',
+    ]);
   });
 });
 
