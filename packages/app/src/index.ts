@@ -2,12 +2,13 @@ import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { printable, printableLines } from '@cedarloom/core';
-import { stateDir, storeDir } from '@cedarloom/use-cases';
+import { printable } from '@cedarloom/core';
+import { storeDir } from '@cedarloom/use-cases';
 import manifest from '../package.json' with { type: 'json' };
 import { opener } from './opener.ts';
-import { start } from './start.ts';
+import { type AppIo, crashed, type Started, start } from './start.ts';
 
 const openFile = (path: string): void => {
   const { command, args } = opener(process.platform, process.env['SystemRoot'], path);
@@ -20,24 +21,53 @@ const openFile = (path: string): void => {
   child.unref();
 };
 
-const crashed = (error: unknown): void => {
-  process.stderr.write(`${printableLines(String(error instanceof Error ? error.stack : error))}\n`);
-  const refusal = { code: 'cli.internal', params: {} };
-  if (process.argv.includes('--json'))
-    process.stdout.write(`${JSON.stringify({ result: null, findings: [], refusals: [refusal] })}\n`);
-  process.exitCode = 5;
+/** What a listening server needs of its process: the signals that stop it, and the exit with a code. */
+export interface Host {
+  once: (signal: 'SIGINT' | 'SIGTERM', listener: () => void) => void;
+  exit: (exitCode: number) => void;
+}
+
+/** Closes the server on the first SIGINT or SIGTERM, then exits with the close's code; a failed close may hold the process open. */
+export const closeOnSignal = (started: Exclude<Started, { exitCode: number }>, host: Host): void => {
+  let closing = false;
+  // One close only: a SIGTERM after a SIGINT would close twice and could exit with the second close's code.
+  const stop = (): void => {
+    if (closing) return;
+    closing = true;
+    void started.close().then(host.exit);
+  };
+  host.once('SIGINT', stop);
+  host.once('SIGTERM', stop);
 };
 
-/** The bin's entry: serves until SIGINT or SIGTERM, then closes the server and exits 0. */
+// An exit drops what a pipe has not taken yet, so it waits for the writes before it on stdout and stderr.
+const exit = (exitCode: number): void => {
+  process.exitCode = exitCode;
+  process.stdout.write('', () => process.stderr.write('', () => process.exit()));
+};
+
+/** The bin's entry: serves until SIGINT or SIGTERM, then closes the server and exits with the close's code. */
 export const run = (): void => {
-  const machine = { env: process.env, platform: process.platform, home: homedir(), cwd: process.cwd() };
-  start({
+  const home = homedir();
+  // The store's parent, so a relative CEDARLOOM_STATE_DIR places the page and the store from the same project root.
+  const store = (projectRoot: string): string =>
+    storeDir({
+      env: process.env,
+      platform: process.platform,
+      home,
+      cwd: projectRoot,
+      projectRoot,
+      realpath: realpathSync.native,
+    });
+  const io: AppIo = {
     argv: process.argv.slice(2),
-    cwd: process.cwd(),
+    get cwd() {
+      return process.cwd();
+    },
     env: process.env,
-    home: homedir(),
-    stateDir: stateDir(machine),
-    storeDir: (projectRoot) => storeDir({ ...machine, projectRoot, realpath: realpathSync.native }),
+    home,
+    stateDir: (projectRoot) => dirname(store(projectRoot)),
+    storeDir: store,
     uiDir: fileURLToPath(new URL('../dist/ui', import.meta.url)),
     clock: { now: () => new Date(), newRunId: randomUUID },
     node: process.versions.node,
@@ -50,17 +80,14 @@ export const run = (): void => {
     platform: process.platform,
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => process.stderr.write(text),
-  }).then((started) => {
-    if ('exitCode' in started) {
-      process.exitCode = started.exitCode;
-      return;
-    }
-    const stop = (): void => {
-      void started.close().then((exitCode) => {
-        process.exitCode = exitCode;
-      });
-    };
-    process.once('SIGINT', stop);
-    process.once('SIGTERM', stop);
-  }, crashed);
+  };
+  start(io).then(
+    (started) => {
+      if ('exitCode' in started) process.exitCode = started.exitCode;
+      else closeOnSignal(started, { once: (signal, listener) => process.once(signal, listener), exit });
+    },
+    (error: unknown) => {
+      process.exitCode = crashed(io, error);
+    },
+  );
 };
