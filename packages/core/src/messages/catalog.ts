@@ -160,7 +160,7 @@ export interface MessagePlaceholders {
   'undo.file-changed': 'path';
   'undo.replaced': 'by' | 'run';
   'undo.result-kept': 'path' | 'run';
-  'workflow.name-invalid': 'name';
+  'workflow.name-invalid': 'longest' | 'name';
   'workflow.name-taken': 'name' | 'path';
   'workflow.no-script': 'name';
 }

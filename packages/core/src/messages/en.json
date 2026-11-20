@@ -88,7 +88,7 @@
       ["mebibytes"],
       " MiB or nested deeper than ",
       ["levels"],
-      " levels, more than CedarLoom reads. Nothing was changed."
+      " levels, more than CedarLoom reads."
     ],
     "edit.target-invalid": [
       "The pointer \"",
@@ -321,7 +321,9 @@
     ],
     "workflow.name-invalid": [
       ["name"],
-      " is not a valid workflow name. Use at most 166 lowercase letters, digits and single hyphens, and no name Windows keeps for a device, such as con, nul, com1 or lpt1."
+      " is not a valid workflow name. Use at most ",
+      ["longest"],
+      " lowercase letters, digits and single hyphens, and no name Windows keeps for a device, such as con, nul, com1 or lpt1."
     ],
     "workflow.name-taken": ["The name ", ["name"], " is already used by ", ["path"], "."],
     "workflow.no-script": [["name"], " has no workflow script to switch off."]

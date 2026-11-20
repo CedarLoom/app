@@ -92,6 +92,6 @@ it('lists a definition named outside the name form with a workflow.name-invalid 
   const listed = listWorkflows(request);
   expect(listed.result).toMatchObject({ workflows: [{ name: 'Release_Flow', source: 'project' }] });
   expect(listed.findings.filter(({ code }) => code.startsWith('workflow.'))).toEqual([
-    { code: 'workflow.name-invalid', severity: 'warning', params: { name: 'Release_Flow' } },
+    { code: 'workflow.name-invalid', severity: 'warning', params: { name: 'Release_Flow', longest: 166 } },
   ]);
 });

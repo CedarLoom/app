@@ -9,6 +9,7 @@ export { Action, Run, RunId, RunOperation, RunSummary, SettingsEntry } from './r
 export { type SwitchRecord, type SwitchTarget, switchedOff, switchedOn } from './settings-switch.ts';
 export {
   GeneratorRefusal,
+  LONGEST_NAME,
   WorkflowList,
   WorkflowName,
   WorkflowShown,

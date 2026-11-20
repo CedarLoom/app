@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import {
   type Finding,
   type GeneratorRefusal,
+  LONGEST_NAME,
   type Refusal,
   WorkflowName,
   type WorkflowList,
@@ -84,7 +85,7 @@ export const stoppedOn = <T>(findings: Finding[]): Answer<T> =>
 
 export const invalidName = (names: readonly string[]): Refusal | undefined => {
   const name = names.find((each) => !WorkflowName.safeParse(each).success);
-  return name === undefined ? undefined : { code: 'workflow.name-invalid', params: { name } };
+  return name === undefined ? undefined : { code: 'workflow.name-invalid', params: { name, longest: LONGEST_NAME } };
 };
 
 const descriptionOf = (bytes: Buffer | 'absent' | 'unreadable'): string | null => {

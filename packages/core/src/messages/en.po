@@ -213,7 +213,7 @@ msgstr "No {source, select, shipped {shipped} other {project}} workflow definiti
 
 #. js-lingui-explicit-id
 msgid "workflow.name-invalid"
-msgstr "{name} is not a valid workflow name. Use at most 166 lowercase letters, digits and single hyphens, and no name Windows keeps for a device, such as con, nul, com1 or lpt1."
+msgstr "{name} is not a valid workflow name. Use at most {longest} lowercase letters, digits and single hyphens, and no name Windows keeps for a device, such as con, nul, com1 or lpt1."
 
 #. js-lingui-explicit-id
 msgid "workflow.name-taken"
@@ -229,7 +229,7 @@ msgstr "No CedarLoom run recorded the files generated for the old name {name}, s
 
 #. js-lingui-explicit-id
 msgid "edit.result-over-limits"
-msgstr "The edited definition would be larger than {mebibytes} MiB or nested deeper than {levels} levels, more than CedarLoom reads. Nothing was changed."
+msgstr "The edited definition would be larger than {mebibytes} MiB or nested deeper than {levels} levels, more than CedarLoom reads."
 
 #. js-lingui-explicit-id
 msgid "session.host"

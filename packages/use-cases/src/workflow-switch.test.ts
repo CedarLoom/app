@@ -396,7 +396,7 @@ describe('a settings file workflows off and on do not change', () => {
       for (const result of [off(id), on(id)])
         expect(result).toMatchObject({
           plan: null,
-          refusals: [{ code: 'workflow.name-invalid', params: { name: id } }],
+          refusals: [{ code: 'workflow.name-invalid', params: { name: id, longest: 166 } }],
         });
       expect(read()).toBe(OWNER);
     },

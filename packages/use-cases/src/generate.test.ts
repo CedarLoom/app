@@ -384,8 +384,8 @@ it('workflows new --from full copies the shipped definition under the new name w
 
 it.each([
   ['dev', 'full', { code: 'workflow.name-taken', params: { name: 'dev', path: '.cedarloom/workflows/dev.json' } }],
-  ['../x', 'full', { code: 'workflow.name-invalid', params: { name: '../x' } }],
-  ['mine', '../../x', { code: 'workflow.name-invalid', params: { name: '../../x' } }],
+  ['../x', 'full', { code: 'workflow.name-invalid', params: { name: '../x', longest: 166 } }],
+  ['mine', '../../x', { code: 'workflow.name-invalid', params: { name: '../../x', longest: 166 } }],
   ['mine', 'research', { code: 'definition.not-found', params: { name: 'research', source: 'shipped' } }],
 ])('refuses workflows new %s --from %s with a typed refusal and writes nothing', (name, from, refusal) => {
   const { project, created } = newSetup();
@@ -546,7 +546,7 @@ it.each<[Edit, object]>([
   ],
   [
     { operation: 'set', pointer: '/name', value: '../x' },
-    { code: 'workflow.name-invalid', params: { name: '../x' } },
+    { code: 'workflow.name-invalid', params: { name: '../x', longest: 166 } },
   ],
   [
     { operation: 'remove', pointer: '/stages/0' },

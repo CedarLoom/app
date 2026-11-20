@@ -614,7 +614,7 @@ it.each(['show', 'validate'])('refuses in workflows %s a name that leads out of 
     document: {
       result: null,
       findings: [],
-      refusals: [{ code: 'workflow.name-invalid', params: { name: '../../x' } }],
+      refusals: [{ code: 'workflow.name-invalid', params: { name: '../../x', longest: 166 } }],
     },
     stderr: '',
   });
@@ -708,7 +708,7 @@ it('answers with workflows show a name too long for its files with workflow.name
   const name = 'a'.repeat(167);
   expect(workflows('show', name)).toMatchObject({
     code: 3,
-    document: { refusals: [{ code: 'workflow.name-invalid', params: { name } }] },
+    document: { refusals: [{ code: 'workflow.name-invalid', params: { name, longest: 166 } }] },
   });
 });
 
