@@ -130,14 +130,13 @@ export const writeNew = (path: string, bytes: Uint8Array, mode: number | undefin
   }
 };
 
-const parts = (path: string): number => path.split(/[\\/]+/).filter(Boolean).length;
-
 /** Makes the missing folders of a path, each flushed into its parent so a crash keeps them; gives how many it made. */
 export const makeFolders = (path: string, mode = 0o777): number => {
-  const first = mkdirSync(path, { recursive: true, mode });
-  if (first === undefined) return 0;
-  // Counted by parts, not by spelling or length: Windows may spell the returned folder differently, as by a short name.
-  const made = parts(path) - parts(first) + 1;
+  // Counted before, not from what mkdir returns: on Windows that can name a deeper folder than the first it made.
+  let made = 0;
+  for (let folder = path; entryAt(folder) === undefined && dirname(folder) !== folder; folder = dirname(folder))
+    made += 1;
+  mkdirSync(path, { recursive: true, mode });
   for (let folder = path, left = made; left > 0; left -= 1, folder = dirname(folder)) flushFolder(dirname(folder));
   return made;
 };
