@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { doctorRun } from './doctor.ts';
+import { workflowsGenerate } from './generate.ts';
 import { type Parsed, parse, type Request } from './grammar.ts';
 import type { Io } from './io.ts';
 import { message } from './message.ts';
@@ -20,6 +21,7 @@ const HELP = {
   'workflows list': 'help.workflows-list',
   'workflows show': 'help.workflows-show',
   'workflows validate': 'help.workflows-validate',
+  'workflows generate': 'help.workflows-generate',
   runs: 'help.runs',
   workflows: 'help.workflows',
 } as const;
@@ -33,6 +35,7 @@ const commandOutcome = (io: Io, request: Extract<Request, { kind: 'command' }>):
   if (name === 'workflows list') return workflowsList(io, pluginRoot);
   if (name === 'workflows show') return workflowsShow(io, argument, shipped, pluginRoot);
   if (name === 'workflows validate') return workflowsValidate(io, args, shipped, pluginRoot);
+  if (name === 'workflows generate') return workflowsGenerate(io, args, yes, pluginRoot);
   return undoRun(io, argument, yes);
 };
 

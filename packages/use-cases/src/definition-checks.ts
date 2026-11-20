@@ -20,7 +20,7 @@ interface Definition {
 }
 
 const notJson = (path: string): Finding => ({ code: 'definition.not-json', severity: 'error', params: { path } });
-const Named = z.object({ name: z.string() });
+export const Named = z.object({ name: z.string() });
 
 // One definition file, or why it cannot be one: unreadable, or not JSON.
 const read = (project: string, file: string): Definition | Finding | undefined => {

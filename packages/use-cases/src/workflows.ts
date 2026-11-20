@@ -34,7 +34,7 @@ export interface Answer<T> {
 
 type Definitions = WorkflowValidation['definitions'];
 /** Where a source's definitions are read: the folder below base, and the path a result shows for a file in it. */
-interface Place {
+export interface Place {
   source: WorkflowSource;
   base: string;
   folder: string;
@@ -42,12 +42,12 @@ interface Place {
 }
 
 const stopped = <T>(refusals: Refusal[], findings: Finding[] = []): Answer<T> => ({ result: null, findings, refusals });
-const notJson = (path: string): Refusal => ({ code: 'definition.not-json', params: { path } });
+export const notJson = (path: string): Refusal => ({ code: 'definition.not-json', params: { path } });
 const Described = z.object({ description: z.string() });
 // zod's JSON schema and the "__proto__" check recurse once per level, so a deeper file could overflow the stack.
 const NESTING_LIMIT = 100;
 
-const projectPlace = (project: string): Place => ({
+export const projectPlace = (project: string): Place => ({
   source: 'project',
   base: project,
   folder: PROJECT_FOLDER,
@@ -62,14 +62,17 @@ const shippedPlace = (root: string): Place => ({
 });
 
 // The located plugin's shipped definitions, or null when there is no usable plugin; the locator's findings either way.
-const pluginPlace = (request: WorkflowsRequest, project: string): { place: Place | null; findings: Finding[] } => {
+export const pluginPlace = (
+  request: WorkflowsRequest,
+  project: string,
+): { place: Place | null; findings: Finding[] } => {
   const override = request.pluginRoot === null ? null : resolve(request.cwd, request.pluginRoot);
   const located = locatePlugin({ pluginsRoot: pluginsRoot(request), cwd: request.cwd, project, override });
   return { place: located.plugin === null ? null : shippedPlace(located.plugin.root), findings: located.findings };
 };
 
 // A verb that needs the plugin stops on the locator's errors; its other findings say which folder was tried.
-const stoppedOn = <T>(findings: Finding[]): Answer<T> =>
+export const stoppedOn = <T>(findings: Finding[]): Answer<T> =>
   stopped(
     findings.flatMap(({ code, params, severity }) => (severity === 'error' ? [{ code, params }] : [])),
     findings.filter(({ severity }) => severity !== 'error'),
@@ -77,13 +80,13 @@ const stoppedOn = <T>(findings: Finding[]): Answer<T> =>
 
 const projectOf = (cwd: string): string | Refusal => projectRoot(cwd) ?? { code: 'project.not-found', params: { cwd } };
 
-const invalidName = (names: readonly string[]): Refusal | undefined => {
+export const invalidName = (names: readonly string[]): Refusal | undefined => {
   const name = names.find((each) => !WorkflowName.safeParse(each).success);
   return name === undefined ? undefined : { code: 'workflow.name-invalid', params: { name } };
 };
 
 // A definition's bytes; one nested beyond the limit is unreadable in every verb, as no reader can take it.
-const definitionAt = (place: Place, path: string): Buffer | 'absent' | 'unreadable' => {
+export const definitionAt = (place: Place, path: string): Buffer | 'absent' | 'unreadable' => {
   const bytes = definitionBytes(place.base, path);
   return typeof bytes === 'string' || !nestsBeyond(bytes, NESTING_LIMIT) ? bytes : 'unreadable';
 };
@@ -166,7 +169,7 @@ export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: b
 };
 
 // The definitions to validate: those named, each of which must exist, else every file of the place.
-const chosen = (place: Place, names: readonly string[]): { name: string; path: string }[] | Refusal => {
+export const chosen = (place: Place, names: readonly string[]): { name: string; path: string }[] | Refusal => {
   const pathOf = (name: string) => `${place.folder}/${name}.json`;
   if (names.length > 0) {
     const missing = names.find((name) => definitionBytes(place.base, pathOf(name)) === 'absent');

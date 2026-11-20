@@ -22,6 +22,7 @@ export const MESSAGE_IDS = [
   'definition.not-found',
   'definition.not-json',
   'definition.stale',
+  'generate.delete-skipped',
   'generator.failed',
   'generator.output-unknown',
   'node.version-unsupported',
@@ -81,6 +82,7 @@ export interface MessagePlaceholders {
   'definition.not-found': 'name' | 'source';
   'definition.not-json': 'path';
   'definition.stale': 'name' | 'paths';
+  'generate.delete-skipped': 'path';
   'generator.failed': 'exitCode' | 'signal' | 'stderr';
   'generator.output-unknown': 'output';
   'node.version-unsupported': 'found' | 'required';

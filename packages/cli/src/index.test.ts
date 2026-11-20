@@ -258,15 +258,25 @@ describe('bin/cedarloom.js', () => {
   });
 });
 
-// A generator in the plugin's form: with --json it prints a refusal per entry of a definition's "refusals" and exits 1.
-const GENERATOR = `import { readFileSync } from 'node:fs';
+// A generator in the plugin's form: with --json it prints a refusal per entry of a definition's "refusals" and exits 1;
+// else it writes each file of a definition's "writes" below --out.
+const GENERATOR = `import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 const args = process.argv.slice(2);
 const refusals = [];
+const writes = [];
 for (const file of args.slice(0, args.indexOf('--json'))) {
-  for (const field of JSON.parse(readFileSync(file, 'utf8')).refusals ?? []) refusals.push({ file, field, rule: 'refused' });
+  const definition = JSON.parse(readFileSync(file, 'utf8'));
+  for (const field of definition.refusals ?? []) refusals.push({ file, field, rule: 'refused' });
+  writes.push(...Object.entries(definition.writes ?? {}));
 }
 console.log(JSON.stringify(refusals));
 process.exitCode = refusals.length ? 1 : 0;
+const out = args[args.indexOf('--out') + 1];
+for (const [path, text] of refusals.length ? [] : writes) {
+  mkdirSync(join(out, path, '..'), { recursive: true });
+  writeFileSync(join(out, path), text);
+}
 `;
 const DEV = '{"name":"dev","description":"Shipped dev.","stages":[{"id":"change","phases":[]}]}';
 
@@ -481,5 +491,44 @@ it('answers with workflows show a name too long for a file with definition.not-f
   expect(workflows('show', name)).toMatchObject({
     code: 3,
     document: { refusals: [{ code: 'definition.not-found', params: { name, source: 'project' } }] },
+  });
+});
+
+describe('workflows generate', () => {
+  const plan = {
+    operations: [{ kind: 'create', path: '.claude/skills/mine/SKILL.md', before: null, after: 'Mine.\n' }],
+    skipped: [],
+  };
+
+  it('shows the plan without --yes and applies nothing, exit 4; with --yes applies it as a run, exit 0', () => {
+    const { root, workflows } = workflowsSetup({ mine: '{"writes":{"skills/mine/SKILL.md":"Mine.\\n"}}' });
+    expect(workflows('generate', 'mine')).toMatchObject({
+      code: 4,
+      document: {
+        result: { plan, applied: false, run: null, generatorRefusals: [] },
+        refusals: [{ code: 'cli.confirm-required', params: {} }],
+      },
+    });
+    expect(existsSync(join(root, '.claude', 'skills', 'mine'))).toBe(false);
+    expect(workflows('generate', 'mine', '--yes')).toMatchObject({
+      code: 0,
+      document: { result: { plan, applied: true, run: 'u1', generatorRefusals: [] }, refusals: [] },
+    });
+  });
+
+  it("reports the generator's refusals with no plan, exit 1", () => {
+    const { workflows } = workflowsSetup({ bad: '{"refusals":["stages"]}' });
+    expect(workflows('generate', '--yes')).toMatchObject({
+      code: 1,
+      document: {
+        result: {
+          plan: null,
+          applied: false,
+          run: null,
+          generatorRefusals: [{ file: '.cedarloom/workflows/bad.json', field: 'stages', rule: 'refused' }],
+        },
+        refusals: [],
+      },
+    });
   });
 });

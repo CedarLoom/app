@@ -21,7 +21,8 @@ const bytesAt = (project: string, path: string, limit: number): Buffer | undefin
 };
 
 // Git for Windows checks text out with CRLF by default; the generator writes LF, except where it copies a file as read.
-const withLf = (bytes: Buffer): Buffer => Buffer.from(bytes.toString('latin1').replaceAll('\r\n', '\n'), 'latin1');
+export const withLf = (bytes: Buffer): Buffer =>
+  Buffer.from(bytes.toString('latin1').replaceAll('\r\n', '\n'), 'latin1');
 
 // A folder's entries; none when the app cannot read it.
 const readableEntries = (folder: string): Dirent[] => reached(() => readdirSync(folder, { withFileTypes: true })) ?? [];
@@ -31,7 +32,7 @@ const entriesOf = (project: string, folder: string) =>
   reached(() => linkOnWay(project, folder) ?? null) === null ? readableEntries(join(project, folder)) : [];
 
 // Whether path is where a generator run for name writes: its skill folder or its workflow script.
-const isOwnPath = (path: string, name: string): boolean =>
+export const isOwnPath = (path: string, name: string): boolean =>
   path.startsWith(`${SKILLS}/${name}/`) || path === `${WORKFLOWS}/${name}.js`;
 
 /**

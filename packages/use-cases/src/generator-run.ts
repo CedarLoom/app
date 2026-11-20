@@ -33,7 +33,7 @@ const childEnv = (env: GeneratorRun['env']): Record<string, string> =>
     ),
   );
 
-const jsonOf = (text: string): unknown => {
+export const jsonOf = (text: string): unknown => {
   try {
     return JSON.parse(text);
   } catch {

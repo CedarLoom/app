@@ -97,7 +97,7 @@ const visit = (walk: Walk, position: number, step: Operation): Refusal | undefin
 };
 
 // A run is in effect while no done undo run undid it, or the newest one is itself no longer in effect.
-const inEffect = (store: RunStore, run: Run): boolean => {
+export const inEffect = (store: RunStore, run: Run): boolean => {
   const by = run.undoneBy === null ? undefined : store.run(run.undoneBy);
   return by === undefined || !inEffect(store, by);
 };
