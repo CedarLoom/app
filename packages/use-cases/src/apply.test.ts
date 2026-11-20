@@ -1,28 +1,45 @@
-import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { once } from 'node:events';
 import {
   chmodSync,
   existsSync,
   linkSync as hardLink,
   mkdirSync,
-  mkdtempSync,
   readdirSync,
-  readFileSync,
   renameSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { PlanOperation, Refusal } from '@cedarloom/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type Applied, type ApplyRequest, apply, type Boundary, StepFailed } from './apply.ts';
-import { openRunView, openStore, type RunStore, type RunView } from './store.ts';
-import { type UndoRequest, undo } from './undo.ts';
+import { apply, type Boundary, StepFailed } from './apply.ts';
+import type { RunStore } from './store.ts';
+import {
+  begin,
+  crash,
+  create,
+  failAt,
+  fresh,
+  hash,
+  listing,
+  project,
+  recovered,
+  refused,
+  refusedAt,
+  release,
+  remove,
+  replace,
+  request,
+  run,
+  runs,
+  store,
+  storeWith,
+  text,
+  thrownBy,
+  undone,
+} from './test-fixtures.ts';
+import { undo } from './undo.ts';
 
 // link() refused with `refuseLinks.code`, EPERM as on a filesystem without hard links, while `refuseLinks.on`.
 const refuseLinks = vi.hoisted(() => ({ on: false, code: 'EPERM' }));
@@ -66,98 +83,11 @@ vi.mock('node:fs', async (load) => {
   return { ...fs, linkSync, lstatSync, renameSync: renamed, symlinkSync: linked, unlinkSync };
 });
 
-const folders: string[] = [];
-const opened: { close(): void }[] = [];
 afterEach(() => {
   unlinking.check = () => undefined;
-  for (const item of opened.splice(0)) item.close();
-  for (const dir of folders.splice(0)) rmSync(dir, { recursive: true, force: true });
+  refuseLinks.on = false;
+  refuseLinks.code = 'EPERM';
 });
-
-const fresh = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), 'cedarloom-apply-'));
-  folders.push(dir);
-  return dir;
-};
-
-// A project with `.claude/` holding these files, and a store folder beside it.
-const project = (files: Record<string, string> = {}): { root: string; state: string } => {
-  const root = fresh();
-  mkdirSync(join(root, '.claude'));
-  for (const [path, text] of Object.entries(files)) writeFileSync(join(root, path), text);
-  return { root, state: fresh() };
-};
-
-// The store gives the run ids in order, then r1.
-const store = (state: string, ...ids: string[]): RunStore => {
-  const clock = { now: () => new Date('2026-11-18T22:17:39.123Z'), newRunId: () => ids.shift() ?? 'r1' };
-  const result = openStore(state, clock);
-  if (!result.ok) throw new Error(result.refusal.code);
-  opened.push(result.value);
-  return result.value;
-};
-
-const hash = (text: string): string => createHash('sha256').update(text).digest('hex');
-const create = (path: string, after: string, afterHash = hash(after)): PlanOperation => ({
-  kind: 'create',
-  path,
-  beforeHash: null,
-  afterHash,
-  before: null,
-  after,
-});
-const replace = (path: string, before: string, after: string): PlanOperation => ({
-  kind: 'replace',
-  path,
-  beforeHash: hash(before),
-  afterHash: hash(after),
-  before,
-  after,
-});
-const remove = (path: string, before: string): PlanOperation => ({
-  kind: 'delete',
-  path,
-  beforeHash: hash(before),
-  afterHash: null,
-  before,
-  after: null,
-});
-
-const request = (root: string, operations: PlanOperation[]): ApplyRequest => ({
-  root,
-  plan: { planHash: 'a'.repeat(64), operations, skipped: [] },
-  run: { kind: 'apply', action: 'workflow.new', subject: 'demo', undoes: null, generatedFrom: [] },
-});
-
-const view = (state: string): RunView => {
-  const opening = openRunView(state);
-  if (!opening.ok) throw new Error(opening.refusal.code);
-  opened.push(opening.value);
-  return opening.value;
-};
-
-const run = (state: string, id: string) => {
-  const found = view(state).run(id);
-  if (!found.ok || found.value === undefined) throw new Error(`no run ${id}`);
-  return { status: found.value.status, steps: found.value.operations.map((operation) => operation.status) };
-};
-
-const runs = (state: string): string[] => {
-  const found = view(state).runs();
-  if (!found.ok) throw new Error(found.refusal.code);
-  return found.value.map((summary) => summary.status);
-};
-
-const text = (path: string): string | null => (existsSync(path) ? readFileSync(path, 'utf8') : null);
-const listing = (root: string): string[] => readdirSync(join(root, '.claude')).toSorted();
-const refused = (refusal: Refusal, id: string | null = null): Applied => ({ run: id, refusal, findings: [] });
-const recovered = (path: string, id = 'r1') => ({
-  code: 'apply.recovered',
-  severity: 'info',
-  params: { run: id, path },
-});
-const refusedAt = (code: Refusal['code'], path: string, id: string | null = null): Applied =>
-  refused({ code, params: { path } }, id);
 
 describe('apply writes', () => {
   it('writes each file as planned in both write roots, backs up what it replaces or deletes, and journals each step', () => {
@@ -389,16 +319,6 @@ const failAtSetAside = (boundary: Boundary): void => {
   if (boundary === 'set-aside') throw new Error('disk gone');
 };
 
-// What `act` throws.
-const thrownBy = (act: () => unknown): unknown => {
-  try {
-    act();
-  } catch (error) {
-    return error;
-  }
-  return undefined;
-};
-
 describe('undo stops a run', () => {
   it('names an undo it stops with what the recovery before its plan settled', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
@@ -481,11 +401,8 @@ describe('apply after a step throws', () => {
   it('puts the old file back where the filesystem refuses hard links, and the next apply runs', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     const held = store(state);
-    try {
-      expect(() => apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), linksGone)).toThrow('EPERM');
-    } finally {
-      refuseLinks.on = false;
-    }
+    expect(() => apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), linksGone)).toThrow('EPERM');
+    refuseLinks.on = false;
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'old\n']);
     nextApplyRuns(held, root, state);
   });
@@ -523,13 +440,9 @@ describe('apply puts the old file back only to a free path', () => {
       linksGone(boundary);
       if (boundary === 'set-aside') writeFileSync(join(root, '.claude/b.md'), 'theirs\n');
     };
-    try {
-      expect(() => apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), theirs)).toThrow(
-        'EPERM',
-      );
-    } finally {
-      refuseLinks.on = false;
-    }
+    expect(() => apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), theirs)).toThrow(
+      'EPERM',
+    );
     expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
     expect([text(join(state, 'backups/r1/0')), run(state, 'r1')]).toEqual([
       'old\n',
@@ -542,13 +455,9 @@ describe('apply on a volume without hard links, and a link put back', () => {
   it('refuses a volume without hard links before any write, and leaves no probe', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     refuseLinks.on = true;
-    try {
-      expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toEqual(
-        refusedAt('apply.no-hard-links', '.claude/b.md'),
-      );
-    } finally {
-      refuseLinks.on = false;
-    }
+    expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toEqual(
+      refusedAt('apply.no-hard-links', '.claude/b.md'),
+    );
     expect([listing(root), text(join(root, '.claude/b.md')), runs(state)]).toEqual([['b.md'], 'old\n', []]);
   });
 
@@ -556,13 +465,9 @@ describe('apply on a volume without hard links, and a link put back', () => {
   it('refuses a plan that only deletes on a volume without hard links', () => {
     const { root, state } = project({ '.claude/c.md': 'gone\n' });
     refuseLinks.on = true;
-    try {
-      expect(apply(store(state), request(root, [remove('.claude/c.md', 'gone\n')]))).toEqual(
-        refusedAt('apply.no-hard-links', '.claude/c.md'),
-      );
-    } finally {
-      refuseLinks.on = false;
-    }
+    expect(apply(store(state), request(root, [remove('.claude/c.md', 'gone\n')]))).toEqual(
+      refusedAt('apply.no-hard-links', '.claude/c.md'),
+    );
     expect([listing(root), text(join(root, '.claude/c.md')), runs(state)]).toEqual([['c.md'], 'gone\n', []]);
   });
 
@@ -595,12 +500,7 @@ describe('apply probes the volume', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
     refuseLinks.on = true;
     refuseLinks.code = 'EIO';
-    try {
-      expect(() => apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toThrow('EIO');
-    } finally {
-      refuseLinks.on = false;
-      refuseLinks.code = 'EPERM';
-    }
+    expect(() => apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toThrow('EIO');
     expect([listing(root), text(join(root, '.claude/b.md')), runs(state)]).toEqual([['b.md'], 'old\n', []]);
   });
 
@@ -650,41 +550,6 @@ describe('apply ends a run', () => {
   });
 });
 
-// Another process that applies the plan as run r1, or undoes the run as run u1, and kills itself at `boundary` of the
-// operation at `position`.
-const crash = async (
-  state: string,
-  plan: ApplyRequest | UndoRequest,
-  boundary: Boundary,
-  position: number,
-): Promise<void> => {
-  const script = `
-    import { apply } from ${JSON.stringify(new URL('apply.ts', import.meta.url).href)};
-    import { undo } from ${JSON.stringify(new URL('undo.ts', import.meta.url).href)};
-    import { openStore } from ${JSON.stringify(new URL('store.ts', import.meta.url).href)};
-    const [state, plan, boundary, position] = process.argv.slice(1);
-    const request = JSON.parse(plan);
-    const id = 'plan' in request ? 'r1' : 'u1';
-    const store = openStore(state, { now: () => new Date('2026-11-18T22:00:00.000Z'), newRunId: () => id });
-    if (!store.ok) throw new Error(store.refusal.code);
-    ('plan' in request ? apply : undo)(store.value, request, (at, index) => {
-      if (at === boundary && index === Number(position)) process.kill(process.pid, 'SIGKILL');
-    });
-    process.stdout.write('not killed');
-  `;
-  const child = spawn(
-    process.execPath,
-    ['--input-type=module', '--eval', script, state, JSON.stringify(plan), boundary, String(position)],
-    { stdio: ['ignore', 'pipe', 'inherit'] },
-  );
-  let out = '';
-  child.stdout.on('data', (chunk: Buffer) => {
-    out += chunk.toString();
-  });
-  await once(child, 'exit');
-  expect(out).toBe('');
-};
-
 describe('recovery', () => {
   it.each([
     ['temp-written', 'old\n', 'untouched'],
@@ -712,16 +577,6 @@ describe('recovery', () => {
     20_000,
   );
 });
-
-// A run recorded as running whose one step never started: a create at `path`, or a replace of the file hashed `before`.
-const begin = (held: RunStore, root: string, path: string, before?: string): void => {
-  const afterHash = hash('a\n');
-  const operation =
-    before === undefined
-      ? ({ kind: 'create', path, beforeHash: null, afterHash, entries: null } as const)
-      : ({ kind: 'replace', path, beforeHash: before, afterHash, entries: null } as const);
-  held.begin({ ...request(root, []).run, planHash: 'a'.repeat(64), operations: [operation] });
-};
 
 describe('recovery of a delete and of a step not started', () => {
   it.each([
@@ -847,18 +702,6 @@ describe('recovery blocked by the filesystem', () => {
     },
   );
 });
-
-const undone = (state: string, id: string): string | null => {
-  const found = view(state).run(id);
-  if (!found.ok || found.value === undefined) throw new Error(`no run ${id}`);
-  return found.value.undoneBy;
-};
-
-// Releases a store before another process takes it.
-const release = (held: RunStore): void => {
-  opened.splice(opened.indexOf(held), 1);
-  held.close();
-};
 
 describe('undo', () => {
   it('restores each file to its text from before the run, newest step first, as a run of its own', () => {
@@ -995,13 +838,6 @@ describe('undo of an undo', () => {
   });
 });
 
-// A step hook that throws at `boundary` of the operation at `position`, as a disk failing there.
-const failAt =
-  (boundary: Boundary, position: number) =>
-  (at: Boundary, index: number): void => {
-    if (at === boundary && index === position) throw new Error('disk gone');
-  };
-
 // r1 replaces old with new, then each id is undone in turn; `!` marks an undo stopped after its write.
 const undos = (ids: string[]) => {
   const { root, state } = project({ '.claude/b.md': 'old\n' });
@@ -1107,10 +943,7 @@ describe('undo matches files and runs as apply and the store do', () => {
     const ids = [...starts.keys()];
     let last = '';
     const clock = { now: () => new Date(starts.get(last) ?? 0), newRunId: () => (last = ids.shift() ?? '') };
-    const opening = openStore(state, clock);
-    if (!opening.ok) throw new Error(opening.refusal.code);
-    const held = opening.value;
-    opened.push(held);
+    const held = storeWith(state, clock);
     apply(held, request(root, [replace('.claude/b.md', 'old\n', 'new\n')]));
     expect(['r1', 'u1', 'r1'].map((id) => undo(held, { root, run: id }).run)).toEqual(['u1', 'u2', 'u3']);
     expect(undo(held, { root, run: 'r1' }).refusal).toEqual({

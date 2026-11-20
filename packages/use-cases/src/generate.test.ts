@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -17,6 +17,7 @@ import { apply } from './apply.ts';
 import { type GenerateRequest, generateWorkflows, planGeneration } from './generate.ts';
 import { newWorkflow } from './new-workflow.ts';
 import { openStore } from './store.ts';
+import { hash } from './test-fixtures.ts';
 import { undo } from './undo.ts';
 
 const folder = (): string => {
@@ -79,8 +80,6 @@ const setup = (definition: object) => {
   const edit = (path: string, value: string) => writeFileSync(join(project, path), value);
   return { project, plugin, store, request, define, generated, text, edit };
 };
-
-const hash = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 const kinds = (plan: { operations: { kind: string; path: string }[] } | null) =>
   plan?.operations.map(({ kind, path }) => [kind, path]);

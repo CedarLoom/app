@@ -13,7 +13,8 @@
   },
   "files": [
     "dist",
-    "!dist/**/*.test.js"
+    "!dist/**/*.test.js",
+    "!dist/test-fixtures.js"
   ],
   "scripts": {
     "typecheck": "tsc",
