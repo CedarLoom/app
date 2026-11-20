@@ -1,5 +1,5 @@
 import { type Dirent, readdirSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { filesBelow } from './files-below.ts';
 import { headerName, MARK } from './generated-header.ts';
 import { isUnreachable, reached } from './plugin-folder.ts';
@@ -25,10 +25,6 @@ const bytesAt = (project: string, path: string, limit: number): Buffer | undefin
 export const withLf = (bytes: Buffer): Buffer =>
   Buffer.from(bytes.toString('latin1').replaceAll('\r\n', '\n'), 'latin1');
 
-// A project folder's entries by list; none when a link is on the way, as it may lead outside the project.
-const entriesOf = (project: string, folder: string, list: (path: string) => Dirent[]) =>
-  reached(() => linkOnWay(project, folder) ?? null) === null ? list(join(project, folder)) : [];
-
 // Whether path is where a generator run for name writes: its skill folder or its workflow script.
 export const isOwnPath = (path: string, name: string): boolean =>
   path.startsWith(`${SKILLS}/${name}/`) || path === `${WORKFLOWS}/${name}.js`;
@@ -38,24 +34,38 @@ export const isOwnPath = (path: string, name: string): boolean =>
  * that carry the mark; and the project-relative folders among them the app may not read.
  */
 export const generatedFiles = (project: string): { files: Map<string, Buffer>; unreadable: string[] } => {
-  const unreadable: string[] = [];
-  // A folder's entries; none when the app cannot reach it, and its path noted when the app may not read it.
+  const unreadable = new Set<string>();
+  // No entries for an error that says the app cannot reach folder, noting folder when the app may not read it.
+  const unreached = (error: unknown, folder: string): Dirent[] => {
+    if (!isUnreachable(error)) throw error;
+    if (DENIED.has(errorCode(error))) unreadable.add(relative(project, folder).split(sep).join('/'));
+    return [];
+  };
+  // A folder's entries; none when the app cannot reach it.
   const listed = (folder: string): Dirent[] => {
     try {
       return readdirSync(folder, { withFileTypes: true });
     } catch (error) {
-      if (!isUnreachable(error)) throw error;
-      if (DENIED.has(errorCode(error))) unreadable.push(relative(project, folder).split(sep).join('/'));
-      return [];
+      return unreached(error, folder);
     }
   };
-  const skills = entriesOf(project, SKILLS, listed)
+  // A project folder's entries; none when a link is on the way, as it may lead outside the project.
+  const entriesOf = (folder: string): Dirent[] => {
+    try {
+      if (linkOnWay(project, folder) !== undefined) return [];
+    } catch (error) {
+      // The project folder was searched for the definitions, so the folder the way could not pass is the parent.
+      return unreached(error, join(project, dirname(folder)));
+    }
+    return listed(join(project, folder));
+  };
+  const skills = entriesOf(SKILLS)
     .filter((entry) => entry.isDirectory())
     .flatMap(({ name }) =>
       // Folder by folder, so one the app cannot read hides only its own files.
       filesBelow(join(project, SKILLS, name), listed).map((path) => `${SKILLS}/${name}/${path}`),
     );
-  const scripts = entriesOf(project, WORKFLOWS, listed)
+  const scripts = entriesOf(WORKFLOWS)
     .filter(({ name }) => name.endsWith('.js'))
     .map(({ name }) => `${WORKFLOWS}/${name}`);
   const files = new Map(
@@ -64,7 +74,7 @@ export const generatedFiles = (project: string): { files: Map<string, Buffer>; u
       return head?.includes(MARK) ? [[path, head]] : [];
     }),
   );
-  return { files, unreadable };
+  return { files, unreadable: [...unreadable] };
 };
 
 /**

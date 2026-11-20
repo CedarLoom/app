@@ -196,6 +196,13 @@ describe('names each generated file that differs with definition.stale', () => {
   });
 });
 
+// A folder at path the app may not read.
+const locked = (path: string): void => {
+  mkdirSync(path, { recursive: true });
+  chmodSync(path, 0o000);
+  onTestFinished(() => chmodSync(path, 0o700));
+};
+
 describe('names the generated files of a definition that is gone with definition.stale', () => {
   it('removed, also when none is left', () => {
     const { project, check } = setup();
@@ -219,23 +226,13 @@ describe('names the generated files of a definition that is gone with definition
   it.skipIf(isWindows || isRoot)('beside a folder the app may not read', () => {
     const { project, check } = setup();
     rmSync(join(project, '.cedarloom', 'workflows', 'dev.json'));
-    const locked = join(project, '.claude', 'skills', 'dev', 'locked');
-    mkdirSync(locked);
-    chmodSync(locked, 0o000);
-    onTestFinished(() => chmodSync(locked, 0o700));
+    locked(join(project, '.claude', 'skills', 'dev', 'locked'));
     expect(check().generated).toEqual([
       staleFinding('dev', ['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']),
       unreadableFolder('.claude/skills/dev/locked'),
     ]);
   });
 });
-
-// A folder at path the app may not read.
-const locked = (path: string): void => {
-  mkdirSync(path, { recursive: true });
-  chmodSync(path, 0o000);
-  onTestFinished(() => chmodSync(path, 0o700));
-};
 
 describe.skipIf(isWindows || isRoot)('names a folder the app may not read with generated.folder-unreadable', () => {
   it('below a skill folder', () => {
@@ -250,6 +247,15 @@ describe.skipIf(isWindows || isRoot)('names a folder the app may not read with g
     expect(check().generated).toEqual([
       staleFinding('dev', ['.claude/workflows/dev.js']),
       unreadableFolder('.claude/workflows'),
+    ]);
+  });
+
+  it('the .claude folder, once', () => {
+    const { project, check } = setup();
+    locked(join(project, '.claude'));
+    expect(check().generated).toEqual([
+      staleFinding('dev', ['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']),
+      unreadableFolder('.claude'),
     ]);
   });
 });
@@ -523,35 +529,77 @@ it('removes its temporary folder and writes nothing into the project', () => {
   expect([tree(project), readdirSync(temp)]).toEqual([before, []]);
 });
 
-// Runs the doctor's check in a process of its own after listen, with a generator that sends that process SIGTERM.
-const doctorEnded = (listen: string) => {
+// Runs script in a process of its own with input on its stdin, where check() runs the doctor's check with a generator
+// that sends that process SIGTERM, and check(root) with the generator below root.
+const doctorEnded = (script: string, input = '') => {
   const { project, root, temp } = setup("process.kill(process.ppid, 'SIGTERM');\nsetTimeout(() => {}, 500);\n");
   const doctor = `import { definitionFindings } from ${JSON.stringify(join(import.meta.dirname, 'definition-checks.ts'))};
-${listen}
-definitionFindings(${JSON.stringify({ project, root, temp, timeoutMs: 20_000, env: {} })});
+const check = (root = ${JSON.stringify(root)}) =>
+  definitionFindings({ ...${JSON.stringify({ project, temp, timeoutMs: 20_000, env: {} })}, root });
+${script}
 setInterval(() => {}, 1000);
 `;
   const ended = spawnSync(process.execPath, ['--input-type=module', '-e', doctor], {
+    input,
     encoding: 'utf8',
     timeout: 10_000,
     killSignal: 'SIGKILL',
   });
-  return [ended.signal, ended.status, readdirSync(temp)];
+  return [ended.signal, ended.status, ended.stdout, readdirSync(temp)];
 };
 
 describe.skipIf(isWindows)('removes its temporary folder on SIGTERM', () => {
   it('then ends with it', () => {
-    expect(doctorEnded('')).toEqual(['SIGTERM', null, []]);
+    expect(doctorEnded('check();')).toEqual(['SIGTERM', null, '', []]);
   });
 
   it('then ends with it, also when called from an I/O callback', () => {
-    expect(doctorEnded("await (await import('node:fs/promises')).stat('.');")).toEqual(['SIGTERM', null, []]);
+    expect(doctorEnded("await (await import('node:fs/promises')).stat('.');\ncheck();")).toEqual([
+      'SIGTERM',
+      null,
+      '',
+      [],
+    ]);
+  });
+
+  it('then ends with it, also while the hold of an earlier call has not ended', () => {
+    const quiet = folder();
+    write(join(quiet, 'generator', 'generate.mjs'), GENERATOR);
+    // The stdin read starts after the earlier call's first check phase and ends in the poll phase before its second.
+    expect(
+      doctorEnded(
+        `check(${JSON.stringify(quiet)});\nsetImmediate(() => process.stdin.once('data', () => check()));`,
+        'go',
+      ),
+    ).toEqual(['SIGTERM', null, '', []]);
+  });
+
+  it('then ends with it, also after a listener of the caller took the signal of an earlier call', () => {
+    expect(doctorEnded("process.once('SIGTERM', () => {});\ncheck();\nsetImmediate(() => check());")).toEqual([
+      'SIGTERM',
+      null,
+      '',
+      [],
+    ]);
   });
 
   it('then leaves it to a listener of the caller', () => {
-    expect(doctorEnded("process.once('SIGTERM', () => setTimeout(() => process.exit(7), 100));")).toEqual([
+    expect(doctorEnded("process.once('SIGTERM', () => setTimeout(() => process.exit(7), 100));\ncheck();")).toEqual([
       null,
       7,
+      '',
+      [],
+    ]);
+  });
+
+  it('then leaves it to a listener the caller adds after the call, which gets it once', () => {
+    const listen = "process.on('SIGTERM', (signal) => console.log(signal));";
+    // A signal sent again during the poll phase is read in the next one, before the exit two check phases later.
+    const exit = 'setImmediate(() => setImmediate(() => process.exit(7)))';
+    expect(doctorEnded(`check();\n${listen}\nprocess.on('SIGTERM', () => ${exit});`)).toEqual([
+      null,
+      7,
+      'SIGTERM\n',
       [],
     ]);
   });

@@ -86,18 +86,26 @@ const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): G
 };
 
 const SIGNALS = ['SIGINT', 'SIGTERM'] as const;
+// The calls whose hold on the signals is not released yet; raise is removed when none is left.
+let holds = 0;
+
+// Sends the signal again once nothing else listens, so that its default action ends the process.
+const raise = (signal: NodeJS.Signals): void => {
+  process.removeListener(signal, raise);
+  if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+};
+
+const release = (): void => {
+  holds -= 1;
+  if (holds === 0) for (const signal of SIGNALS) process.removeListener(signal, raise);
+};
 
 // Their default action would end the process while spawnSync blocks, before fn removes its folder.
 const holdingSignals = <T>(fn: () => T): T => {
-  const held = SIGNALS.filter((signal) => process.listenerCount(signal) === 0);
-  const release = (): void => {
-    for (const signal of held) process.removeListener(signal, raise);
-  };
-  function raise(signal: NodeJS.Signals): void {
-    release();
-    process.kill(process.pid, signal);
+  for (const signal of SIGNALS) {
+    if (process.listenerCount(signal) === 0) process.on(signal, raise);
   }
-  for (const signal of held) process.on(signal, raise);
+  holds += 1;
   try {
     return fn();
   } finally {
