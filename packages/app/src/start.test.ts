@@ -1,8 +1,18 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { connect, Server } from 'node:net';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type AppIo, openPage, type Started, start } from './start.ts';
@@ -138,6 +148,15 @@ describe('start, the redirect page', () => {
   });
 });
 
+// The clock reads 2026-01-01T00:00:00Z, which is 1_767_225_600 s; 10 minutes before is 1_767_225_000 s.
+const pageIo = (stateDir: string) => ({
+  stateDir,
+  open: () => undefined,
+  platform: 'darwin' as const,
+  stderr: () => undefined,
+  clock: { now: () => new Date('2026-01-01T00:00:00Z'), newRunId: () => 'r1' },
+});
+
 describe('openPage', () => {
   it.each([
     ['linux', 1],
@@ -145,9 +164,23 @@ describe('openPage', () => {
     ['win32', 0],
   ] as const)('after opening the page on %s, prints %i line(s) on stderr', (platform, lines) => {
     const errors: string[] = [];
-    const io = { stateDir: folder(), open: () => undefined, platform, stderr: (text: string) => errors.push(text) };
+    const io = { ...pageIo(folder()), platform, stderr: (text: string) => errors.push(text) };
     openPage(io, 'http://127.0.0.1:4000/#t=abc', false);
     expect(errors).toHaveLength(lines);
+  });
+
+  it('removes a redirect folder of a start more than 10 minutes ago, keeps a younger one and its own', () => {
+    const state = folder();
+    for (const [name, seconds] of [
+      ['open-Old123', 1_767_224_999],
+      ['open-New123', 1_767_225_001],
+    ] as const) {
+      mkdirSync(join(state, name));
+      writeFileSync(join(state, name, 'cedarloom-app.html'), 'page');
+      utimesSync(join(state, name), seconds, seconds);
+    }
+    const own = openPage(pageIo(state), 'http://127.0.0.1:4000/#t=abc', true);
+    expect(readdirSync(state).toSorted()).toEqual([basename(dirname(own?.path ?? '')), 'open-New123'].toSorted());
   });
 });
 

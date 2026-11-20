@@ -3,9 +3,9 @@ import { parseArgs } from 'node:util';
 import { type Code, type CompiledMessage, messageText, type Params, type Refusal } from '@cedarloom/core';
 import core from '@cedarloom/core/messages/en.json' with { type: 'json' };
 import { projectRoot, type StoreClock } from '@cedarloom/use-cases';
-import { type Redirect, writeRedirect } from './redirect.ts';
+import { type Redirect, sweepRedirects, writeRedirect } from './redirect.ts';
 import { buildServer } from './server.ts';
-import { portOf, Session, type SessionSource } from './session.ts';
+import { portOf, Session, type SessionSource, TOKEN_MS } from './session.ts';
 
 /** What cedarloom-app takes from its process; tests pass their own. */
 export interface AppIo extends SessionSource {
@@ -103,9 +103,12 @@ const parse = (argv: readonly string[], cwd: string): Options | { refusal: Refus
 
 const message = (error: unknown): string => `${error instanceof Error ? error.message : String(error)}\n`;
 
-/** Opens the redirect page; the URL is printed already, so a failing page or opener is reported and serving goes on. */
+/**
+ * Opens the redirect page, then removes the pages of earlier starts whose token has expired; the URL is printed already,
+ * so a failing page, opener or removal is reported and serving goes on.
+ */
 export const openPage = (
-  io: Pick<AppIo, 'stateDir' | 'open' | 'platform' | 'stderr'>,
+  io: Pick<AppIo, 'stateDir' | 'open' | 'platform' | 'stderr' | 'clock'>,
   url: string,
   json: boolean,
 ): Redirect | undefined => {
@@ -115,6 +118,8 @@ export const openPage = (
     io.open(redirect.path);
     // Snap-packaged browsers, a Windows browser under WSL and a Chromebook's Linux container cannot read the page.
     if (io.platform === 'linux' && !json) io.stderr(`${messageText(catalog, 'server.open-hint', {})}\n`);
+    // A server writes its page after its token starts, so a page older than the token's life holds a dead token.
+    sweepRedirects(io.stateDir, io.clock.now().getTime() - TOKEN_MS);
   } catch (error) {
     io.stderr(message(error));
   }
