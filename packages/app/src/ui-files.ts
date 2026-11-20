@@ -12,11 +12,11 @@ const TYPES: Readonly<Record<string, string>> = {
   '.woff2': 'font/woff2',
 };
 
-// A folder, or a name the file system cannot hold, is no file either.
+// A folder, a link loop, a file it may not read (EPERM on Windows) or a name the file system cannot hold is no file either.
 const absent = (error: unknown): boolean =>
   error instanceof Error &&
   'code' in error &&
-  ['ENOENT', 'ENOTDIR', 'EISDIR', 'ENAMETOOLONG'].includes(String(error.code));
+  ['ENOENT', 'ENOTDIR', 'EISDIR', 'ENAMETOOLONG', 'ELOOP', 'EACCES', 'EPERM', 'EINVAL'].includes(String(error.code));
 
 const inside = (base: string, real: string): boolean => {
   const inner = relative(base, real);

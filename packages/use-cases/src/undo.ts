@@ -10,10 +10,10 @@ import {
   type Run,
 } from '@cedarloom/core';
 import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
-import { entryAt, errorCode, readFound, removeEmptyFolder, sha256 } from './project-files.ts';
+import { entryAt, errorCode, type Found, readFound, removeEmptyFolder, sha256 } from './project-files.ts';
 import { type Operation, recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
-import { linkOnWay } from './write-roots.ts';
+import { inWriteRoots, linkOnWay } from './write-roots.ts';
 
 export interface UndoRequest {
   /** The project root, absolute; the run's paths are relative to it. */
@@ -36,9 +36,25 @@ export type Undone = Applied & { plan: PlanPreview | null };
 
 const hashOf = (text: string | null): string | null => (text === null ? null : sha256(Buffer.from(text)));
 
+const DENIED = new Set<unknown>(['EACCES', 'EPERM']);
+
+// A file the undo plan reads that the app may not read, by its project-relative path.
+class Denied extends Error {
+  readonly path: string;
+  constructor(path: string) {
+    super();
+    this.path = path;
+  }
+}
+
 // A text file's text, null for nothing; undefined for anything no step leaves, such as a link or a binary file.
 const textAt = (root: string, path: string): string | null | undefined => {
-  const found = readFound(join(root, path));
+  let found: Found;
+  try {
+    found = readFound(join(root, path));
+  } catch (error) {
+    throw DENIED.has(errorCode(error)) ? new Denied(path) : error;
+  }
   if (found === 'absent') return null;
   return typeof found === 'object' && isUtf8(found.bytes) ? found.bytes.toString('utf8') : undefined;
 };
@@ -165,11 +181,16 @@ const claimed = (walk: Walk, run: Run): Refusal | undefined => {
 
 // Steps are visited newest first, so each path ends as before the run's first step on it.
 const walked = (walk: Walk, run: Run): Refusal | undefined => {
-  for (const [position, step] of walk.started.toReversed()) {
-    const stop = visit(walk, position, step);
-    if (stop !== undefined) return stop;
+  try {
+    for (const [position, step] of walk.started.toReversed()) {
+      const stop = visit(walk, position, step);
+      if (stop !== undefined) return stop;
+    }
+    return claimed(walk, run);
+  } catch (error) {
+    if (error instanceof Denied) return refusal('plan.folder-denied', error.path);
+    throw error;
   }
-  return claimed(walk, run);
 };
 
 /** Plans the undo of a run without applying it. Recovery runs first, so an interrupted run is undone from its settled journal. */
@@ -192,6 +213,8 @@ export const planUndo = (store: RunStore, { root, run: id }: UndoRequest): UndoP
 // Deepest first, while each is a plain folder that holds nothing; a folder that stays keeps the ones above it.
 const removeMadeFolders = (root: string, run: Run): void => {
   for (const { path, madeFolders } of run.operations.toReversed()) {
+    // A journal path outside the write roots, as from an edited store, may climb out of the project.
+    if (!inWriteRoots(path)) continue;
     let folder = dirname(path);
     // No more than the folders of the path, so a wrong count never reaches the project root.
     for (let left = Math.min(madeFolders, path.split('/').length - 1); left > 0; left -= 1, folder = dirname(folder)) {

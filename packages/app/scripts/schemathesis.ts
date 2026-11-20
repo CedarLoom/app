@@ -42,19 +42,28 @@ try {
   if (!exchange.ok) throw new Error(`token exchange answered ${exchange.status}`);
   const cookie = exchange.headers.get('set-cookie')?.split(';')[0];
   const { csrf } = z.object({ csrf: z.string() }).parse(await exchange.json());
-  // Every operation documents its 4XX answers, so a run whose cookie the server refuses would still pass.
-  const session = await fetch(`${base}/api/session`, { headers: { cookie: cookie ?? '' } });
+  // Every operation documents its 4XX answers, so a run whose cookie or CSRF header the server refuses would still pass.
+  const credentials = { cookie: cookie ?? '', 'x-cedarloom-csrf': csrf };
+  const session = await fetch(`${base}/api/session`, { headers: credentials });
   if (session.status !== 200) throw new Error(`GET /api/session with the cookie answered ${session.status}`);
-  // Gives each undo case a run of its own and the plan hash of its undo, since an undo settles the run it undoes.
+  // Only unsafe methods check the CSRF header; an undo of a run that does not exist passes it and answers 404.
+  const unsafe = await fetch(`${base}/api/runs/none/undo`, {
+    method: 'POST',
+    headers: { ...credentials, 'content-type': 'application/json' },
+    body: JSON.stringify({ planHash: '0'.repeat(64) }),
+  });
+  if (unsafe.status !== 404) throw new Error(`POST /api/runs/none/undo with the CSRF header answered ${unsafe.status}`);
   let recorded = 0;
   fixtures.on('request', async (_request, reply) => {
     try {
       const id = `u${++recorded}`;
       recordRun(root, store, id, `${id}.md`);
       const preview = await fetch(`${base}/api/runs/${id}/undo`, { headers: { cookie: cookie ?? '' } });
+      if (!preview.ok) throw new Error(`GET /api/runs/${id}/undo answered ${preview.status}`);
       const { planHash } = z.object({ planHash: z.string() }).parse(await preview.json());
       reply.end(JSON.stringify({ id, planHash }));
     } catch (error) {
+      console.error(error);
       reply.writeHead(500).end(String(error));
     }
   });
@@ -65,13 +74,19 @@ try {
   const checks = ['--checks', 'all', '--exclude-checks', 'unsupported_method'];
   const headers = ['-H', `Cookie: ${cookie}`, '-H', `x-cedarloom-csrf: ${csrf}`, '-H', `Host: 127.0.0.1:${port}`];
   const hooked = { ...env, SCHEMATHESIS_HOOKS: path('schemathesis_hooks.py'), CEDARLOOM_FIXTURES: fixtureUrl };
-  const run = spawn('schemathesis', ['run', path('../openapi.json'), '--url', base, ...headers, ...checks], {
+  const config = ['--config-file', path('schemathesis.toml')];
+  const run = spawn('schemathesis', [...config, 'run', path('../openapi.json'), '--url', base, ...headers, ...checks], {
     cwd: root,
     env: hooked,
     stdio: 'inherit',
   });
   const [code] = await once(run, 'exit');
   process.exitCode = code ?? 1;
+  // The hooks record a run for each undo case; none recorded means they stopped firing and the undo route went untested.
+  if (recorded === 0) {
+    console.error('schemathesis_hooks.py recorded no run');
+    process.exitCode = 1;
+  }
 } finally {
   fixtures.close();
   server.kill();

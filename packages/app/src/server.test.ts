@@ -104,10 +104,11 @@ describe('session exchange', () => {
 });
 
 describe('request guard', () => {
-  it('refuses a wrong Host with 421 session.host', async () => {
+  it('refuses a wrong Host with 421 session.host and closes the connection', async () => {
     const { app } = await server();
     const reply = await app.inject({ method: 'GET', url: '/api/session', headers: { host: 'localhost:0' } });
     expect([reply.statusCode, reply.json()]).toEqual([421, { code: 'session.host', params: {} }]);
+    expect(reply.headers.connection).toBe('close');
   });
 
   it('refuses another Origin with 403 session.origin', async () => {
@@ -273,12 +274,26 @@ describe('errors', () => {
   });
 });
 
-// Everything the server sends on one connection until it closes it.
-const received = async (app: App, request: string): Promise<string> => {
+// Everything the server sends on one connection until it closes it; next[1] goes out once that text holds next[0].
+const received = async (
+  app: App,
+  request: (self: string) => string,
+  next?: [after: string, then: string],
+): Promise<string> => {
   await app.listen({ host: '127.0.0.1', port: 0 });
-  const socket = connect(portOf(app.server), '127.0.0.1');
-  socket.end(request);
-  const text = (await socket.setEncoding('utf8').toArray()).join('');
+  const socket = connect(portOf(app.server), '127.0.0.1').setEncoding('utf8');
+  // The server may have closed before next[1] arrives.
+  socket.on('error', () => {});
+  socket.write(request(`127.0.0.1:${portOf(app.server)}`));
+  let text = '';
+  let follow = next;
+  socket.on('data', (chunk: string) => {
+    text += chunk;
+    if (follow === undefined || !text.includes(follow[0])) return;
+    socket.write(follow[1]);
+    follow = undefined;
+  });
+  await new Promise((resolve) => socket.on('close', resolve));
   await app.close();
   return text;
 };
@@ -294,8 +309,10 @@ describe('errors at the socket', () => {
       'HTTP/1.1 431 Request Header Fields Too Large',
     ],
     [
+      // A route that reads the body: one that answers first would make the row depend on how the bytes arrive.
       'chunk extensions over 16 KiB',
-      () => `GET / HTTP/1.1\r\nHost: ${HOST}\r\nTransfer-Encoding: chunked\r\n\r\n1;${'a'.repeat(17_000)}\r\n`,
+      (_app: App, self: string) =>
+        `POST /api/session HTTP/1.1\r\nHost: ${self}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n1;${'a'.repeat(17_000)}\r\n`,
       'HTTP/1.1 413 Payload Too Large',
     ],
     [
@@ -310,29 +327,103 @@ describe('errors at the socket', () => {
     ],
   ])('answers %s with its status and api.bad-request', async (_case, request, status) => {
     const { app } = await server();
-    const text = await received(app, request(app));
+    const text = await received(app, (self) => request(app, self));
     expect([text.split('\r\n')[0], text.split('\r\n\r\n')[1]]).toEqual([status, BAD_REQUEST]);
   });
+});
 
-  it('writes no answer into a response whose headers are out and closes the connection', async () => {
+describe('errors at the socket after an answer', () => {
+  // Over 16 KiB, sent once the first answer is in: the error comes in the body of a request already answered.
+  const extension = `1;${'a'.repeat(17_000)}\r\n`;
+  it.each([
+    ['a wrong Host', () => 'localhost:0', 'HTTP/1.1 421'],
+    ['an unknown path', (host: string) => host, 'HTTP/1.1 404'],
+  ])(
+    'writes nothing after its answer to %s whose chunk extensions run over, and closes',
+    async (_case, host, status) => {
+      const { app } = await server();
+      const text = await received(
+        app,
+        (self) => `GET /nope HTTP/1.1\r\nHost: ${host(self)}\r\nTransfer-Encoding: chunked\r\n\r\n`,
+        ['"params":{}}', extension],
+      );
+      expect(text.match(/HTTP\/1\.1 \d{3}/g)).toEqual([status]);
+    },
+  );
+
+  it('answers a malformed request after the responses before it, none inside one', async () => {
+    const { app } = await server();
+    // Pipelined: /streams sends its head once /waits is queued and its end once the malformed request comes; /waits sends then.
+    const queued = new Promise<() => void>((resolve) => {
+      app.get('/waits', (_req, reply) => resolve(() => void reply.send('done')));
+    });
+    app.get('/streams', async (_req, reply) => {
+      const send = await queued;
+      reply.hijack();
+      reply.raw.writeHead(200, { 'content-type': 'text/plain' });
+      reply.raw.write('partial');
+      app.server.once('clientError', () => {
+        reply.raw.end('rest');
+        send();
+      });
+    });
+    const text = await received(
+      app,
+      (self) => `GET /streams HTTP/1.1\r\nHost: ${self}\r\n\r\nGET /waits HTTP/1.1\r\nHost: ${self}\r\n\r\n`,
+      ['partial', 'NOT-HTTP\r\n\r\n'],
+    );
+    expect(text.match(/HTTP\/1\.1 \d{3}/g)).toEqual(['HTTP/1.1 200', 'HTTP/1.1 200', 'HTTP/1.1 400']);
+    expect(text).toContain('partial\r\n4\r\nrest\r\n0\r\n\r\nHTTP/1.1 200');
+    expect(text).toMatch(
+      /\r\n\r\ndoneHTTP\/1\.1 400 Bad Request\r\n.*\r\n\r\n\{"code":"api.bad-request","params":\{\}\}$/s,
+    );
+  });
+});
+
+describe('errors at the socket during a response', () => {
+  it('writes no answer into a response whose headers are out and closes the connection at the request timeout', async () => {
     const { app } = await server();
     app.get('/streams', (_req, reply) => {
       reply.hijack();
       reply.raw.writeHead(200, { 'content-type': 'text/plain' });
       reply.raw.write('partial');
     });
-    await app.listen({ host: '127.0.0.1', port: 0 });
-    const socket = connect(portOf(app.server), '127.0.0.1').setEncoding('utf8');
-    socket.write(`GET /streams HTTP/1.1\r\nHost: 127.0.0.1:${portOf(app.server)}\r\n\r\n`);
-    let text = '';
-    socket.on('data', (chunk: string) => {
-      text += chunk;
-      if (text.includes('partial')) socket.write('NOT-HTTP\r\n\r\n');
-    });
-    await new Promise((resolve) => socket.on('close', resolve));
-    await app.close();
+    // The malformed request waits for the response; Node's timeout, raised here, ends the wait.
+    const timeout = Object.assign(new Error('timeout'), { code: 'ERR_HTTP_REQUEST_TIMEOUT' });
+    app.server.once('clientError', (_error, socket) => app.server.emit('clientError', timeout, socket));
+    const text = await received(app, (self) => `GET /streams HTTP/1.1\r\nHost: ${self}\r\n\r\n`, [
+      'partial',
+      'NOT-HTTP\r\n\r\n',
+    ]);
     expect(text).toContain('partial');
-    expect(text).not.toContain(BAD_REQUEST);
+    expect(text).not.toContain('api.bad-request');
+  });
+
+  it('closes at a request timeout behind an unfinished response, and the timed-out request never reaches its route', async () => {
+    const { app } = await server();
+    let reached = false;
+    let streams: (() => void) | undefined;
+    // Node's timeout, raised here once 'partial' is out; /fast ends /streams so that a served /fast cannot hang the test.
+    app.get('/streams', (req, reply) => {
+      reply.hijack();
+      streams = () => void reply.raw.end('rest');
+      reply.raw.writeHead(200, { 'content-type': 'text/plain' });
+      const timeout = Object.assign(new Error('timeout'), { code: 'ERR_HTTP_REQUEST_TIMEOUT' });
+      reply.raw.write('partial', () => void app.server.emit('clientError', timeout, req.raw.socket));
+    });
+    app.get('/fast', () => {
+      reached = true;
+      streams?.();
+      return 'fast';
+    });
+    // The headers of /fast end only once 'partial' has arrived.
+    const text = await received(
+      app,
+      (self) => `GET /streams HTTP/1.1\r\nHost: ${self}\r\n\r\nGET /fast HTTP/1.1\r\nHost: ${self}\r\n`,
+      ['partial', '\r\n'],
+    );
+    expect([reached, text.match(/HTTP\/1\.1 \d{3}/g)]).toEqual([false, ['HTTP/1.1 200']]);
+    expect(text).toContain('partial');
   });
 });
 

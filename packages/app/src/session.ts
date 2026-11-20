@@ -121,7 +121,9 @@ export const guard =
   async (req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | undefined> => {
     const port = portOf(req.server.server);
     const denial = foreign(req, `127.0.0.1:${port}`) ?? outside(req, session, port);
-    return denial === null ? undefined : reply.code(denial[0]).send({ code: denial[1], params: {} });
+    if (denial === null) return undefined;
+    // Sent before the body is read: on an open connection Node would go on parsing the refused request's body.
+    return reply.code(denial[0]).header('connection', 'close').send({ code: denial[1], params: {} });
   };
 
 /** Router errors (a malformed URL) are answered before any hook runs: the Host and Origin rules first, no details. */

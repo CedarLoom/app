@@ -3,7 +3,6 @@ import { join, resolve } from 'node:path';
 import {
   type Finding,
   type GeneratorRefusal,
-  JsonValue,
   type Refusal,
   WorkflowName,
   type WorkflowList,
@@ -15,6 +14,8 @@ import { z } from 'zod';
 import {
   definitionBytes,
   definitionFileNames,
+  isListed,
+  jsonWithin,
   nameMismatch,
   PROJECT_FOLDER,
   SHIPPED_FOLDER,
@@ -110,10 +111,15 @@ const listed = (place: Place): { workflows: WorkflowList['workflows']; findings:
     const description = descriptionOf(bytes);
     return { name: file.slice(0, -'.json'.length), source: place.source, path, description };
   });
-  const findings = read.flatMap(({ path, bytes }): Finding[] =>
+  // A file named outside the name form is listed, but no verb takes its name.
+  const misnamed = workflows.flatMap(({ name }): Finding[] => {
+    const invalid = invalidName([name]);
+    return invalid === undefined ? [] : [{ ...invalid, severity: 'warning' }];
+  });
+  const unreadable = read.flatMap(({ path, bytes }): Finding[] =>
     bytes === 'unreadable' ? [{ ...notJson(path), severity: 'error' }] : [],
   );
-  return { workflows, findings };
+  return { workflows, findings: [...misnamed, ...unreadable] };
 };
 
 /** The shipped definitions of the located plugin and the project's own; without a usable plugin, the project's alone. */
@@ -140,34 +146,22 @@ export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: b
   const { place, findings } = shipped ? pluginPlace(request, project) : { place: projectPlace(project), findings: [] };
   if (place === null) return stoppedOn(findings);
   const path = `${place.folder}/${name}.json`;
-  const bytes = definitionBytes(place.base, path);
+  const bytes = isListed(place.base, path) ? definitionBytes(place.base, path) : 'absent';
   if (bytes === 'absent')
     return stopped([{ code: 'definition.not-found', params: { name, source: place.source } }], findings);
   if (bytes === 'unreadable') return stopped([notJson(place.shown(path))], findings);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(bytes.toString('utf8'));
-  } catch {
-    return stopped([notJson(place.shown(path))], findings);
-  }
-  // JsonValue also refuses a __proto__ member, which a later reader could take for the object's prototype.
-  const definition = JsonValue.safeParse(parsed);
-  if (!definition.success) return stopped([notJson(place.shown(path))], findings);
-  const result = {
-    name,
-    source: place.source,
-    path: place.shown(path),
-    hash: sha256(bytes),
-    definition: definition.data,
-  };
+  const definition = jsonWithin(bytes.toString('utf8'));
+  if (definition === undefined) return stopped([notJson(place.shown(path))], findings);
+  const result = { name, source: place.source, path: place.shown(path), hash: sha256(bytes), definition };
   return { result, findings, refusals: [] };
 };
 
-// The definitions to validate: those named, each of which must exist, else every file of the place.
+// The definitions to validate: those named, each of which its folder must list by that name, else every file of the
+// place.
 export const chosen = (place: Place, names: readonly string[]): { name: string; path: string }[] | Refusal => {
   const pathOf = (name: string) => `${place.folder}/${name}.json`;
   if (names.length > 0) {
-    const missing = names.find((name) => definitionBytes(place.base, pathOf(name)) === 'absent');
+    const missing = names.find((name) => !isListed(place.base, pathOf(name)));
     if (missing !== undefined) return { code: 'definition.not-found', params: { name: missing, source: place.source } };
     return [...new Set(names)].map((name) => ({ name, path: pathOf(name) }));
   }
@@ -184,6 +178,14 @@ interface Entry {
   refusals: Refusal[];
 }
 
+/**
+ * The refusal of a project definition named other than its file. The name is read with JSON.parse before any other
+ * check of the text, as the doctor reads it, so generate, validate and the doctor give one file the same code. A
+ * shipped definition is the plugin's to name, and no project run generates it.
+ */
+export const mismatchOf = (place: Place, file: string, bytes: Buffer): Refusal | undefined =>
+  place.source === 'project' ? nameMismatch(file, jsonOf(bytes.toString('utf8'))) : undefined;
+
 // Each chosen definition with its bytes, or the app's refusal of it; a file removed since the folder was listed is left
 // out.
 const entriesOf = (place: Place, list: { name: string; path: string }[]): Entry[] =>
@@ -192,8 +194,7 @@ const entriesOf = (place: Place, list: { name: string; path: string }[]): Entry[
     if (bytes === 'absent') return [];
     const file = place.shown(path);
     if (bytes === 'unreadable') return [{ name, path, bytes: undefined, refusals: [notJson(file)] }];
-    // A shipped definition is the plugin's to name, and no project run generates it.
-    const mismatch = place.source === 'project' ? nameMismatch(file, jsonOf(bytes.toString('utf8'))) : undefined;
+    const mismatch = mismatchOf(place, file, bytes);
     if (mismatch !== undefined) return [{ name, path, bytes: undefined, refusals: [mismatch] }];
     return [{ name, path, bytes, refusals: [] }];
   });

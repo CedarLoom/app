@@ -433,6 +433,16 @@ describe('reports a definition no reader can take with definition.not-json', () 
     expect(check().definitions).toEqual(notJson('.cedarloom/workflows/large.json').definitions);
   });
 
+  it('a valid JSON file one byte over 16 MiB', () => {
+    const { project, check } = setup();
+    const head = '{ "name": "big", "text": "';
+    write(
+      join(project, '.cedarloom', 'workflows', 'big.json'),
+      `${head}${'x'.repeat(16 * 1024 * 1024 - head.length - 1)}"}`,
+    );
+    expect(check().definitions).toEqual(notJson('.cedarloom/workflows/big.json').definitions);
+  });
+
   it('one nested deeper than 100 levels, as workflows validate answers', () => {
     const { project, check } = setup();
     const deep = { name: 'deep', text: 'Run deep.', stages: JSON.parse(`${'['.repeat(100)}${']'.repeat(100)}`) };
@@ -530,9 +540,9 @@ it('removes its temporary folder and writes nothing into the project', () => {
 });
 
 // Runs script in a process of its own with input on its stdin, where check() runs the doctor's check with a generator
-// that sends that process SIGTERM, and check(root) with the generator below root.
-const doctorEnded = (script: string, input = '') => {
-  const { project, root, temp } = setup("process.kill(process.ppid, 'SIGTERM');\nsetTimeout(() => {}, 500);\n");
+// that sends that process signal, and check(root) with the generator below root.
+const doctorEnded = (script: string, input = '', signal = 'SIGTERM') => {
+  const { project, root, temp } = setup(`process.kill(process.ppid, '${signal}');\nsetTimeout(() => {}, 500);\n`);
   const doctor = `import { definitionFindings } from ${JSON.stringify(join(import.meta.dirname, 'definition-checks.ts'))};
 const check = (root = ${JSON.stringify(root)}) =>
   definitionFindings({ ...${JSON.stringify({ project, temp, timeoutMs: 20_000, env: {} })}, root });
@@ -547,6 +557,10 @@ setInterval(() => {}, 1000);
   });
   return [ended.signal, ended.status, ended.stdout, readdirSync(temp)];
 };
+
+it.skipIf(isWindows)('removes its temporary folder on SIGHUP, then ends with it', () => {
+  expect(doctorEnded('check();', '', 'SIGHUP')).toEqual(['SIGHUP', null, '', []]);
+});
 
 describe.skipIf(isWindows)('removes its temporary folder on SIGTERM', () => {
   it('then ends with it', () => {

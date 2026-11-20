@@ -1,7 +1,7 @@
-import { rmSync, unlinkSync } from 'node:fs';
+import { readlinkSync, rmSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding, Refusal, Run } from '@cedarloom/core';
-import { asidePath, entryAt, errorCode, hashAt, putBack, tempPath } from './project-files.ts';
+import { asidePath, dropAside, entryAt, errorCode, hashAt, putBack, tempPath } from './project-files.ts';
 import type { RunStore } from './store.ts';
 import { linkOnWay } from './write-roots.ts';
 
@@ -47,9 +47,38 @@ const settleStep = ({ store, root, run }: Unsettled, position: number, op: Opera
   rmSync(`${store.backupPath(run, position)}.tmp`, { force: true });
   const dropped = settleAside(path, aside, op);
   if (!started) return undefined;
-  // The old file goes after the temporary file; a create may have linked its file before an edit, so any file counts.
+  // The old file goes after the temporary file; a create may have linked its file before an edit, so anything counts.
   const now = resultAt(path);
-  return dropped || now === op.afterHash || (op.beforeHash === null && now !== null) ? 'settled' : 'untouched';
+  return dropped || now === op.afterHash || (op.beforeHash === null && entryAt(path) !== undefined)
+    ? 'settled'
+    : 'untouched';
+};
+
+// A put-back of a link killed between the new link and the removal of the aside leaves the link twice; the aside goes.
+// True when it went; false when the aside is another file, or the path or the aside changed while they were read.
+const droppedTwinLink = (path: string, aside: string): boolean => {
+  if (entryAt(aside)?.isSymbolicLink() !== true) return false;
+  try {
+    if (!readlinkSync(aside, 'buffer').equals(readlinkSync(path, 'buffer'))) return false;
+  } catch (error) {
+    // A name swapped for a file that is not a link, or removed, since the checks.
+    if (errorCode(error) === 'EINVAL' || errorCode(error) === 'ENOENT') return false;
+    throw error;
+  }
+  dropAside(aside);
+  return true;
+};
+
+// A link at the step's own path is settled when the aside is its twin, the step's put-back of a link it never changed,
+// or gone, so nothing was moved; nothing settling the step follows it. Any other aside keeps the step unsettled.
+// Known limit: a delete step with a link at its path and no aside settles as settled.
+const settledAtLink = (unsettled: Unsettled, position: number, op: Operation): Ended | null | undefined => {
+  const path = join(unsettled.root, op.path);
+  const aside = asidePath(path, unsettled.run, position);
+  if (entryAt(aside) === undefined) return settleStep(unsettled, position, op) ?? null;
+  if (!droppedTwinLink(path, aside)) return undefined;
+  settleStep(unsettled, position, op);
+  return 'untouched';
 };
 
 // The codes of a filesystem that refuses a change for now: no permission, a read-only volume, a file another process holds.
@@ -60,8 +89,9 @@ const REFUSED = new Set(['EACCES', 'EPERM', 'EROFS', 'EBUSY']);
 // or write.
 const settled = (unsettled: Unsettled, position: number, op: Operation): Ended | null | undefined => {
   try {
-    if (linkOnWay(unsettled.root, op.path) !== undefined) return undefined;
-    return settleStep(unsettled, position, op) ?? null;
+    const link = linkOnWay(unsettled.root, op.path);
+    if (link === undefined) return settleStep(unsettled, position, op) ?? null;
+    return link === op.path ? settledAtLink(unsettled, position, op) : undefined;
   } catch (error) {
     if (REFUSED.has(String(errorCode(error)))) return undefined;
     throw error;
