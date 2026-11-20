@@ -41,13 +41,14 @@ export const jsonOf = (text: string): unknown => {
   }
 };
 
-// Why the run stopped: spawnSync ends a run past its time or output limit with killSignal and reports it in error.
-const reasonOf = ({ error, signal }: SpawnSyncReturns<string>) => {
-  const code = errorCode(error);
-  if (code === 'ETIMEDOUT') return 'timeout';
-  if (code === 'ENOBUFS') return 'outputLimit';
-  return signal === null ? 'exit' : 'signal';
-};
+// The errors with which spawnSync ends a run past its time or output limit, by the reason generator.failed gives.
+const STOPPED: ReadonlyMap<unknown, string> = new Map([
+  ['ETIMEDOUT', 'timeout'],
+  ['ENOBUFS', 'outputLimit'],
+]);
+
+const reasonOf = ({ error, signal }: SpawnSyncReturns<string>) =>
+  STOPPED.get(errorCode(error)) ?? (signal === null ? 'exit' : 'signal');
 
 const failed = (run: SpawnSyncReturns<string>): Generated => ({
   finding: {
@@ -74,7 +75,8 @@ const refusalsOf = (run: SpawnSyncReturns<string>, files: string[]): GeneratorRe
 };
 
 const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): Generated => {
-  if (run.signal !== null || (run.status !== 0 && run.status !== 1)) return failed(run);
+  // A run spawnSync stopped may have exited just then, with its output cut off.
+  if (run.error !== undefined || run.signal !== null || (run.status !== 0 && run.status !== 1)) return failed(run);
   const refusals = refusalsOf(run, files);
   if (!Array.isArray(refusals)) return refusals;
   if (run.status === 1) return { refusals };
@@ -85,8 +87,7 @@ const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): G
 
 const SIGNALS = ['SIGINT', 'SIGTERM'] as const;
 
-// Runs fn with SIGINT and SIGTERM held where nothing else listens for them, as their default action would end the
-// process while spawnSync blocks and skip fn's cleanup; a held signal is raised again once the event loop delivers it.
+// Their default action would end the process while spawnSync blocks, before fn removes its folder.
 const holdingSignals = <T>(fn: () => T): T => {
   const held = SIGNALS.filter((signal) => process.listenerCount(signal) === 0);
   const release = (): void => {
@@ -100,8 +101,8 @@ const holdingSignals = <T>(fn: () => T): T => {
   try {
     return fn();
   } finally {
-    // The loop delivers a signal that came during fn in its poll phase, before this check-phase callback.
-    setImmediate(release);
+    // A signal that came during fn reaches raise in a poll phase, which can come after one check phase but not two.
+    setImmediate(() => setImmediate(release));
   }
 };
 
@@ -129,9 +130,7 @@ const runGenerator = (definitions: Uint8Array[], request: GeneratorRun): Generat
       killSignal: 'SIGKILL',
       windowsHide: true,
     });
-    // ETIMEDOUT and ENOBUFS end the generator, which the outcome reports with its reason.
-    const code = errorCode(run.error);
-    if (run.error !== undefined && code !== 'ETIMEDOUT' && code !== 'ENOBUFS') throw run.error;
+    if (run.error !== undefined && !STOPPED.has(errorCode(run.error))) throw run.error;
     return outcome(run, files, out);
   } finally {
     // A virus scanner or indexer on Windows can hold a file just written for a moment.

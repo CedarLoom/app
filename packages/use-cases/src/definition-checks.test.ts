@@ -230,17 +230,29 @@ describe('names the generated files of a definition that is gone with definition
   });
 });
 
-it.skipIf(isWindows || isRoot)(
-  'names a folder below a skill folder the app may not read with generated.folder-unreadable',
-  () => {
+// A folder at path the app may not read.
+const locked = (path: string): void => {
+  mkdirSync(path, { recursive: true });
+  chmodSync(path, 0o000);
+  onTestFinished(() => chmodSync(path, 0o700));
+};
+
+describe.skipIf(isWindows || isRoot)('names a folder the app may not read with generated.folder-unreadable', () => {
+  it('below a skill folder', () => {
     const { project, check } = setup();
-    const locked = join(project, '.claude', 'skills', 'own', 'assets');
-    mkdirSync(locked, { recursive: true });
-    chmodSync(locked, 0o000);
-    onTestFinished(() => chmodSync(locked, 0o700));
+    locked(join(project, '.claude', 'skills', 'own', 'assets'));
     expect(check()).toEqual({ definitions: [], generated: [unreadableFolder('.claude/skills/own/assets')] });
-  },
-);
+  });
+
+  it('the workflow scripts folder', () => {
+    const { project, check } = setup();
+    locked(join(project, '.claude', 'workflows'));
+    expect(check().generated).toEqual([
+      staleFinding('dev', ['.claude/workflows/dev.js']),
+      unreadableFolder('.claude/workflows'),
+    ]);
+  });
+});
 
 it('leaves the generated files of other definitions alone while a definition file cannot be read', () => {
   const { project, check } = setup();
@@ -530,6 +542,10 @@ setInterval(() => {}, 1000);
 describe.skipIf(isWindows)('removes its temporary folder on SIGTERM', () => {
   it('then ends with it', () => {
     expect(doctorEnded('')).toEqual(['SIGTERM', null, []]);
+  });
+
+  it('then ends with it, also when called from an I/O callback', () => {
+    expect(doctorEnded("await (await import('node:fs/promises')).stat('.');")).toEqual(['SIGTERM', null, []]);
   });
 
   it('then leaves it to a listener of the caller', () => {
