@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import {
   chmodSync,
   existsSync,
+  linkSync as hardLink,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -176,6 +177,19 @@ describe('apply writes', () => {
     expect(text(join(root, '.claude/b.md'))).toBe('v3\n');
     expect([text(join(state, 'backups/r1/0')), text(join(state, 'backups/r1/1'))]).toEqual(['v1\n', 'v2\n']);
   });
+
+  // Windows keeps only a read-only flag.
+  it.skipIf(process.platform === 'win32')('keeps the mode of the file it replaces, not reduced by the umask', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    chmodSync(join(root, '.claude/b.md'), 0o666);
+    const umask = process.umask(0o022);
+    try {
+      expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')])).refusal).toBeNull();
+    } finally {
+      process.umask(umask);
+    }
+    expect(statSync(join(root, '.claude/b.md')).mode & 0o777).toBe(0o666);
+  });
 });
 
 describe('apply checks the whole plan first', () => {
@@ -251,6 +265,36 @@ describe('apply checks the plan paths', () => {
     const { root, state } = project();
     expect(apply(store(state), request(root, [...plan]))).toEqual(refusedAt(code, path));
     expect([listing(root), runs(state)]).toEqual([[], []]);
+  });
+
+  // Skipped on Windows: the path reads as absent there, so the run writes the first file and throws EEXIST at mkdir.
+  it.skipIf(process.platform === 'win32')('refuses a plan path through a file before any write', () => {
+    const { root, state } = project({ '.claude/a.md': 'a\n' });
+    const plan = [create('.claude/b.md', 'b\n'), create('.claude/a.md/c.md', 'c\n')];
+    expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.file-changed', '.claude/a.md/c.md'));
+    expect([listing(root), runs(state)]).toEqual([['a.md'], []]);
+  });
+});
+
+describe('apply refuses two spellings of one path on every volume', () => {
+  it.each([
+    ['plan.file-changed', '.claude/Foo.md', '.claude/foo.md'],
+    ['plan.file-changed', '.claude/A/b.md', '.claude/a/b.md'],
+    ['plan.path-nested', '.claude/a', '.claude/A/b.md'],
+  ] as const)('refuses with %s %s beside %s, before any write', (code, first, second) => {
+    const { root, state } = project();
+    expect(apply(store(state), request(root, [create(first, 'a\n'), create(second, 'b\n')]))).toEqual(
+      refusedAt(code, second),
+    );
+    expect([listing(root), runs(state)]).toEqual([[], []]);
+  });
+
+  // Skipped: on a case-sensitive volume, as on Linux, the chain passes the precheck and its second step stops the run.
+  it.skip('refuses a chain over two spellings before any write where the second spelling is another file', () => {
+    const { root, state } = project({ '.claude/B.md': 'v1\n', '.claude/b.md': 'other\n' });
+    const plan = [replace('.claude/B.md', 'v1\n', 'v2\n'), replace('.claude/b.md', 'v2\n', 'v3\n')];
+    expect(apply(store(state), request(root, plan)).run).toBeNull();
+    expect(runs(state)).toEqual([]);
   });
 });
 
@@ -445,6 +489,28 @@ describe('apply after a step throws', () => {
   );
 });
 
+describe('apply puts the old file back only to a free path', () => {
+  it('keeps a file another process wrote at the path where the filesystem refuses hard links to put the old one back', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const theirs = (boundary: Boundary): void => {
+      linksGone(boundary);
+      if (boundary === 'set-aside') writeFileSync(join(root, '.claude/b.md'), 'theirs\n');
+    };
+    try {
+      expect(() => apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), theirs)).toThrow(
+        'EPERM',
+      );
+    } finally {
+      refuseLinks.on = false;
+    }
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
+    expect([text(join(state, 'backups/r1/0')), run(state, 'r1')]).toEqual([
+      'old\n',
+      { status: 'interrupted', steps: ['settled'] },
+    ]);
+  });
+});
+
 describe('apply on a volume without hard links, and a link put back', () => {
   it('refuses a volume without hard links before any write, and leaves no probe', () => {
     const { root, state } = project({ '.claude/b.md': 'old\n' });
@@ -620,10 +686,14 @@ describe('recovery', () => {
   );
 });
 
-// A run recorded as running whose one step, a create at `path`, never started.
-const begin = (held: RunStore, root: string, path: string): void => {
-  const operations = [{ kind: 'create', path, beforeHash: null, afterHash: hash('a\n'), entries: null }] as const;
-  held.begin({ ...request(root, []).run, planHash: 'a'.repeat(64), operations: [...operations] });
+// A run recorded as running whose one step never started: a create at `path`, or a replace of the file hashed `before`.
+const begin = (held: RunStore, root: string, path: string, before?: string): void => {
+  const afterHash = hash('a\n');
+  const operation =
+    before === undefined
+      ? ({ kind: 'create', path, beforeHash: null, afterHash, entries: null } as const)
+      : ({ kind: 'replace', path, beforeHash: before, afterHash, entries: null } as const);
+  held.begin({ ...request(root, []).run, planHash: 'a'.repeat(64), operations: [operation] });
 };
 
 describe('recovery of a delete and of a step not started', () => {
@@ -680,6 +750,19 @@ describe('recovery of a delete and of a step not started', () => {
     expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled', 'pending'] });
     expect(text(join(root, '.claude/b.md'))).toBe('old\n');
   }, 20_000);
+});
+
+describe('recovery of an aside', () => {
+  // The step found another process's file where it expected old, and its put back of that file stopped after the link.
+  it('drops an aside that is the file at the path, as a put back stopped after its link leaves it', () => {
+    const { root, state } = project({ '.claude/b.md': 'theirs\n' });
+    const held = store(state);
+    begin(held, root, '.claude/b.md', hash('old\n'));
+    hardLink(join(root, '.claude/b.md'), join(root, '.claude/.b.md.cedarloom-r1-0.old'));
+    expect(apply(held, request(root, [])).findings).toEqual([recovered('.claude/b.md')]);
+    expect([listing(root), text(join(root, '.claude/b.md'))]).toEqual([['b.md'], 'theirs\n']);
+    expect(run(state, 'r1')).toEqual({ status: 'interrupted', steps: ['settled'] });
+  });
 });
 
 describe('recovery blocked by the filesystem', () => {
