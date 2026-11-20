@@ -34,6 +34,8 @@ const fresh = (): string => {
 };
 // File modes are POSIX; Windows keeps only a read-only flag.
 const posixIt = it.skipIf(process.platform === 'win32');
+// A file mode does not keep root out.
+const deniedIt = it.skipIf(process.platform === 'win32' || process.getuid?.() === 0);
 const newRun: NewRun = {
   kind: 'apply',
   action: 'workflow.new',
@@ -214,6 +216,19 @@ describe('the run store', () => {
   });
 });
 
+describe('the run end', () => {
+  it('records the end of a run and its last step together, or neither', () => {
+    const dir = fresh();
+    const runs = store(dir);
+    const id = value(runs.begin(everyField));
+    const db = new DatabaseSync(join(dir, 'runs.sqlite'));
+    db.exec(`CREATE TRIGGER no_end BEFORE UPDATE OF status ON runs BEGIN SELECT RAISE(ABORT, 'no end'); END`);
+    db.close();
+    expect(() => runs.finish(id, 'done', [1, 'done'])).toThrow('no end');
+    expect(value(view(dir).run(id))?.operations.map((operation) => operation.status)).toEqual(['pending', 'pending']);
+  });
+});
+
 describe('the store files', () => {
   posixIt('creates its files readable by their owner only', () => {
     const dir = fresh();
@@ -238,7 +253,7 @@ describe('the store files', () => {
 });
 
 describe('the store refusals', () => {
-  posixIt('refuses a read-only lock or store file for writing', () => {
+  deniedIt('refuses a read-only lock or store file for writing', () => {
     const dir = fresh();
     store(dir).close();
     opened.length = 0;
@@ -312,7 +327,7 @@ describe('the read-only view', () => {
     expect(view(dir).runs()).toEqual(unreadable(join(dir, 'lock.sqlite')));
   });
 
-  posixIt('refuses a store folder it cannot write, as a read must create runs.sqlite-shm', () => {
+  deniedIt('refuses a store folder it cannot write, as a read must create runs.sqlite-shm', () => {
     const dir = fresh();
     store(dir).begin(newRun);
     for (const item of opened.splice(0)) item.close();
@@ -320,7 +335,7 @@ describe('the read-only view', () => {
     expect(openRunView(dir)).toEqual(unreadable(join(dir, 'runs.sqlite')));
   });
 
-  posixIt('refuses a store folder it cannot enter, as a missing store is the only one read as no runs', () => {
+  deniedIt('refuses a store folder it cannot enter, as a missing store is the only one read as no runs', () => {
     const dir = fresh();
     store(dir).begin(newRun);
     for (const item of opened.splice(0)) item.close();

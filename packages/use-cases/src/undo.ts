@@ -11,7 +11,7 @@ import {
 } from '@cedarloom/core';
 import { type Applied, type ApplyRequest, type At, apply, fileKey, linkRefusal, refusal } from './apply.ts';
 import { entryAt, readFound, sha256 } from './project-files.ts';
-import { type Operation, recover } from './recover.ts';
+import { afterEarlierRecovery, type Operation, recover } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
 
 export interface UndoRequest {
@@ -122,10 +122,11 @@ const replaced = (store: RunStore, run: Run, wanted = true, belowUnfinished = fa
   return replaced(store, target, want, belowUnfinished || !done);
 };
 
-// Recovery leaves a run running while a link is on the way of its step; undo waits until that step is settled.
+// Recovery leaves a run running while it cannot settle its step; undo waits until that step is settled.
 const unsettled = (root: string, run: Run): Refusal | undefined => {
   const step = run.status === 'running' ? run.operations.find((op) => op.status === 'pending') : undefined;
-  return step === undefined ? undefined : linkRefusal(root, step.path);
+  if (step === undefined) return undefined;
+  return linkRefusal(root, step.path) ?? { code: 'apply.unsettled', params: { run: run.id, path: step.path } };
 };
 
 // A failed step with a backup may have dropped the old file before it stopped.
@@ -220,5 +221,5 @@ export const undo = (store: RunStore, request: UndoRequest, at?: At): Undone => 
     return { ...recordDone(store, { ...run, planHash: plan.planHash }), findings, plan };
   }
   const applied = apply(store, { root: request.root, plan, run }, at);
-  return { ...applied, findings: [...findings, ...applied.findings], plan };
+  return { ...applied, findings: [...findings, ...afterEarlierRecovery(applied.findings)], plan };
 };

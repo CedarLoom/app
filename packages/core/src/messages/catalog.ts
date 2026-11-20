@@ -10,6 +10,7 @@ export const MESSAGE_IDS = [
   'api.not-found',
   'apply.backup-failed',
   'apply.recovered',
+  'apply.unsettled',
   'apply.write-mismatch',
   'cli.bad-value',
   'cli.confirm-required',
@@ -42,6 +43,7 @@ export const MESSAGE_IDS = [
   'plugin.trust-bypassed',
   'plugin.untrusted',
   'project.not-found',
+  'recovery.skipped',
   'run.already-undone',
   'run.not-found',
   'server.open-hint',
@@ -70,6 +72,7 @@ export interface MessagePlaceholders {
   'api.not-found': never;
   'apply.backup-failed': 'path' | 'run';
   'apply.recovered': 'path' | 'run';
+  'apply.unsettled': 'path' | 'run';
   'apply.write-mismatch': 'path' | 'run';
   'cli.bad-value': 'flag' | 'value';
   'cli.confirm-required': never;
@@ -102,6 +105,7 @@ export interface MessagePlaceholders {
   'plugin.trust-bypassed': 'root';
   'plugin.untrusted': 'id';
   'project.not-found': 'cwd';
+  'recovery.skipped': 'path' | 'run';
   'run.already-undone': 'by' | 'run';
   'run.not-found': 'run';
   'server.open-hint': never;

@@ -16,7 +16,7 @@ import { Named } from './definition-checks.ts';
 import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
 import { type Found, readFound, sha256 } from './project-files.ts';
-import { recover } from './recover.ts';
+import { afterEarlierRecovery, recover } from './recover.ts';
 import { isOwnPath, withLf } from './stale-paths.ts';
 import type { RunStore } from './store.ts';
 import { inEffect } from './undo.ts';
@@ -235,6 +235,6 @@ export const generateWorkflows = (store: RunStore, request: GenerateRequest, yes
     ...generation,
     run: applied.run,
     refusals: applied.refusal === null ? [] : [applied.refusal],
-    findings: [...generation.findings, ...applied.findings],
+    findings: [...generation.findings, ...afterEarlierRecovery(applied.findings)],
   };
 };

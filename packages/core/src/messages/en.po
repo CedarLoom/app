@@ -41,7 +41,7 @@ msgstr "The new text of {path} does not match the plan's hash. Nothing was chang
 
 #. js-lingui-explicit-id
 msgid "plan.name-too-long"
-msgstr "The name of {path} leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use a shorter name."
+msgstr "The path of {path} leaves no room for the temporary names CedarLoom writes beside it. Nothing was changed. Use shorter names, or a project folder with a shorter path."
 
 #. js-lingui-explicit-id
 msgid "apply.backup-failed"
@@ -54,6 +54,14 @@ msgstr "{path} does not match the plan after the write. Run {run} stopped; run c
 #. js-lingui-explicit-id
 msgid "apply.recovered"
 msgstr "{path} was left from the interrupted run {run} and was settled."
+
+#. js-lingui-explicit-id
+msgid "apply.unsettled"
+msgstr "The interrupted run {run} is not settled yet at {path}, so nothing was changed. Check that CedarLoom may write there and that no link is on the way, then try again."
+
+#. js-lingui-explicit-id
+msgid "recovery.skipped"
+msgstr "{path} was left from the interrupted run {run} and could not be settled: CedarLoom may not write there, or a link is on the way. No change is made until it is settled."
 
 #. js-lingui-explicit-id
 msgid "run.not-found"
