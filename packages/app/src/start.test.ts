@@ -15,10 +15,10 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type AppIo, openPage, type Started, start } from './start.ts';
+import { type AppIo, closed, openPage, type Started, start } from './start.ts';
 
 const folders: string[] = [];
-const servers: (() => Promise<void>)[] = [];
+const servers: (() => Promise<number>)[] = [];
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((close) => close()));
   for (const dir of folders.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -37,7 +37,7 @@ const project = (): string => {
   return root;
 };
 
-const started = async (argv: string[], open?: (path: string) => void) => {
+const appIo = (argv: string[], open?: (path: string) => void) => {
   const out: string[] = [];
   const errors: string[] = [];
   const opened: string[] = [];
@@ -54,6 +54,7 @@ const started = async (argv: string[], open?: (path: string) => void) => {
     clock: { now: () => new Date(0), newRunId: () => 'r1' },
     node: '26.13.0',
     required: '>=26',
+    version: '1.2.3',
     now: () => 0,
     secret: () => `secret-${count++}`,
     open: open ?? ((path) => opened.push(path)),
@@ -61,6 +62,11 @@ const started = async (argv: string[], open?: (path: string) => void) => {
     stdout: (text) => out.push(text),
     stderr: (text) => errors.push(text),
   };
+  return { io, out, errors, opened, state };
+};
+
+const started = async (argv: string[], open?: (path: string) => void) => {
+  const { io, out, errors, opened, state } = appIo(argv, open);
   const result: Started = await start(io);
   if ('close' in result) servers.push(result.close);
   return { result, document: JSON.parse(out.join('')), errors, opened, state };
@@ -76,6 +82,13 @@ const raw = (port: number, request: string): Promise<string> =>
     });
     socket.on('end', () => resolve(text));
     socket.on('error', reject);
+  });
+
+// Each bind fails with this system code, so start stops without listening.
+const failingBind = (code: string, syscall = 'listen') =>
+  vi.spyOn(Server.prototype, 'listen').mockImplementation(function (this: Server) {
+    process.nextTick(() => this.emit('error', Object.assign(new Error(code), { code, syscall })));
+    return this;
   });
 
 describe('start', () => {
@@ -159,13 +172,14 @@ const pageIo = (stateDir: string) => ({
 
 describe('openPage', () => {
   it.each([
-    ['linux', 1],
-    ['darwin', 0],
-    ['win32', 0],
-  ] as const)('after opening the page on %s, prints %i line(s) on stderr', (platform, lines) => {
+    ['linux', false, 1],
+    ['darwin', false, 0],
+    ['win32', false, 0],
+    ['linux', true, 0],
+  ] as const)('after opening the page on %s, --json %s, prints %i line(s) on stderr', (platform, json, lines) => {
     const errors: string[] = [];
     const io = { ...pageIo(folder()), platform, stderr: (text: string) => errors.push(text) };
-    openPage(io, 'http://127.0.0.1:4000/#t=abc', false);
+    openPage(io, 'http://127.0.0.1:4000/#t=abc', json);
     expect(errors).toHaveLength(lines);
   });
 
@@ -184,19 +198,43 @@ describe('openPage', () => {
   });
 });
 
+describe('closed', () => {
+  it('reports a failed close by its stack on stderr and no second document, exit 5', async () => {
+    const { io, out, errors } = appIo(['--json']);
+    const failure = new Error('close failed');
+    expect([await closed(io, Promise.reject(failure)), out, errors]).toEqual([5, [], [`${failure.stack}\n`]]);
+  });
+});
+
 describe('start without a server', () => {
   it('binds 127.0.0.1 only', async () => {
-    // Each bind fails as a port in use, so start stops without listening.
-    const listen = vi.spyOn(Server.prototype, 'listen').mockImplementation(function (this: Server) {
-      process.nextTick(() => this.emit('error', Object.assign(new Error('in use'), { code: 'EADDRINUSE' })));
-      return this;
-    });
+    const listen = failingBind('EADDRINUSE');
     try {
       await started(['--no-open', '--json']);
       expect(listen.mock.calls.map(([options]) => options)).toEqual([expect.objectContaining({ host: '127.0.0.1' })]);
     } finally {
       listen.mockRestore();
     }
+  });
+
+  it.each(['EACCES', 'EADDRNOTAVAIL'])(
+    'refuses a bind failing with %s with server.listen-failed, exit 3',
+    async (code) => {
+      const listen = failingBind(code);
+      try {
+        const { result, document } = await started(['--no-open', '--json']);
+        const refusal = { code: 'server.listen-failed', params: { port: 0, error: code } };
+        expect([result, document.refusals]).toEqual([{ exitCode: 3 }, [refusal]]);
+      } finally {
+        listen.mockRestore();
+      }
+    },
+  );
+
+  it('lets a system error of another syscall than listen propagate', async () => {
+    const listen = failingBind('ENOENT', 'open');
+    const starting = start(appIo(['--no-open', '--json']).io).finally(() => listen.mockRestore());
+    await expect(starting).rejects.toThrow('ENOENT');
   });
 
   it.each(['--port 80', '--port=80'])('refuses %s with cli.bad-value, exit 2', async (words) => {
@@ -213,10 +251,31 @@ describe('start without a server', () => {
     });
   });
 
-  it('refuses --plugin-root followed by a flag with cli.missing-argument, exit 2', async () => {
-    const { result, document } = await started(['--json', '--plugin-root', '--no-open']);
-    const params = { argument: '<dir>', command: 'cedarloom-app --plugin-root' };
+  it.each([
+    ['--plugin-root', '--no-open', '<dir>'],
+    ['--port', '--json', '<n>'],
+  ])('refuses %s followed by %s with cli.missing-argument, exit 2', async (flag, next, argument) => {
+    const { result, document } = await started(['--json', flag, next]);
+    const params = { argument, command: `cedarloom-app ${flag}` };
     expect([result, document.refusals]).toEqual([{ exitCode: 2 }, [{ code: 'cli.missing-argument', params }]]);
+  });
+});
+
+describe('start, usage and version', () => {
+  it.each(['--help', '-h'])('prints the usage for %s on stdout, exit 0', async (flag) => {
+    const { io, out, errors } = appIo([flag]);
+    expect([await start(io), out.join('') === '', errors]).toEqual([{ exitCode: 0 }, false, []]);
+  });
+
+  it('refuses --help with --json with cli.flag-conflict, exit 2', async () => {
+    const { result, document } = await started(['--help', '--json']);
+    const refusal = { code: 'cli.flag-conflict', params: { flags: '--help, --json' } };
+    expect([result, document.refusals]).toEqual([{ exitCode: 2 }, [refusal]]);
+  });
+
+  it.each(['--version', '-V'])('prints the version for %s alone on stdout, exit 0', async (flag) => {
+    const { io, out, errors } = appIo([flag]);
+    expect([await start(io), out, errors]).toEqual([{ exitCode: 0 }, ['1.2.3\n'], []]);
   });
 });
 

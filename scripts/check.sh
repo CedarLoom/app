@@ -29,7 +29,7 @@ forbidden_characters() {
 
 # Each compiled catalog and its generated types match en.po; the compile refuses a message id without a text.
 messages_fresh() {
-  for package in core cli; do
+  for package in core cli app; do
     generated="packages/$package/src/messages/en.json packages/$package/src/messages/catalog.ts"
     before=$(cat $generated | cksum)
     pnpm --filter "@cedarloom/$package" run messages

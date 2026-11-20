@@ -157,6 +157,13 @@
     ],
     "run.already-undone": ["Run ", ["run"], " was already undone by run ", ["by"], "."],
     "run.not-found": ["No run with the id ", ["run"], "."],
+    "server.listen-failed": [
+      "The server cannot listen on ",
+      ["port", "plural", { "0": ["a free port"], "other": ["port ", "#"] }],
+      " of 127.0.0.1: the system answered ",
+      ["error"],
+      "."
+    ],
     "server.open-hint": [
       "If the browser shows an error about a file instead of CedarLoom, open the URL printed above."
     ],

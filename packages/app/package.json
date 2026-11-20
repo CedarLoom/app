@@ -19,6 +19,7 @@
   ],
   "scripts": {
     "build": "node scripts/copy-ui.ts",
+    "messages": "node ../core/scripts/compile-messages.ts && biome format --write src/messages",
     "typecheck": "tsc",
     "openapi": "node scripts/openapi.ts && biome format --write openapi.json"
   },

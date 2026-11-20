@@ -41,6 +41,7 @@ export const run = (): void => {
     clock: { now: () => new Date(), newRunId: randomUUID },
     node: process.versions.node,
     required: manifest.engines.node,
+    version: manifest.version,
     // Monotonic, so a change of the system clock does not stretch or cut the token's 10 minutes.
     now: () => performance.now(),
     secret: () => randomBytes(32).toString('base64url'),
@@ -54,9 +55,9 @@ export const run = (): void => {
       return;
     }
     const stop = (): void => {
-      started.close().then(() => {
-        process.exitCode = 0;
-      }, crashed);
+      void started.close().then((exitCode) => {
+        process.exitCode = exitCode;
+      });
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
