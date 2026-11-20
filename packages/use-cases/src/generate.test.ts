@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -57,7 +58,8 @@ const setup = (definition: object) => {
   const plugin = folder();
   put(join(plugin, 'generator', 'generate.mjs'), STUB);
   mkdirSync(join(plugin, 'definitions'));
-  const define = (value: object) => put(join(project, '.cedarloom', 'workflows', 'dev.json'), JSON.stringify(value));
+  const define = (value: object, file = 'dev') =>
+    put(join(project, '.cedarloom', 'workflows', `${file}.json`), JSON.stringify(value));
   define(definition);
   const opened = openStore(folder(), { now: () => new Date('2026-11-20T08:00:00.000Z'), newRunId: randomUUID });
   if (!opened.ok) throw new Error(opened.refusal.code);
@@ -219,3 +221,48 @@ it.skipIf(process.platform === 'win32')('refuses a planned path through a link w
   });
   expect(existsSync(join(outside, 'dev'))).toBe(false);
 });
+
+it('scopes a named generation by the name field its outputs go under, not by the file name', () => {
+  const { store, request, define, generated } = setup({ name: 'dev', skill: 'Run dev.\n' });
+  define({ name: 'mine', skill: 'Build.\n', script: true }, 'build');
+  generated();
+  define({ name: 'mine', skill: 'Build.\n', script: false }, 'build');
+  expect(kinds(planGeneration(store, { ...request, names: ['build'] }).plan)).toEqual([
+    ['delete', '.claude/workflows/mine.js'],
+  ]);
+  define({ name: 'elsewhere', skill: 'Elsewhere.\n' }, 'mine');
+  expect(kinds(planGeneration(store, { ...request, names: ['mine'] }).plan)).toEqual([
+    ['create', '.claude/skills/elsewhere/SKILL.md'],
+  ]);
+});
+
+it('counts a generation over no definition, so its deletes end what the older generation wrote', () => {
+  const { generated, project, edit } = setup({ name: 'dev', skill: 'Run dev.\n' });
+  generated();
+  rmSync(join(project, '.cedarloom', 'workflows', 'dev.json'));
+  expect(kinds(generated().plan)).toEqual([['delete', SKILL]]);
+  put(join(project, SKILL), 'Mine.\n');
+  expect(generated().plan).toMatchObject({ operations: [], skipped: [] });
+  edit(SKILL, 'Run dev.\n');
+  expect(generated().plan).toMatchObject({ operations: [], skipped: [] });
+});
+
+it('refuses a plan that apply would refuse before it shows it', () => {
+  const long = `skills/dev/${'a'.repeat(200)}.md`;
+  const { store, request } = setup({ name: 'dev', skill: 'Run dev.\n', extra: [long] });
+  expect(planGeneration(store, request)).toMatchObject({
+    plan: null,
+    refusals: [{ code: 'plan.name-too-long', params: { path: `.claude/${long}` } }],
+  });
+});
+
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+  'refuses a project file the app may not read with plan.not-text',
+  () => {
+    const { define, generated, project } = setup({ name: 'dev', skill: 'Run dev.\n' });
+    generated();
+    chmodSync(join(project, SKILL), 0);
+    define({ name: 'dev', skill: 'Run dev twice.\n' });
+    expect(generated()).toMatchObject({ plan: null, refusals: [{ code: 'plan.not-text', params: { path: SKILL } }] });
+  },
+);

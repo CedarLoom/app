@@ -33,7 +33,7 @@ msgstr "{path} is a symbolic link. CedarLoom does not write through links."
 
 #. js-lingui-explicit-id
 msgid "plan.not-text"
-msgstr "{path} is not a UTF-8 text file. CedarLoom writes only text files."
+msgstr "{path} is not a UTF-8 text file, or CedarLoom may not read it. CedarLoom writes only text files it can read."
 
 #. js-lingui-explicit-id
 msgid "plan.text-mismatch"
@@ -133,7 +133,7 @@ msgstr "The workflow definition {path} has {count, plural, one {# problem} other
 
 #. js-lingui-explicit-id
 msgid "definition.stale"
-msgstr "The files generated from the workflow definition {name} differ from what the plugin's generator writes now: {paths}. Run its generator/generate.mjs on the definitions in .cedarloom/workflows from the project's root with --prefix '''' --out .claude, and delete the files of a definition that no longer exists."
+msgstr "The files generated from the workflow definition {name} differ from what the plugin's generator writes now: {paths}. Run cedarloom workflows generate to plan the writes and deletes, and add --yes to apply them. It deletes only files it wrote, so delete any other file of a definition that no longer exists yourself."
 
 #. js-lingui-explicit-id
 msgid "definition.not-json"

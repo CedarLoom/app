@@ -11,8 +11,10 @@ import {
   type Refusal,
   type Run,
 } from '@cedarloom/core';
-import { apply, fileKey, linkRefusal, refusal } from './apply.ts';
+import { apply, fileKey, linkRefusal, precheck, refusal } from './apply.ts';
+import { Named } from './definition-checks.ts';
 import { GENERATOR_TIMEOUT_MS, generate, jsonOf } from './generator-run.ts';
+import { reached } from './plugin-folder.ts';
 import { type Found, readFound, sha256 } from './project-files.ts';
 import { recover } from './recover.ts';
 import { isOwnPath, withLf } from './stale-paths.ts';
@@ -83,8 +85,9 @@ const projectOutputs = (outputs: Map<string, Buffer>): Map<string, Buffer> | Ref
   return new Map([...outputs].map(([path, bytes]) => [`.claude/${path}`, bytes]));
 };
 
-// The hash each file of the named definitions (all, for none) had when the newest generation in effect wrote it.
-const previousFiles = (store: RunStore, names: readonly string[]): Map<string, string> => {
+// The hash each file had when the newest generation in effect wrote it, for the files below the names the generator
+// writes under (all files, for undefined).
+const previousFiles = (store: RunStore, names: readonly string[] | undefined): Map<string, string> => {
   const hashes = new Map<string, string | null>();
   for (const generation of store.generations().filter((each) => inEffect(store, each))) {
     for (const { path, afterHash, status } of generation.operations) {
@@ -94,15 +97,26 @@ const previousFiles = (store: RunStore, names: readonly string[]): Map<string, s
   }
   return new Map(
     [...hashes].flatMap(([path, hash]): [string, string][] =>
-      hash !== null && (names.length === 0 || names.some((name) => isOwnPath(path, name))) ? [[path, hash]] : [],
+      hash !== null && (names === undefined || names.some((name) => isOwnPath(path, name))) ? [[path, hash]] : [],
     ),
   );
 };
 
-// The project's file at a planned path; a path outside the write roots or through a link is refused.
+// The names the generator writes the definitions named on the command line under: their name field, which may differ
+// from the file name; undefined, for every file, when none was named.
+const scopeOf = (names: readonly string[], definitions: Definition[]): string[] | undefined =>
+  names.length === 0
+    ? undefined
+    : definitions.flatMap(({ text }) => {
+        const named = Named.safeParse(jsonOf(text));
+        return named.success ? [named.data.name] : [];
+      });
+
+// The project's file at a planned path; a path outside the write roots, through a link or that the app may not read
+// is refused.
 const foundAt = (root: string, path: string): Found | Refusal => {
   if (!inWriteRoots(path)) return refusal('plan.path-outside-roots', path);
-  return linkRefusal(root, path) ?? readFound(join(root, path));
+  return linkRefusal(root, path) ?? reached(() => readFound(join(root, path))) ?? refusal('plan.not-text', path);
 };
 
 const isRefusal = (value: Found | Refusal): value is Refusal => typeof value === 'object' && 'code' in value;
@@ -149,6 +163,9 @@ const planned = (root: string, outputs: Map<string, Buffer>, previous: Map<strin
   if (stop !== undefined) return stop;
   const operations = changes.filter((change) => 'kind' in change).toSorted((a, b) => (a.path < b.path ? -1 : 1));
   const skipped = changes.filter((change): change is Finding => 'severity' in change);
+  // A plan apply would refuse is refused before it is shown.
+  const unappliable = precheck(root, operations);
+  if (unappliable !== undefined) return unappliable;
   return { planHash: planHash(operations, sha256), operations, skipped };
 };
 
@@ -192,7 +209,7 @@ export const planGeneration = (store: RunStore, request: GenerateRequest): Gener
   }
   const outputs = projectOutputs(generated.outputs);
   if (!(outputs instanceof Map)) return stoppedBy([outputs], findings);
-  const plan = planned(request.root, outputs, previousFiles(store, request.names));
+  const plan = planned(request.root, outputs, previousFiles(store, scopeOf(request.names, definitions)));
   if (!('operations' in plan)) return stoppedBy([plan], findings);
   return { plan, generatorRefusals: [], generatedFrom, run: null, refusals: [], findings };
 };

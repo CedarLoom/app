@@ -161,7 +161,7 @@ msgstr "{name} ({source}): invalid"
 
 #. js-lingui-explicit-id
 msgid "output.generate-none"
-msgstr "Every generated file in .claude is up to date."
+msgstr "Nothing to write or delete in .claude."
 
 #. js-lingui-explicit-id
 msgid "output.generate-applied"

@@ -106,7 +106,7 @@ const planProblem = (op: PlanOperation, position: number, nested: boolean): Refu
   nameProblem(op.path, position) ?? (nested ? refusal('plan.file-changed', op.path) : textProblem(op));
 
 // Every operation is checked before the first write, each against what the ones before it leave: one problem writes none.
-const precheck = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
+export const precheck = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
   const leaves = new Map<string, string | null>();
   const folders = new Set<string>();
   for (const [position, op] of operations.entries()) {

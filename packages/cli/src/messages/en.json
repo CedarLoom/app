@@ -32,7 +32,7 @@
       "Usage: cedarloom workflows validate [<name>...] [--shipped] [--plugin-root <dir>] [--json]\n\nChecks the project's workflow definitions <name>, or all of them, with the\nplugin's generator, run in a temporary folder, and prints each problem's file,\nfield and rule. Exits 1 when a definition has a problem.\n\nOptions:\n  --shipped            Check the definitions shipped with the plugin.\n  --plugin-root <dir>  Use this cl-workflow folder instead of the installed\n                       plugin, and run its generator. Its origin is not\n                       checked."
     ],
     "output.generate-applied": ["Applied as run ", ["run"], "."],
-    "output.generate-none": ["Every generated file in .claude is up to date."],
+    "output.generate-none": ["Nothing to write or delete in .claude."],
     "output.runs-none": ["No runs are recorded for this project."],
     "output.undo-applied": ["Undone as run ", ["run"], "."],
     "output.undo-no-steps": ["Every file is already as before run ", ["run"], "."],
