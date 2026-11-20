@@ -1,5 +1,5 @@
 import { type Dirent, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { filesBelow } from './files-below.ts';
 import { headerName, MARK } from './generated-header.ts';
 import { reached } from './plugin-folder.ts';
@@ -37,24 +37,31 @@ export const isOwnPath = (path: string, name: string): boolean =>
 
 /**
  * The project's files a generator run wrote before, by their head: those below a skill folder and the workflow scripts
- * that carry the mark.
+ * that carry the mark; and the project-relative folders below a skill folder the app could not read.
  */
-export const generatedFiles = (project: string): Map<string, Buffer> => {
+export const generatedFiles = (project: string): { files: Map<string, Buffer>; unreadable: string[] } => {
+  const unreadable: string[] = [];
+  const listed = (folder: string): Dirent[] => {
+    const entries = reached(() => readdirSync(folder, { withFileTypes: true }));
+    if (entries === undefined) unreadable.push(relative(project, folder).split(sep).join('/'));
+    return entries ?? [];
+  };
   const skills = entriesOf(project, SKILLS)
     .filter((entry) => entry.isDirectory())
     .flatMap(({ name }) =>
       // Folder by folder, so one the app cannot read hides only its own files.
-      filesBelow(join(project, SKILLS, name), readableEntries).map((path) => `${SKILLS}/${name}/${path}`),
+      filesBelow(join(project, SKILLS, name), listed).map((path) => `${SKILLS}/${name}/${path}`),
     );
   const scripts = entriesOf(project, WORKFLOWS)
     .filter(({ name }) => name.endsWith('.js'))
     .map(({ name }) => `${WORKFLOWS}/${name}`);
-  return new Map(
+  const files = new Map(
     [...skills, ...scripts].flatMap((path): [string, Buffer][] => {
       const head = bytesAt(project, path, HEAD);
       return head?.includes(MARK) ? [[path, head]] : [];
     }),
   );
+  return { files, unreadable };
 };
 
 /**

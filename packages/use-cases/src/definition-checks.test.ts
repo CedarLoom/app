@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   mkdirSync,
@@ -77,6 +77,11 @@ const staleFinding = (name: string, paths: string[]) => ({
   code: 'definition.stale',
   severity: 'warning',
   params: { name, paths },
+});
+const unreadableFolder = (path: string) => ({
+  code: 'generated.folder-unreadable',
+  severity: 'warning',
+  params: { path },
 });
 const stale = (paths: string[]) => ({ definitions: [], generated: [staleFinding('dev', paths)] });
 const notJson = (path: string) => ({
@@ -218,9 +223,24 @@ describe('names the generated files of a definition that is gone with definition
     mkdirSync(locked);
     chmodSync(locked, 0o000);
     onTestFinished(() => chmodSync(locked, 0o700));
-    expect(check()).toEqual(stale(['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']));
+    expect(check().generated).toEqual([
+      staleFinding('dev', ['.claude/skills/dev/SKILL.md', '.claude/workflows/dev.js']),
+      unreadableFolder('.claude/skills/dev/locked'),
+    ]);
   });
 });
+
+it.skipIf(isWindows || isRoot)(
+  'names a folder below a skill folder the app may not read with generated.folder-unreadable',
+  () => {
+    const { project, check } = setup();
+    const locked = join(project, '.claude', 'skills', 'own', 'assets');
+    mkdirSync(locked, { recursive: true });
+    chmodSync(locked, 0o000);
+    onTestFinished(() => chmodSync(locked, 0o700));
+    expect(check()).toEqual({ definitions: [], generated: [unreadableFolder('.claude/skills/own/assets')] });
+  },
+);
 
 it('leaves the generated files of other definitions alone while a definition file cannot be read', () => {
   const { project, check } = setup();
@@ -403,38 +423,53 @@ describe('reports a definition no reader can take with definition.not-json', () 
   });
 });
 
+const failedWith = (params: Record<string, unknown>) => [{ code: 'generator.failed', severity: 'error', params }];
+
 describe('reports a generator that fails with generator.failed', () => {
   it('with the exit code and the error output, once for all definitions', () => {
     const { project, check } = setup("process.stderr.write('broken');\nprocess.exit(3);\n");
     write(join(project, '.cedarloom', 'workflows', 'other.json'), JSON.stringify({ name: 'other' }));
-    expect(check().definitions).toEqual([
-      { code: 'generator.failed', severity: 'error', params: { exitCode: 3, signal: null, stderr: 'broken' } },
-    ]);
+    expect(check().definitions).toEqual(failedWith({ reason: 'exit', exitCode: 3, signal: null, stderr: 'broken' }));
   });
 
   it('with exit code 1 and the stack trace for a generator that throws', () => {
     const { check } = setup("throw new Error('runner.js missing');\n");
-    expect(check().definitions).toEqual([
-      {
-        code: 'generator.failed',
-        severity: 'error',
-        params: { exitCode: 1, signal: null, stderr: expect.stringContaining('Error: runner.js missing') },
-      },
-    ]);
+    expect(check().definitions).toEqual(
+      failedWith({
+        reason: 'exit',
+        exitCode: 1,
+        signal: null,
+        stderr: expect.stringContaining('Error: runner.js missing'),
+      }),
+    );
   });
 
-  it('with SIGKILL for a generator that does not end in time', () => {
+  it('with the reason timeout for a generator that does not end in time', () => {
     const { check } = setup('setInterval(() => {}, 1000);\n');
-    expect(check(500).definitions).toEqual([
-      { code: 'generator.failed', severity: 'error', params: { exitCode: null, signal: 'SIGKILL', stderr: '' } },
-    ]);
+    expect(check(500).definitions).toEqual(
+      failedWith({ reason: 'timeout', exitCode: null, signal: 'SIGKILL', stderr: '' }),
+    );
+  });
+
+  it('with the reason outputLimit for a generator that prints more than 64 MiB', () => {
+    const { check } = setup("process.stdout.write('x'.repeat(65 * 1024 * 1024));\n");
+    expect(check().definitions).toEqual(
+      failedWith({ reason: 'outputLimit', exitCode: null, signal: 'SIGKILL', stderr: '' }),
+    );
+  });
+
+  it.skipIf(isWindows)('with the reason signal for a generator ended by a signal', () => {
+    const { check } = setup("process.kill(process.pid, 'SIGTERM');\n");
+    expect(check().definitions).toEqual(
+      failedWith({ reason: 'signal', exitCode: null, signal: 'SIGTERM', stderr: '' }),
+    );
   });
 
   it('with the error output for an exit code of 1 with an empty refusal list', () => {
     const { check } = setup("console.log('[]');\nprocess.stderr.write('ENAMETOOLONG');\nprocess.exit(1);\n");
-    expect(check().definitions).toEqual([
-      { code: 'generator.failed', severity: 'error', params: { exitCode: 1, signal: null, stderr: 'ENAMETOOLONG' } },
-    ]);
+    expect(check().definitions).toEqual(
+      failedWith({ reason: 'exit', exitCode: 1, signal: null, stderr: 'ENAMETOOLONG' }),
+    );
   });
 });
 
@@ -474,4 +509,34 @@ it('removes its temporary folder and writes nothing into the project', () => {
   const before = tree(project);
   expect(check().generated).toHaveLength(1);
   expect([tree(project), readdirSync(temp)]).toEqual([before, []]);
+});
+
+// Runs the doctor's check in a process of its own after listen, with a generator that sends that process SIGTERM.
+const doctorEnded = (listen: string) => {
+  const { project, root, temp } = setup("process.kill(process.ppid, 'SIGTERM');\nsetTimeout(() => {}, 500);\n");
+  const doctor = `import { definitionFindings } from ${JSON.stringify(join(import.meta.dirname, 'definition-checks.ts'))};
+${listen}
+definitionFindings(${JSON.stringify({ project, root, temp, timeoutMs: 20_000, env: {} })});
+setInterval(() => {}, 1000);
+`;
+  const ended = spawnSync(process.execPath, ['--input-type=module', '-e', doctor], {
+    encoding: 'utf8',
+    timeout: 10_000,
+    killSignal: 'SIGKILL',
+  });
+  return [ended.signal, ended.status, readdirSync(temp)];
+};
+
+describe.skipIf(isWindows)('removes its temporary folder on SIGTERM', () => {
+  it('then ends with it', () => {
+    expect(doctorEnded('')).toEqual(['SIGTERM', null, []]);
+  });
+
+  it('then leaves it to a listener of the caller', () => {
+    expect(doctorEnded("process.once('SIGTERM', () => setTimeout(() => process.exit(7), 100));")).toEqual([
+      null,
+      7,
+      [],
+    ]);
+  });
 });

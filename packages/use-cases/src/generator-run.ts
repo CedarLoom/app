@@ -41,11 +41,19 @@ export const jsonOf = (text: string): unknown => {
   }
 };
 
-const failed = ({ status, signal, stderr }: SpawnSyncReturns<string>): Generated => ({
+// Why the run stopped: spawnSync ends a run past its time or output limit with killSignal and reports it in error.
+const reasonOf = ({ error, signal }: SpawnSyncReturns<string>) => {
+  const code = errorCode(error);
+  if (code === 'ETIMEDOUT') return 'timeout';
+  if (code === 'ENOBUFS') return 'outputLimit';
+  return signal === null ? 'exit' : 'signal';
+};
+
+const failed = (run: SpawnSyncReturns<string>): Generated => ({
   finding: {
     code: 'generator.failed',
     severity: 'error',
-    params: { exitCode: status, signal, stderr: stderr.slice(0, LIMIT) },
+    params: { reason: reasonOf(run), exitCode: run.status, signal: run.signal, stderr: run.stderr.slice(0, LIMIT) },
   },
 });
 /** Output of the generator CedarLoom cannot read. */
@@ -75,11 +83,29 @@ const outcome = (run: SpawnSyncReturns<string>, files: string[], out: string): G
   return { outputs: new Map(filesBelow(out).map((path) => [path, readFileSync(join(out, path))])) };
 };
 
-/**
- * Runs the plugin's generator on the definitions' bytes in one run, as a project regenerates them, in a temporary
- * folder of its own that is removed afterwards.
- */
-export const generate = (definitions: Uint8Array[], request: GeneratorRun): Generated => {
+const SIGNALS = ['SIGINT', 'SIGTERM'] as const;
+
+// Runs fn with SIGINT and SIGTERM held where nothing else listens for them, as their default action would end the
+// process while spawnSync blocks and skip fn's cleanup; a held signal is raised again once the event loop delivers it.
+const holdingSignals = <T>(fn: () => T): T => {
+  const held = SIGNALS.filter((signal) => process.listenerCount(signal) === 0);
+  const release = (): void => {
+    for (const signal of held) process.removeListener(signal, raise);
+  };
+  function raise(signal: NodeJS.Signals): void {
+    release();
+    process.kill(process.pid, signal);
+  }
+  for (const signal of held) process.on(signal, raise);
+  try {
+    return fn();
+  } finally {
+    // The loop delivers a signal that came during fn in its poll phase, before this check-phase callback.
+    setImmediate(release);
+  }
+};
+
+const runGenerator = (definitions: Uint8Array[], request: GeneratorRun): Generated => {
   // Absolute, as the generator resolves the paths it gets from its own working folder.
   const folder = mkdtempSync(join(resolve(request.temp), 'cedarloom-generate-'));
   try {
@@ -103,7 +129,7 @@ export const generate = (definitions: Uint8Array[], request: GeneratorRun): Gene
       killSignal: 'SIGKILL',
       windowsHide: true,
     });
-    // ETIMEDOUT and ENOBUFS end the generator, which the outcome reports by its signal.
+    // ETIMEDOUT and ENOBUFS end the generator, which the outcome reports with its reason.
     const code = errorCode(run.error);
     if (run.error !== undefined && code !== 'ETIMEDOUT' && code !== 'ENOBUFS') throw run.error;
     return outcome(run, files, out);
@@ -112,3 +138,10 @@ export const generate = (definitions: Uint8Array[], request: GeneratorRun): Gene
     rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
   }
 };
+
+/**
+ * Runs the plugin's generator on the definitions' bytes in one run, as a project regenerates them, in a temporary
+ * folder of its own that is removed afterwards, also on SIGINT or SIGTERM.
+ */
+export const generate = (definitions: Uint8Array[], request: GeneratorRun): Generated =>
+  holdingSignals(() => runGenerator(definitions, request));
