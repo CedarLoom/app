@@ -46,8 +46,21 @@ export const store = (state: string, ...ids: string[]): RunStore =>
 
 // Releases a store before another process takes it.
 export const release = (held: RunStore): void => {
-  opened.splice(opened.indexOf(held), 1);
+  const at = opened.indexOf(held);
+  if (at === -1) throw new Error('release of a store no fixture holds');
+  opened.splice(at, 1);
   held.close();
+};
+
+// Whether the volume of the test folders reads two letter cases of a name as one file, as APFS and NTFS do by default.
+export const foldsCase = (): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'cedarloom-case-'));
+  try {
+    writeFileSync(join(dir, 'a'), '');
+    return existsSync(join(dir, 'A'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 };
 
 export const hash = (text: string): string => createHash('sha256').update(text).digest('hex');
