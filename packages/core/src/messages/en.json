@@ -1,6 +1,7 @@
 {
   "messages": {
-    "api.bad-request": ["The request is not valid. Fields with issues: ", ["issues"]],
+    "api.bad-fields": ["The request is not valid. Fields with issues: ", ["issues"]],
+    "api.bad-request": ["The request is not valid."],
     "api.internal": ["Something went wrong in CedarLoom. The details are in the terminal where cedarloom-app runs."],
     "api.not-found": ["Not found."],
     "apply.backup-failed": [
