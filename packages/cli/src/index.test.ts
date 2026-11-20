@@ -99,6 +99,8 @@ it.each([
   [['--version'], 'cli.flag-conflict', { flags: '--version, --json' }],
   [['-V', '--help'], 'cli.flag-conflict', { flags: '-V, --help' }],
   [['doctor', 'extra'], 'cli.surplus-argument', { argument: 'extra', command: 'cedarloom doctor' }],
+  [['doctor', ''], 'cli.surplus-argument', { argument: "''", command: 'cedarloom doctor' }],
+  [['--version', '--yes'], 'cli.unknown-flag', { flag: '--yes', command: 'cedarloom' }],
   [['doctor', '--yes'], 'cli.unknown-flag', { flag: '--yes', command: 'cedarloom doctor' }],
   [['runs', 'list', '--json=no'], 'cli.bad-value', { flag: '--json', value: 'no' }],
   [['doctor', '--help'], 'cli.flag-conflict', { flags: '--help, --json' }],
@@ -120,6 +122,13 @@ it.each([
   [['runs', 'list', '--plugin-root=x'], 'cli.unknown-flag', { flag: '--plugin-root', command: 'cedarloom runs list' }],
   [['workflows'], 'cli.missing-argument', { argument: '<verb>', command: 'cedarloom workflows' }],
   [['workflows', 'show'], 'cli.missing-argument', { argument: '<name>', command: 'cedarloom workflows show' }],
+  [['workflows', 'show', ''], 'cli.missing-argument', { argument: '<name>', command: 'cedarloom workflows show' }],
+  [
+    ['workflows', 'generate', 'mine', ' '],
+    'cli.missing-argument',
+    { argument: '<name>', command: 'cedarloom workflows generate' },
+  ],
+  [['workflows', 'off', ''], 'cli.missing-argument', { argument: '<id>', command: 'cedarloom workflows off' }],
   [['workflows', 'list', '--shipped'], 'cli.unknown-flag', { flag: '--shipped', command: 'cedarloom workflows list' }],
   [
     ['workflows', 'new', 'mine', '--from'],
@@ -184,6 +193,20 @@ it.each([
     document: { result: null, findings: [], refusals: [{ code, params }] },
     stderr: '',
   });
+});
+
+it.each([[['-V', '-V']], [['--version', '--version']], [['-V', '--version']], [['--version=x']]])(
+  'prints the version for %j, exit 0',
+  (argv) => {
+    const out: string[] = [];
+    expect(ran(argv, fresh(), { stdout: (text) => out.push(text) })).toMatchObject({ code: 0, stderr: '' });
+    expect(out).toEqual(['0.0.0\n']);
+  },
+);
+
+it('refuses an empty and a blank run id alike, exit 2', () => {
+  const { root } = project();
+  expect([ran(['undo', ''], root).code, ran(['undo', ' '], root).code]).toEqual([2, 2]);
 });
 
 it('lists no runs for a project without a store, and creates none', () => {
@@ -320,6 +343,17 @@ const stoppedRun = (): string => {
   throw new Error('run r1 stopped', { cause: new Error('disk gone') });
 };
 
+// A project with missing.mjs, which makes each import whose name starts with blocked throw, a line feed in the message.
+const blocking = (blocked: string): string => {
+  const { root } = project();
+  writeFileSync(
+    join(root, 'missing.mjs'),
+    "import { registerHooks } from 'node:module';\n" +
+      `registerHooks({ resolve: (name, context, next) => { if (name.startsWith('${blocked}')) throw new Error('missing\\n    at forged'); return next(name, context); } });`,
+  );
+  return root;
+};
+
 describe('bin/cedarloom.js', () => {
   it('refuses undo without --yes on closed standard input with cli.confirm-required, exit 4', () => {
     const { root, state } = project();
@@ -348,31 +382,55 @@ describe('bin/cedarloom.js', () => {
     });
   });
 
-  it('ends with the code cli.internal, exit 5, when its packages do not load', () => {
-    const { root } = project();
-    writeFileSync(
-      join(root, 'missing.mjs'),
-      "import { registerHooks } from 'node:module';\n" +
-        "registerHooks({ resolve: (name, context, next) => { if (name.startsWith('@cedarloom/')) throw new Error('missing'); return next(name, context); } });",
-    );
+  it('ends with the code cli.internal, exit 5, and the stack escaped, when its packages do not load', () => {
+    const root = blocking('@cedarloom/');
     const { code, stderr } = started(['--import', './missing.mjs', bin, 'doctor'], { cwd: root });
-    expect([code, stderr.endsWith('\ncli.internal\n')]).toEqual([5, true]);
+    expect([code, stderr.endsWith('\ncli.internal\n'), stderr.split('\n').includes('    at forged')]).toEqual([
+      5,
+      true,
+      false,
+    ]);
+  });
+
+  it('escapes the message apart from the frames when core loads and the cli does not', () => {
+    const root = blocking('@cedarloom/cli');
+    const { code, stderr } = started(['--import', './missing.mjs', bin, 'doctor'], { cwd: root });
+    expect([code, ...stderr.split('\n').slice(0, 2)]).toEqual([
+      5,
+      'Error: missing\\u000a    at forged',
+      expect.stringMatching(/^ {4}at /),
+    ]);
   });
 });
+
+// A project with gone.mjs, which moves the process into a folder of the project and removes that folder.
+const removing = (): string => {
+  const { root } = project();
+  const gone = join(root, 'gone');
+  mkdirSync(gone);
+  writeFileSync(
+    join(root, 'gone.mjs'),
+    `import { rmdirSync } from 'node:fs';\nprocess.chdir(${JSON.stringify(gone)});\nrmdirSync(${JSON.stringify(gone)});`,
+  );
+  return root;
+};
 
 describe('bin/cedarloom.js in its working folder', () => {
   // Windows cannot remove the working folder of a running process.
   it.skipIf(process.platform === 'win32')('answers --version in a removed working folder', () => {
-    const { root } = project();
-    const gone = join(root, 'gone');
-    mkdirSync(gone);
-    writeFileSync(
-      join(root, 'gone.mjs'),
-      `import { rmdirSync } from 'node:fs';\nprocess.chdir(${JSON.stringify(gone)});\nrmdirSync(${JSON.stringify(gone)});`,
-    );
+    const root = removing();
     expect(started(['--import', './gone.mjs', bin, '--version'], { cwd: root })).toEqual({
       code: 0,
       document: '0.0.0\n',
+      stderr: '',
+    });
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses doctor in a removed working folder with project.not-found', () => {
+    const root = removing();
+    expect(started(['--import', './gone.mjs', bin, 'doctor', '--json'], { cwd: root })).toEqual({
+      code: 3,
+      document: { result: null, findings: [], refusals: [{ code: 'project.not-found', params: { cwd: '.' } }] },
       stderr: '',
     });
   });

@@ -10,6 +10,47 @@ export const printable = (value: string): string =>
 /** A multi-line text, such as a stack, with each line printable and its line feeds kept. */
 export const printableLines = (text: string): string => text.split('\n').map(printable).join('\n');
 
+// The stack shows the message after the error's name, so a line feed in the message would add a line that reads as a frame.
+const stackOf = (error: Error): string => {
+  const { message } = error;
+  const stack = typeof error.stack === 'string' ? error.stack : `${error.name}: ${message}`;
+  if (!message.includes('\n')) return printableLines(stack);
+  const at = stack.lastIndexOf(message);
+  if (at === -1) return printable(stack);
+  return printable(stack.slice(0, at + message.length)) + printableLines(stack.slice(at + message.length));
+};
+
+// JSON.stringify throws on a cycle or a BigInt.
+const jsonOf = (value: object): string => {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
+};
+
+/**
+ * A thrown value as a crash report: each error's stack with its message escaped on its own line, its own fields as JSON,
+ * then its cause and an AggregateError's errors, to any depth.
+ */
+export const printableStack = (thrown: unknown): string => {
+  const seen = new Set<Error>();
+  const report = (value: unknown, label: string): string[] => {
+    if (!(value instanceof Error))
+      return [label + printable(typeof value === 'object' && value !== null ? jsonOf(value) : String(value))];
+    if (seen.has(value)) return [`${label}[Circular]`];
+    seen.add(value);
+    const fields = jsonOf(value);
+    return [
+      label + stackOf(value),
+      ...(fields === '{}' ? [] : [printable(fields)]),
+      ...('cause' in value ? report(value.cause, '[cause]: ') : []),
+      ...(value instanceof AggregateError ? value.errors.flatMap((error: unknown) => report(error, '[errors]: ')) : []),
+    ];
+  };
+  return report(thrown, '').join('\n');
+};
+
 const argument = (id: string, params: Params, name: unknown): string => {
   const value = params[String(name)];
   if (value === undefined) throw new Error(`${id} has no parameter ${String(name)}`);
