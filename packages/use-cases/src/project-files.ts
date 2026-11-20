@@ -10,6 +10,7 @@ import {
   mkdirSync,
   mkdtempSync,
   openSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   readSync,
@@ -130,15 +131,18 @@ export const writeNew = (path: string, bytes: Uint8Array, mode: number | undefin
   }
 };
 
-/** Makes the missing folders of a path, each flushed into its parent so a crash keeps them; gives how many it made. */
-export const makeFolders = (path: string, mode = 0o777): number => {
-  // Counted before, not from what mkdir returns: on Windows that can name a deeper folder than the first it made.
-  let made = 0;
-  for (let folder = path; entryAt(folder) === undefined && dirname(folder) !== folder; folder = dirname(folder))
-    made += 1;
-  mkdirSync(path, { recursive: true, mode });
-  for (let folder = path, left = made; left > 0; left -= 1, folder = dirname(folder)) flushFolder(dirname(folder));
-  return made;
+/**
+ * Makes the missing folders of a path, at most `levels` of them, each flushed into its parent so a crash keeps them;
+ * gives how many it made. Throws ENOENT where the folder above them is gone.
+ */
+export const makeFolders = (path: string, mode = 0o777, levels = Number.POSITIVE_INFINITY): number => {
+  const missing: string[] = [];
+  for (let at = path; missing.length < levels && entryAt(at) === undefined && dirname(at) !== at; at = dirname(at))
+    missing.push(at);
+  // One at a time from the top, never recursive, so a project root that is gone is not made again.
+  for (const folder of missing.toReversed()) mkdirSync(folder, { mode });
+  for (const folder of missing) flushFolder(dirname(folder));
+  return missing.length;
 };
 
 /** Writes a private copy beside `dest` and renames it in, so `dest` is whole or missing, never half written. */
@@ -166,14 +170,16 @@ const linkedBack = (aside: string, path: string): boolean => {
   } catch {
     return false;
   }
+  // A stop between the link and the unlink leaves the aside as the file at the path, which recovery drops.
   unlinkSync(aside);
   return true;
 };
 
 /** Puts a file, link or folder set aside back at its path; when another process put a file there meanwhile, both stay. */
 export const putBack = (aside: string, path: string): void => {
-  // Node.js has no rename that refuses a taken path: where no new name puts the aside back, as for a link on Windows or
-  // a file on a volume without hard links, a file put at the path between this check and the rename is replaced.
+  // Node.js has no rename that refuses a taken path: where no new name puts the aside back, as for a folder, a link on
+  // Windows or a file on a volume without hard links, a file put at the path between this check and the rename is
+  // replaced.
   if (!linkedBack(aside, path)) {
     if (entryAt(path) !== undefined) return;
     renameSync(aside, path);
@@ -224,13 +230,48 @@ export const removeEmptyFolder = (path: string): boolean => {
   return true;
 };
 
-// link() of a volume without hard links: ENOTSUP on exFAT and FAT, EPERM or EXDEV on some network shares.
-const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EPERM', 'EXDEV']);
+// link() of a volume without hard links: ENOTSUP on exFAT and FAT, EISDIR there on Windows, EPERM or EXDEV on some
+// network shares.
+const NO_HARD_LINKS = new Set<unknown>(['ENOTSUP', 'EISDIR', 'EPERM', 'EXDEV']);
+
+const PROBE = '.cedarloom-probe-';
+// A probe lives for milliseconds; one an hour old was left by a process that stopped.
+const PROBE_AGE_MS = 60 * 60 * 1000;
+
+// Whether a folder holds nothing but empty files and folders that do, as a probe does.
+const onlyEmpty = (folder: string): boolean =>
+  readdirSync(folder).every((name) => {
+    const entry = lstatSync(join(folder, name));
+    return entry.isDirectory() ? onlyEmpty(join(folder, name)) : entry.isFile() && entry.size === 0;
+  });
+
+// Removes the empty files of a folder and then each folder once it is empty; a file written meanwhile stays.
+const removeEmpty = (folder: string): void => {
+  for (const name of readdirSync(folder)) {
+    const path = join(folder, name);
+    const entry = lstatSync(path);
+    if (entry.isDirectory()) removeEmpty(path);
+    else if (entry.isFile() && entry.size === 0) unlinkSync(path);
+  }
+  removeEmptyFolder(folder);
+};
+
+// Removes the probes in a folder that a stopped process left: folders changed before `before` that hold only empty files.
+const sweepProbes = (folder: string, before: number): void => {
+  for (const name of readdirSync(folder)) {
+    if (!name.startsWith(PROBE)) continue;
+    const path = join(folder, name);
+    const entry = lstatSync(path);
+    if (entry.isDirectory() && entry.mtimeMs < before && onlyEmpty(path)) removeEmpty(path);
+  }
+};
 
 // What a probe in a private folder made in `folder` finds; the folder goes after.
 const probed = <T>(folder: string, find: (probe: string) => T): T => {
-  const probe = mkdtempSync(join(folder, '.cedarloom-probe-'));
+  const probe = mkdtempSync(join(folder, PROBE));
   try {
+    // Aged by the volume's clock, as the new probe's time reads it.
+    sweepProbes(folder, lstatSync(probe).mtimeMs - PROBE_AGE_MS);
     return find(probe);
   } finally {
     // A scanner that holds the new file on Windows makes a single try fail with EBUSY or EPERM.

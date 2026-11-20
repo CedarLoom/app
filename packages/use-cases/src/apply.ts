@@ -119,9 +119,21 @@ interface Chain {
   left: string | null;
 }
 
+// A folder the app may enter but not read or write fails a read or a probe there with EACCES.
+const orDenied = <T>(path: string, act: () => T): T | Refusal => {
+  try {
+    return act();
+  } catch (error) {
+    if (errorCode(error) === 'EACCES') return refusal('plan.folder-denied', path);
+    throw error;
+  }
+};
+
 // A later operation on a path starts from what the one before it leaves, at the file the chain began with.
 const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined =>
-  op.beforeHash === left && sameFile(root, first, op.path) ? undefined : refusal('plan.file-changed', op.path);
+  op.beforeHash === left
+    ? orDenied(op.path, () => (sameFile(root, first, op.path) ? undefined : refusal('plan.file-changed', op.path)))
+    : refusal('plan.file-changed', op.path);
 
 // A folder on the way that is a file; Windows reads a path below it as absent, not as ENOTDIR.
 const fileOnWay = (root: string, path: string): Refusal | undefined => {
@@ -197,19 +209,28 @@ export const precheck = (root: string, operations: readonly PlanOperation[]): Re
   return undefined;
 };
 
-// A step on a volume without hard links would stop after it set the old file aside, and so would the undo of a delete;
-// the probe goes in the deepest folder that exists, as the precheck found no link on its way.
+// The folders of a plan path below the root: ".claude/a/b.md" has two.
+const levels = (path: string): number => path.split('/').length - 1;
+
+// The probe goes in the deepest folder that exists, the root at most, as the precheck found no link on its way.
+const linksAt = (root: string, op: PlanOperation, probed: Set<bigint>): Refusal | undefined => {
+  let folder = dirname(join(root, op.path));
+  let entry = entryAt(folder);
+  for (let up = levels(op.path); entry === undefined && up > 0; up -= 1, entry = entryAt(folder))
+    folder = dirname(folder);
+  // The root is absent where it was removed or its drive is gone; lstat then throws ENOENT.
+  entry ??= lstatSync(folder, { bigint: true });
+  if (probed.has(entry.dev)) return undefined;
+  probed.add(entry.dev);
+  return makesHardLinks(folder) ? undefined : refusal('apply.no-hard-links', op.path);
+};
+
+// A step on a volume without hard links would stop after it set the old file aside, and so would the undo of a delete.
 const linksProblem = (root: string, operations: readonly PlanOperation[]): Refusal | undefined => {
   const probed = new Set<bigint>();
   for (const op of operations) {
-    let folder = dirname(join(root, op.path));
-    let entry = entryAt(folder);
-    for (; entry === undefined && dirname(folder) !== folder; entry = entryAt(folder)) folder = dirname(folder);
-    // Even the root is absent where its drive is gone; lstat then throws ENOENT.
-    entry ??= lstatSync(folder, { bigint: true });
-    if (probed.has(entry.dev)) continue;
-    probed.add(entry.dev);
-    if (!makesHardLinks(folder)) return refusal('apply.no-hard-links', op.path);
+    const problem = orDenied(op.path, () => linksAt(root, op, probed));
+    if (problem !== undefined) return problem;
   }
   return undefined;
 };
@@ -262,8 +283,16 @@ const change = ({ run, root, at }: Step, position: number, op: PlanOperation, mo
       dropAside(temp);
     }
     if (op.beforeHash !== null) dropAside(aside);
-  } finally {
-    rmSync(temp, { force: true });
+  } catch (error) {
+    // The temporary file goes next to a failed step too; where it cannot, the step's error stays first.
+    try {
+      rmSync(temp, { force: true });
+    } catch (failure) {
+      throw new AggregateError([error, failure], 'a step failed, and removing its temporary file failed too', {
+        cause: failure,
+      });
+    }
+    throw error;
   }
 };
 
@@ -287,7 +316,7 @@ const step = (context: Step, position: number, op: PlanOperation): Stop | undefi
   if (linked !== undefined) return untouched(linked);
   let mode = context.modes.get(position);
   if (op.beforeHash !== null) {
-    const file = expected(op.path, op.beforeHash, readFound(path));
+    const file = orDenied(op.path, () => expected(op.path, op.beforeHash, readFound(path)));
     if ('code' in file) return untouched(file);
     if (!backUp(file.bytes, store.backupPath(run, position))) {
       return untouched({ code: 'apply.backup-failed', params: { run, path: op.path } });
@@ -295,7 +324,7 @@ const step = (context: Step, position: number, op: PlanOperation): Stop | undefi
     mode = file.mode;
     if (op.afterHash === null) store.deleting(run, position, mode);
   }
-  const made = makeFolders(dirname(path));
+  const made = makeFolders(dirname(path), 0o777, levels(op.path));
   if (made > 0) store.madeFolders(run, position, made);
   const relinked = linkRefusal(root, op.path);
   if (relinked !== undefined) return untouched(relinked);

@@ -18,6 +18,7 @@ import {
   begin,
   crash,
   create,
+  foldsCase,
   fresh,
   hash,
   listing,
@@ -82,6 +83,9 @@ afterEach(() => {
   unlinking.check = () => undefined;
   refuseLinks.on = false;
   refuseLinks.code = 'EPERM';
+  racing.path = '';
+  driveGone.on = false;
+  driveGone.calls = 0;
 });
 
 describe('apply writes', () => {
@@ -233,14 +237,14 @@ describe('apply refuses two spellings of one path on every volume', () => {
 describe('apply probes two spellings in a private folder', () => {
   // A folder mode keeps neither root nor any process on Windows out.
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-    'lets an error of the spelling probe through, before any write',
+    'refuses a folder the spelling probe may not write, before any write',
     () => {
       const { root, state } = project({ '.claude/B.md': 'v1\n' });
       const folder = join(root, '.claude');
       const plan = [replace('.claude/B.md', 'v1\n', 'v2\n'), replace('.claude/b.md', 'v2\n', 'v3\n')];
       chmodSync(folder, 0o500);
       try {
-        expect(thrownBy(() => apply(store(state), request(root, plan)))).toMatchObject({ code: 'EACCES' });
+        expect(apply(store(state), request(root, plan))).toEqual(refusedAt('plan.folder-denied', '.claude/b.md'));
         expect([listing(root), runs(state)]).toEqual([['B.md'], []]);
       } finally {
         chmodSync(folder, 0o700);
@@ -248,8 +252,8 @@ describe('apply probes two spellings in a private folder', () => {
     },
   );
 
-  // Needs a volume that reads both folder names as one and a folder mode that keeps the process out, as on macOS.
-  it.skipIf(process.platform !== 'darwin' || process.getuid?.() === 0)(
+  // Needs a volume that reads both folder names as one and a folder mode that keeps the process out, which Windows lacks.
+  it.skipIf(!foldsCase() || process.platform === 'win32' || process.getuid?.() === 0)(
     'probes no spelling where the names below the shared folder are equal',
     () => {
       const { root } = project();
@@ -300,6 +304,31 @@ describe('apply keeps to the write roots', () => {
     expect(apply(store(state), request(root, plan), swap)).toEqual(refusedAt('plan.symlink', '.claude/skills', 'r1'));
     expect(readdirSync(outside)).toEqual([]);
     expect(run(state, 'r1')).toEqual({ status: 'failed', steps: ['done', 'untouched'] });
+  });
+});
+
+describe('apply stops the run at a path denied during the run', () => {
+  // A mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).each([
+    ['a folder on the way', '.claude/skills', create('.claude/skills/b/SKILL.md', 'b\n')],
+    ['the file it replaces', '.claude/b.md', replace('.claude/b.md', 'old\n', 'new\n')],
+  ] as const)('stops the run at %s denied during the run', (_case, denied, operation) => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    mkdirSync(join(root, '.claude/skills'));
+    const deny = (boundary: Boundary, position: number): void => {
+      if (boundary === 'written' && position === 0) chmodSync(join(root, denied), 0o000);
+    };
+    try {
+      expect(apply(store(state), request(root, [create('.claude/a.md', 'a\n'), operation]), deny)).toEqual(
+        refusedAt('plan.folder-denied', operation.path, 'r1'),
+      );
+    } finally {
+      chmodSync(join(root, denied), 0o700);
+    }
+    expect([text(join(root, '.claude/b.md')), run(state, 'r1')]).toEqual([
+      'old\n',
+      { status: 'failed', steps: ['done', 'untouched'] },
+    ]);
   });
 });
 
@@ -470,14 +499,18 @@ describe('apply puts the old file back only to a free path', () => {
 });
 
 describe('apply on a volume without hard links, and a link put back', () => {
-  it('refuses a volume without hard links before any write, and leaves no probe', () => {
-    const { root, state } = project({ '.claude/b.md': 'old\n' });
-    refuseLinks.on = true;
-    expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toEqual(
-      refusedAt('apply.no-hard-links', '.claude/b.md'),
-    );
-    expect([listing(root), text(join(root, '.claude/b.md')), runs(state)]).toEqual([['b.md'], 'old\n', []]);
-  });
+  it.each(['EPERM', 'EISDIR'])(
+    'refuses a volume whose link probe fails with %s before any write, and leaves no probe',
+    (code) => {
+      const { root, state } = project({ '.claude/b.md': 'old\n' });
+      refuseLinks.on = true;
+      refuseLinks.code = code;
+      expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]))).toEqual(
+        refusedAt('apply.no-hard-links', '.claude/b.md'),
+      );
+      expect([listing(root), text(join(root, '.claude/b.md')), runs(state)]).toEqual([['b.md'], 'old\n', []]);
+    },
+  );
 
   // Its undo links the file back in.
   it('refuses a plan that only deletes on a volume without hard links', () => {
@@ -501,13 +534,9 @@ describe('apply on a volume without hard links, and a link put back', () => {
         symlinkSync('elsewhere.md', path);
         racing.path = path;
       };
-      try {
-        expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), swap)).toEqual(
-          refusedAt('plan.file-changed', '.claude/b.md', 'r1'),
-        );
-      } finally {
-        racing.path = '';
-      }
+      expect(apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), swap)).toEqual(
+        refusedAt('plan.file-changed', '.claude/b.md', 'r1'),
+      );
       expect(text(path)).toBe('theirs\n');
     },
   );
@@ -526,13 +555,89 @@ describe('apply probes the volume', () => {
     const { root, state } = project();
     const held = store(state);
     driveGone.on = true;
-    driveGone.calls = 0;
-    try {
-      expect(() => apply(held, request(root, [create('.claude/a.md', 'a\n')]))).toThrow('ENOENT');
-    } finally {
-      driveGone.on = false;
-    }
+    expect(() => apply(held, request(root, [create('.claude/a.md', 'a\n')]))).toThrow('ENOENT');
+    driveGone.on = false;
     expect([listing(root), runs(state)]).toEqual([[], []]);
+  });
+
+  it('throws ENOENT for a removed project root, before a run is recorded, and probes nothing above it', () => {
+    const above = fresh();
+    const root = join(above, 'project');
+    const state = fresh();
+    expect(() => apply(store(state), request(root, [create('.claude/a.md', 'a\n')]))).toThrow('ENOENT');
+    expect([readdirSync(above), runs(state)]).toEqual([[], []]);
+  });
+
+  // A folder mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'refuses a folder the link probe may not write, before any write',
+    () => {
+      const { root, state } = project();
+      const folder = join(root, '.claude');
+      chmodSync(folder, 0o500);
+      try {
+        expect(apply(store(state), request(root, [create('.claude/a.md', 'a\n')]))).toEqual(
+          refusedAt('plan.folder-denied', '.claude/a.md'),
+        );
+      } finally {
+        chmodSync(folder, 0o700);
+      }
+      expect([listing(root), runs(state)]).toEqual([[], []]);
+    },
+  );
+});
+
+describe('apply makes no folder above the project', () => {
+  it('stops a step whose project root was removed during the run, and makes it not again', () => {
+    const { root, state } = project();
+    const removeRoot = (boundary: Boundary, position: number): void => {
+      if (boundary === 'written' && position === 0) rmSync(root, { recursive: true });
+    };
+    const plan = [create('.claude/a.md', 'a\n'), create('.claude/skills/b.md', 'b\n')];
+    const thrown = thrownBy(() => apply(store(state), request(root, plan), removeRoot));
+    expect(thrown).toMatchObject({ run: 'r1', cause: { code: 'ENOENT' } });
+    expect(existsSync(root)).toBe(false);
+  });
+});
+
+describe('apply checks the path length of Windows', () => {
+  it('refuses a path whose longest name beside it reaches MAX_PATH, loaded as on Windows', async () => {
+    const platform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    vi.resetModules();
+    const windows = await import('./apply.ts').finally(() =>
+      Object.defineProperty(process, 'platform', { value: platform }),
+    );
+    const { root } = project();
+    // Each name far below 255 bytes, the whole path of the longest name beside it past 260 and below 1,024.
+    const path = `.claude/${Array.from({ length: 3 }, () => 'n'.repeat(60)).join('/')}/a.md`;
+    expect(windows.precheck(root, [create(path, 'a\n')])).toEqual({ code: 'plan.name-too-long', params: { path } });
+  });
+});
+
+describe('apply after a step and the removal of its temporary file throw', () => {
+  // A folder mode keeps neither root nor any process on Windows out.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('throws the step error first', () => {
+    const { root, state } = project({ '.claude/b.md': 'old\n' });
+    const folder = join(root, '.claude');
+    const readOnly = (boundary: Boundary): void => {
+      if (boundary !== 'temp-written') return;
+      chmodSync(folder, 0o500);
+      throw new Error('disk gone');
+    };
+    let thrown: unknown;
+    try {
+      thrown = thrownBy(() =>
+        apply(store(state), request(root, [replace('.claude/b.md', 'old\n', 'new\n')]), readOnly),
+      );
+    } finally {
+      chmodSync(folder, 0o700);
+    }
+    const cause = thrown instanceof StepFailed ? thrown.cause : thrown;
+    expect(cause instanceof AggregateError ? cause.errors : cause).toMatchObject([
+      new Error('disk gone'),
+      { code: 'EACCES' },
+    ]);
   });
 });
 
