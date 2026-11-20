@@ -14,8 +14,8 @@ import { z } from 'zod';
 import {
   definitionBytes,
   definitionFileNames,
+  isListed,
   jsonWithin,
-  listedPath,
   nameMismatch,
   PROJECT_FOLDER,
   SHIPPED_FOLDER,
@@ -146,7 +146,7 @@ export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: b
   const { place, findings } = shipped ? pluginPlace(request, project) : { place: projectPlace(project), findings: [] };
   if (place === null) return stoppedOn(findings);
   const path = `${place.folder}/${name}.json`;
-  const bytes = definitionBytes(place.base, path);
+  const bytes = isListed(place.base, path) ? definitionBytes(place.base, path) : 'absent';
   if (bytes === 'absent')
     return stopped([{ code: 'definition.not-found', params: { name, source: place.source } }], findings);
   if (bytes === 'unreadable') return stopped([notJson(place.shown(path))], findings);
@@ -156,18 +156,14 @@ export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: b
   return { result, findings, refusals: [] };
 };
 
-// The definitions to validate: those named, each of which must exist, at the path its folder lists, else every file of
-// the place.
+// The definitions to validate: those named, each of which its folder must list by that name, else every file of the
+// place.
 export const chosen = (place: Place, names: readonly string[]): { name: string; path: string }[] | Refusal => {
+  const pathOf = (name: string) => `${place.folder}/${name}.json`;
   if (names.length > 0) {
-    const found = [...new Set(names)].map((name) => ({
-      name,
-      path: listedPath(place.base, `${place.folder}/${name}.json`),
-    }));
-    const missing = found.find(({ path }) => path === undefined);
-    if (missing !== undefined)
-      return { code: 'definition.not-found', params: { name: missing.name, source: place.source } };
-    return found.flatMap(({ name, path }) => (path === undefined ? [] : [{ name, path }]));
+    const missing = names.find((name) => !isListed(place.base, pathOf(name)));
+    if (missing !== undefined) return { code: 'definition.not-found', params: { name: missing, source: place.source } };
+    return [...new Set(names)].map((name) => ({ name, path: pathOf(name) }));
   }
   const files = definitionFileNames(place.base, place.folder);
   if (files === 'unreadable') return notJson(place.shown(place.folder));

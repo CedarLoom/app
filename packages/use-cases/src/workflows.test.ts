@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import { definitionFindings } from './definition-checks.ts';
 import { definitionOf, planGeneration } from './generate.ts';
 import { fresh, store as storeIn } from './test-fixtures.ts';
-import { listWorkflows, projectPlace, validateWorkflows } from './workflows.ts';
+import { listWorkflows, projectPlace, showWorkflow, validateWorkflows } from './workflows.ts';
 
 const folder = (): string => realpathSync(fresh());
 
@@ -24,10 +24,14 @@ const setup = () => {
   const store = storeIn(folder());
   const request = { cwd: project, env: {}, home: folder(), pluginRoot: plugin };
   const define = (file: string, text: string) => put(join(project, '.cedarloom', 'workflows', file), text);
-  const refused = (names: string[]) => ({
-    generate: planGeneration(store, { ...request, root: project, names }).refusals,
-    validate: validateWorkflows(request, names, false).result?.definitions.flatMap(({ refusals }) => refusals),
-  });
+  const refused = (names: string[]) => {
+    const validated = validateWorkflows(request, names, false);
+    const each = validated.result?.definitions.flatMap(({ refusals }) => refusals) ?? [];
+    return {
+      generate: planGeneration(store, { ...request, root: project, names }).refusals,
+      validate: [...validated.refusals, ...each],
+    };
+  };
   const doctor = () =>
     definitionFindings({ project, root: plugin, temp: folder(), timeoutMs: 20_000, env: {} }).definitions.map(
       ({ code, params }) => ({ code, params }),
@@ -40,18 +44,23 @@ const mismatch = (file: string, name: string) => ({
   params: { file: `.cedarloom/workflows/${file}`, name },
 });
 
-it('refuses Build.json named build by its listed name in every verb, where the volume folds case', ({ skip }) => {
-  const { project, define, refused, doctor } = setup();
+it('finds Build.json by no other spelling and refuses its name alike in every verb, where the volume folds case', ({
+  skip,
+}) => {
+  const { project, request, define, refused, doctor } = setup();
   define('Build.json', '{ "name": "build" }');
   if (!existsSync(join(project, '.cedarloom', 'workflows', 'build.json'))) skip('this volume tells the cases apart');
-  const both = { generate: [mismatch('Build.json', 'build')], validate: [mismatch('Build.json', 'build')] };
-  // edit and switch read a definition by its name alone.
-  const named = definitionOf(projectPlace(project), { name: 'build', path: '.cedarloom/workflows/build.json' });
-  expect([refused(['build']), refused([]), doctor(), named]).toEqual([
-    both,
-    both,
+  const notFound = { code: 'definition.not-found', params: { name: 'build', source: 'project' } };
+  const named = {
+    run: refused(['build']),
+    // edit and switch read a definition by its name alone.
+    edit: definitionOf(projectPlace(project), { name: 'build', path: '.cedarloom/workflows/build.json' }),
+    show: showWorkflow(request, 'build', false).refusals,
+  };
+  expect([named, refused([]), doctor()]).toEqual([
+    { run: { generate: [notFound], validate: [notFound] }, edit: notFound, show: [notFound] },
+    { generate: [mismatch('Build.json', 'build')], validate: [mismatch('Build.json', 'build')] },
     [mismatch('Build.json', 'build')],
-    mismatch('Build.json', 'build'),
   ]);
 });
 

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { cut, jsonOf } from './generator-run.ts';
 import { nestsBeyond } from './json-nesting.ts';
 import { isUnreachable, reached } from './plugin-folder.ts';
-import { entryAt, errorCode, readFound } from './project-files.ts';
+import { errorCode, readFound } from './project-files.ts';
 import { linkOnWay } from './write-roots.ts';
 
 /** The folder of a project's definitions, relative to the project root. */
@@ -46,22 +46,14 @@ export const definitionFileNames = (base: string, folder: string): string[] | 'u
 };
 
 /**
- * The path of the definition file at a "/"-separated path below base as its folder lists it, for the name check: a
- * case-insensitive volume finds Build.json at build.json. Undefined when no listed file is there; the path itself
- * when the folder is unreadable, for the reader to refuse.
+ * Whether the folder lists the definition file at a "/"-separated path below base by exactly that spelling, so a
+ * case-insensitive volume finds no build.json beside Build.json, as a case-sensitive one does not. True when the folder
+ * is unreadable, for the reader to refuse.
  */
-export const listedPath = (base: string, path: string): string | undefined => {
+export const isListed = (base: string, path: string): boolean => {
   const slash = path.lastIndexOf('/');
-  const [folder, file] = [path.slice(0, slash), path.slice(slash + 1)];
-  const files = definitionFileNames(base, folder);
-  if (files === 'unreadable' || files.includes(file)) return path;
-  const idOf = (name: string) => {
-    const entry = reached(() => entryAt(join(base, folder, name)));
-    return entry === undefined ? undefined : `${entry.dev}:${entry.ino}`;
-  };
-  const wanted = idOf(file);
-  const listed = wanted === undefined ? undefined : files.find((each) => idOf(each) === wanted);
-  return listed === undefined ? undefined : `${folder}/${listed}`;
+  const files = definitionFileNames(base, path.slice(0, slash));
+  return files === 'unreadable' || files.includes(path.slice(slash + 1));
 };
 
 /**
