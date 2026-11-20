@@ -133,6 +133,6 @@ export const frameworkErrors = (_error: FastifyError, req: FastifyRequest, reply
   // These replies skip the hooks, helmet's too, so they get no-store and nosniff here and no CSP (they hold no page).
   void reply
     .code(status)
-    .headers({ 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', connection: 'close' })
+    .headers({ 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
     .send({ code, params: {} });
 };

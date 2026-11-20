@@ -104,12 +104,9 @@ describe('session exchange', () => {
 });
 
 describe('request guard', () => {
-  it.each([
-    ['a request', '/api/session'],
-    ['a malformed URL', '/%zz'],
-  ])('refuses %s with a wrong Host with 421 session.host and closes the connection', async (_case, url) => {
+  it('refuses a wrong Host with 421 session.host and closes the connection', async () => {
     const { app } = await server();
-    const reply = await app.inject({ method: 'GET', url, headers: { host: 'localhost:0' } });
+    const reply = await app.inject({ method: 'GET', url: '/api/session', headers: { host: 'localhost:0' } });
     expect([reply.statusCode, reply.json()]).toEqual([421, { code: 'session.host', params: {} }]);
     expect(reply.headers.connection).toBe('close');
   });
@@ -252,6 +249,12 @@ describe('errors', () => {
     expect([reply.statusCode, reply.json()]).toEqual([404, { code: 'api.not-found', params: {} }]);
   });
 
+  it('refuses a malformed URL with a wrong Host with 421 session.host', async () => {
+    const { app } = await server();
+    const reply = await app.inject({ method: 'GET', url: '/%zz', headers: { host: 'localhost:0' } });
+    expect([reply.statusCode, reply.json()]).toEqual([421, { code: 'session.host', params: {} }]);
+  });
+
   it('answers a body over the limit with 413 api.bad-request', async () => {
     const { app } = await server();
     const reply = await exchange(app, 'x'.repeat(1_048_577));
@@ -271,35 +274,24 @@ describe('errors', () => {
   });
 });
 
-// Everything the server sends on one connection until it closes it.
-const received = async (app: App, request: string): Promise<string> => {
-  await app.listen({ host: '127.0.0.1', port: 0 });
-  const socket = connect(portOf(app.server), '127.0.0.1');
-  socket.end(request);
-  const text = (await socket.setEncoding('utf8').toArray()).join('');
-  await app.close();
-  return text;
-};
-
-// Everything the server sends on one connection until it closes it; `then` goes out once that text holds `after`.
-const conversation = async (
+// Everything the server sends on one connection until it closes it; next[1] goes out once that text holds next[0].
+const received = async (
   app: App,
   request: (self: string) => string,
-  after: string,
-  then: string,
+  next?: [after: string, then: string],
 ): Promise<string> => {
   await app.listen({ host: '127.0.0.1', port: 0 });
   const socket = connect(portOf(app.server), '127.0.0.1').setEncoding('utf8');
-  // The server may have closed before `then` arrives.
+  // The server may have closed before next[1] arrives.
   socket.on('error', () => {});
   socket.write(request(`127.0.0.1:${portOf(app.server)}`));
   let text = '';
-  let sent = false;
+  let follow = next;
   socket.on('data', (chunk: string) => {
     text += chunk;
-    if (sent || !text.includes(after)) return;
-    sent = true;
-    socket.write(then);
+    if (follow === undefined || !text.includes(follow[0])) return;
+    socket.write(follow[1]);
+    follow = undefined;
   });
   await new Promise((resolve) => socket.on('close', resolve));
   await app.close();
@@ -317,8 +309,10 @@ describe('errors at the socket', () => {
       'HTTP/1.1 431 Request Header Fields Too Large',
     ],
     [
+      // A route that reads the body: one that answers first would make the row depend on how the bytes arrive.
       'chunk extensions over 16 KiB',
-      () => `GET / HTTP/1.1\r\nHost: ${HOST}\r\nTransfer-Encoding: chunked\r\n\r\n1;${'a'.repeat(17_000)}\r\n`,
+      (_app: App, self: string) =>
+        `POST /api/session HTTP/1.1\r\nHost: ${self}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n1;${'a'.repeat(17_000)}\r\n`,
       'HTTP/1.1 413 Payload Too Large',
     ],
     [
@@ -333,7 +327,7 @@ describe('errors at the socket', () => {
     ],
   ])('answers %s with its status and api.bad-request', async (_case, request, status) => {
     const { app } = await server();
-    const text = await received(app, request(app));
+    const text = await received(app, (self) => request(app, self));
     expect([text.split('\r\n')[0], text.split('\r\n\r\n')[1]]).toEqual([status, BAD_REQUEST]);
   });
 });
@@ -348,11 +342,10 @@ describe('errors at the socket after an answer', () => {
     'writes nothing after its answer to %s whose chunk extensions run over, and closes',
     async (_case, host, status) => {
       const { app } = await server();
-      const text = await conversation(
+      const text = await received(
         app,
         (self) => `GET /nope HTTP/1.1\r\nHost: ${host(self)}\r\nTransfer-Encoding: chunked\r\n\r\n`,
-        '"params":{}}',
-        extension,
+        ['"params":{}}', extension],
       );
       expect(text.match(/HTTP\/1\.1 \d{3}/g)).toEqual([status]);
     },
@@ -374,17 +367,36 @@ describe('errors at the socket after an answer', () => {
         send();
       });
     });
-    const text = await conversation(
+    const text = await received(
       app,
       (self) => `GET /streams HTTP/1.1\r\nHost: ${self}\r\n\r\nGET /waits HTTP/1.1\r\nHost: ${self}\r\n\r\n`,
-      'partial',
-      'NOT-HTTP\r\n\r\n',
+      ['partial', 'NOT-HTTP\r\n\r\n'],
     );
     expect(text.match(/HTTP\/1\.1 \d{3}/g)).toEqual(['HTTP/1.1 200', 'HTTP/1.1 200', 'HTTP/1.1 400']);
     expect(text).toContain('partial\r\n4\r\nrest\r\n0\r\n\r\nHTTP/1.1 200');
     expect(text).toMatch(
       /\r\n\r\ndoneHTTP\/1\.1 400 Bad Request\r\n.*\r\n\r\n\{"code":"api.bad-request","params":\{\}\}$/s,
     );
+  });
+});
+
+describe('errors at the socket during a response', () => {
+  it('writes no answer into a response whose headers are out and closes the connection at the request timeout', async () => {
+    const { app } = await server();
+    app.get('/streams', (_req, reply) => {
+      reply.hijack();
+      reply.raw.writeHead(200, { 'content-type': 'text/plain' });
+      reply.raw.write('partial');
+    });
+    // The malformed request waits for the response; Node's timeout, raised here, ends the wait.
+    const timeout = Object.assign(new Error('timeout'), { code: 'ERR_HTTP_REQUEST_TIMEOUT' });
+    app.server.once('clientError', (_error, socket) => app.server.emit('clientError', timeout, socket));
+    const text = await received(app, (self) => `GET /streams HTTP/1.1\r\nHost: ${self}\r\n\r\n`, [
+      'partial',
+      'NOT-HTTP\r\n\r\n',
+    ]);
+    expect(text).toContain('partial');
+    expect(text).not.toContain('api.bad-request');
   });
 });
 

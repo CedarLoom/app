@@ -91,7 +91,7 @@ const SOCKET_STATUS: Readonly<Record<string, number>> = {
 // Per socket: the latest response, and those not finished yet in request order (Node writes them one after another).
 const latest = new WeakMap<Socket, ServerResponse>();
 const unfinished = new WeakMap<Socket, Set<ServerResponse>>();
-// Sockets whose answer is written or waits: Node raises the parse error again on every later chunk.
+// Sockets whose answer is written or waits for the responses before it.
 const answering = new WeakSet<Socket>();
 
 const track = (socket: Socket, response: ServerResponse): void => {
@@ -102,19 +102,28 @@ const track = (socket: Socket, response: ServerResponse): void => {
   response.once('finish', done).once('close', done);
 };
 
+const socketAnswer = (code: string | undefined): string => {
+  const status = SOCKET_STATUS[code ?? ''] ?? 400;
+  const body = JSON.stringify(refusal('api.bad-request'));
+  const head = `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}`;
+  const headers = 'Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close';
+  return `${head}\r\n${headers}\r\n\r\n${body}`;
+};
+
 // Node's answers at the socket, before any route (a request timeout, a malformed request), with Node's statuses.
 const clientErrorHandler = (error: Error & { code?: string }, socket: Socket): void => {
-  if (error.code === 'ECONNRESET' || socket.destroyed || answering.has(socket)) return;
+  if (error.code === 'ECONNRESET' || socket.destroyed) return;
+  // Node raises the parse error again on every later chunk; its request timeout ends the wait.
+  if (answering.has(socket)) {
+    if (error.code === 'ERR_HTTP_REQUEST_TIMEOUT') socket.destroy(error);
+    return;
+  }
   answering.add(socket);
   const last = latest.get(socket);
   // An error inside a body belongs to that request; once its response's headers are out, it has its answer.
   const own = last !== undefined && !last.req.complete ? last : undefined;
-  const status = SOCKET_STATUS[error.code ?? ''] ?? 400;
-  const body = JSON.stringify(refusal('api.bad-request'));
-  const head = `HTTP/1.1 ${status} ${STATUS_CODES[status]}\r\nContent-Type: application/json\r\nContent-Length: ${body.length}`;
-  const headers = 'Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close';
   const answer = (): void => {
-    if (socket.writable && own?.headersSent !== true) socket.write(`${head}\r\n${headers}\r\n\r\n${body}`);
+    if (socket.writable && own?.headersSent !== true) socket.write(socketAnswer(error.code));
     socket.destroy(error);
   };
   // Written earlier, the answer would land inside or ahead of the responses before it.
