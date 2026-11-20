@@ -37,11 +37,11 @@ msgstr "{path} is not a UTF-8 text file, or CedarLoom may not read it. CedarLoom
 
 #. js-lingui-explicit-id
 msgid "plan.text-mismatch"
-msgstr "The new text of {path} does not match the plan's hash. The plan was not applied. Make the plan again."
+msgstr "The new text of {path} does not match the plan's hash, so the plan cannot be applied. Make the plan again."
 
 #. js-lingui-explicit-id
 msgid "plan.name-too-long"
-msgstr "The path of {path} leaves no room for the temporary names CedarLoom writes beside it. The plan was not applied. Use shorter names, or a project folder with a shorter path."
+msgstr "The path of {path} leaves no room for the temporary names CedarLoom writes beside it, so the plan cannot be applied. Use shorter names, or a project folder with a shorter path."
 
 #. js-lingui-explicit-id
 msgid "plan.path-nested"

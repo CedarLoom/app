@@ -210,6 +210,12 @@ it.each([[['runs', 'show']], [['undo']]])('checks the project before the run id 
   ]);
 });
 
+it('refuses a malformed run id before it opens the store', () => {
+  const { root, state } = project();
+  expect(ran(['undo', '../r1'], root, { env: { CEDARLOOM_STATE_DIR: state } }).code).toBe(3);
+  expect(readdirSync(state)).toEqual([]);
+});
+
 it('refuses a surplus word also with --help, exit 2', () => {
   const { root } = project();
   expect(ran(['doctor', 'extra', '--help'], root).code).toBe(2);

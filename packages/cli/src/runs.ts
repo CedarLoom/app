@@ -1,14 +1,16 @@
-import { type Run, RunId } from '@cedarloom/core';
+import { type Refusal, type Run, RunId } from '@cedarloom/core';
 import { openRunView, type RunView } from '@cedarloom/use-cases';
 import type { Io } from './io.ts';
 import { locate } from './locate.ts';
 import { message } from './message.ts';
 import { columns, type Outcome, refused } from './output.ts';
 
-// Reads the store of the working directory's project; a missing store reads as one with no runs.
-const read = (io: Io, reader: (view: RunView) => Outcome): Outcome => {
+// Reads the store of the working directory's project; a missing store reads as one with no runs. `stop` refuses once
+// the project is found, before the store opens.
+const read = (io: Io, reader: (view: RunView) => Outcome, stop?: Refusal): Outcome => {
   const place = locate(io);
   if ('refusal' in place) return refused(place.refusal);
+  if (stop !== undefined) return refused(stop);
   const view = openRunView(place.dir);
   if (!view.ok) return refused(view.refusal);
   try {
@@ -44,13 +46,16 @@ const runText = (run: Run): string => {
 
 /** cedarloom runs show <run>: a run with its steps. */
 export const runsShow = (io: Io, id: string): Outcome => {
-  const notFound = refused({ code: 'run.not-found', params: { run: id } });
-  return read(io, (view) => {
-    // An id outside the run id form names no run, and is never looked up; the project is checked first.
-    if (!RunId.safeParse(id).success) return notFound;
-    const run = view.run(id);
-    if (!run.ok) return refused(run.refusal);
-    if (run.value === undefined) return notFound;
-    return { result: run.value, findings: [], refusals: [], text: runText(run.value) };
-  });
+  const notFound: Refusal = { code: 'run.not-found', params: { run: id } };
+  return read(
+    io,
+    (view) => {
+      const run = view.run(id);
+      if (!run.ok) return refused(run.refusal);
+      if (run.value === undefined) return refused(notFound);
+      return { result: run.value, findings: [], refusals: [], text: runText(run.value) };
+    },
+    // An id outside the run id form names no run, and never reaches the store.
+    RunId.safeParse(id).success ? undefined : notFound,
+  );
 };

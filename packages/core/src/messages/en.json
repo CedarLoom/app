@@ -122,7 +122,7 @@
     "plan.name-too-long": [
       "The path of ",
       ["path"],
-      " leaves no room for the temporary names CedarLoom writes beside it. The plan was not applied. Use shorter names, or a project folder with a shorter path."
+      " leaves no room for the temporary names CedarLoom writes beside it, so the plan cannot be applied. Use shorter names, or a project folder with a shorter path."
     ],
     "plan.not-text": [
       ["path"],
@@ -148,7 +148,7 @@
     "plan.text-mismatch": [
       "The new text of ",
       ["path"],
-      " does not match the plan's hash. The plan was not applied. Make the plan again."
+      " does not match the plan's hash, so the plan cannot be applied. Make the plan again."
     ],
     "plugin.disabled": [
       [

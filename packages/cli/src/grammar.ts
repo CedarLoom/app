@@ -179,7 +179,7 @@ const isVersion = (argv: readonly string[]): boolean =>
 // --version or -V beside another flag and no word; with a word, the command's own flags decide.
 const versionConflict = ({ words, flags }: Line): Refusal | undefined => {
   const version = flags.find(({ name }) => name === 'version');
-  const other = flags.find((flag) => flag !== version);
+  const other = flags.find(({ name }) => name !== 'version');
   if (words.length > 0 || version === undefined || other === undefined) return undefined;
   return { code: 'cli.flag-conflict', params: { flags: `${version.rawName}, ${other.rawName}` } };
 };
