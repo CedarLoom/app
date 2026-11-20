@@ -298,6 +298,8 @@ describe('UI files', () => {
     ['a link out of the folder', '/assets/out/secret.txt'],
     ['an encoded parent path to a UI file outside assets', '/assets/..%2findex.html'],
     ['a link to a UI file outside assets', '/assets/up/index.html'],
+    // Without its drive on Windows: the same folder on the root's drive.
+    ['an absolute path', `/assets/${encodeURIComponent(join(built, 'assets', 'app.js').replace(/^[A-Za-z]:/, ''))}`],
     ['a folder', '/assets/'],
     ['a missing file', '/assets/nope.js'],
     ['a name longer than a file system allows', `/assets/${'a'.repeat(300)}.js`],

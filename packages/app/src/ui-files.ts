@@ -1,5 +1,5 @@
 import { readFile, realpath } from 'node:fs/promises';
-import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 // The file types a UI build emits; any other file goes out as bytes, and nosniff keeps the browser from guessing.
@@ -30,7 +30,8 @@ const readInside = async (root: string, scope: string, path: string): Promise<Bu
     const [top, base, real] = await Promise.all([
       realpath(root),
       realpath(resolve(root, scope)),
-      realpath(resolve(root, scope, path)),
+      // Joined first: as its own argument, an absolute path (a UNC path on Windows) would replace the folders before it.
+      realpath(resolve(root, join(scope, path))),
     ]);
     if (!inside(top, real) || !inside(base, real)) return null;
     return await readFile(real);

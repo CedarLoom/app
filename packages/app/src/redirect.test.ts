@@ -69,22 +69,29 @@ describe('sweepRedirects', () => {
     ]);
   });
 
+  // A junction needs no privilege on Windows; other platforms ignore the type.
+  it('leaves a link of a redirect name and the folder it points to', () => {
+    const state = parent();
+    const target = join(dirname(state), 'target');
+    folder(target, { 'cedarloom-app.html': 'page' }, 1000);
+    folder(state, {}, 3000);
+    symlinkSync(target, join(state, 'open-Lnk123'), 'junction');
+    sweepRedirects(state, 2_000_000);
+    expect([readdirSync(state), readdirSync(target)]).toEqual([['open-Lnk123'], ['cedarloom-app.html']]);
+  });
+
   it.skipIf(process.platform === 'win32')(
-    'leaves a link of a redirect name, a folder whose page is a link, and what they point to (links need a privilege on Windows)',
+    'leaves a folder whose page is a link, and the file it points to (file links need a privilege on Windows)',
     () => {
       const state = parent();
-      const target = join(dirname(state), 'target');
-      folder(target, { 'cedarloom-app.html': 'page' }, 1000);
+      const target = join(dirname(state), 'target.html');
+      writeFileSync(target, 'page');
       folder(state, {}, 3000);
-      symlinkSync(target, join(state, 'open-Lnk123'));
       mkdirSync(join(state, 'open-Pgl123'));
-      symlinkSync(join(target, 'cedarloom-app.html'), join(state, 'open-Pgl123', 'cedarloom-app.html'));
+      symlinkSync(target, join(state, 'open-Pgl123', 'cedarloom-app.html'));
       utimesSync(join(state, 'open-Pgl123'), 1000, 1000);
       sweepRedirects(state, 2_000_000);
-      expect([readdirSync(state).toSorted(), readdirSync(target)]).toEqual([
-        ['open-Lnk123', 'open-Pgl123'],
-        ['cedarloom-app.html'],
-      ]);
+      expect([readdirSync(state), readFileSync(target, 'utf8')]).toEqual([['open-Pgl123'], 'page']);
     },
   );
 

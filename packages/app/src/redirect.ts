@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** A page only its user can read that refreshes to the session URL, so the opener's arguments name a file, not the token. */
@@ -63,7 +63,10 @@ export const sweepRedirects = (parent: string, before: number): void => {
   for (const name of names.filter((entry) => FOLDER.test(entry))) {
     const folder = join(parent, name);
     try {
-      if (redirectFolder(folder, before)) rmSync(folder, { recursive: true, force: true });
+      if (!redirectFolder(folder, before)) continue;
+      // No recursive removal: rmdir fails on a folder that got another entry or became a link since the check.
+      rmSync(join(folder, PAGE), { force: true });
+      rmdirSync(folder);
     } catch (error) {
       // Another start swept it first.
       if (!missing(error)) throw error;
