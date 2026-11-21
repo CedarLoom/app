@@ -65,12 +65,6 @@
   },
   "overrides": [
     {
-      "files": ["packages/ui/src/index.ts"],
-      "rules": {
-        "unicorn/no-empty-file": "off"
-      }
-    },
-    {
       "files": ["packages/core/**"],
       "rules": {
         "no-restricted-imports": [
@@ -177,6 +171,35 @@
                   "**/cli/**"
                 ],
                 "message": "The UI imports core only and reaches the app's server over HTTP."
+              }
+            ]
+          }
+        ],
+        "import/no-unassigned-import": [
+          "error",
+          {
+            "allow": ["**/*.css"]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/ui/e2e/**", "packages/ui/*.config.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@cedarloom/use-cases",
+                  "@cedarloom/app",
+                  "@cedarloom/cli",
+                  "**/use-cases/**",
+                  "**/app/**",
+                  "**/cli/**"
+                ],
+                "message": "The UI's tests and build run on Node and reach the app as a process, never as an import."
               }
             ]
           }

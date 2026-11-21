@@ -7,7 +7,8 @@
     "**/package-lock.json",
     "**/LICENSES/**",
     "**/package.json",
-    "packages/app/openapi.json"
+    "packages/app/openapi.json",
+    "packages/ui/src/openapi.d.ts"
   ],
   "reporters": ["console"],
   "exitCode": 1

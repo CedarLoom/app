@@ -5,10 +5,10 @@ pre-commit:
   parallel: true
   jobs:
     - name: format
-      glob: "*.{js,ts,json,yml,yaml,md}"
+      glob: "*.{js,ts,tsx,json,yml,yaml,md}"
       run: pnpm exec biome ci --no-errors-on-unmatched {staged_files}
     - name: lint
-      glob: "*.{js,ts}"
+      glob: "*.{js,ts,tsx}"
       run: pnpm exec oxlint {staged_files}
     # The pattern of forbidden_characters in scripts/check.sh.
     - name: characters
@@ -26,5 +26,5 @@ pre-push:
     - name: typecheck
       run: pnpm run typecheck
     - name: test
-      glob: "*.{js,ts}"
+      glob: "*.{js,ts,tsx}"
       run: pnpm exec vitest related --run {push_files}

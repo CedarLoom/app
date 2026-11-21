@@ -29,7 +29,7 @@ forbidden_characters() {
 
 # Each compiled catalog and its generated types match en.po; the compile refuses a message id without a text.
 messages_fresh() {
-  for package in core cli app; do
+  for package in core cli app ui; do
     generated="packages/$package/src/messages/en.json packages/$package/src/messages/catalog.ts"
     before=$(cat $generated | cksum)
     pnpm --filter "@cedarloom/$package" run messages
@@ -40,13 +40,15 @@ messages_fresh() {
   done
 }
 
-# The committed OpenAPI document matches the server's routes.
+# The committed OpenAPI document matches the server's routes, and the UI's client types match the document.
 openapi_fresh() {
   document=packages/app/openapi.json
-  before=$(cksum < $document)
+  client=packages/ui/src/openapi.d.ts
+  before=$(cat $document $client | cksum)
   pnpm --filter @cedarloom/app run openapi
-  if [ "$(cksum < $document)" != "$before" ]; then
-    echo "check: $document was stale; run pnpm --filter @cedarloom/app run openapi and commit the result" >&2
+  pnpm --filter @cedarloom/ui run client
+  if [ "$(cat $document $client | cksum)" != "$before" ]; then
+    echo "check: $document or $client was stale; run pnpm --filter @cedarloom/app run openapi, then pnpm --filter @cedarloom/ui run client, and commit the result" >&2
     return 1
   fi
 }
