@@ -73,10 +73,27 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
 
+  # The UI's Playwright and axe tests in Chromium and Firefox, against the built app.
+  e2e:
+    if: github.repository_owner == 'CedarLoom'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # The browser builds of the installed @playwright/test, with the system libraries they need.
+      - run: pnpm --filter @cedarloom/ui exec playwright install --with-deps chromium firefox
+      - run: pnpm run build
+      - run: pnpm --filter @cedarloom/ui run e2e
+
   # Required check: passes when all parallel jobs pass.
   checks:
     if: always() && github.repository_owner == 'CedarLoom'
-    needs: [repository, platforms]
+    needs: [repository, platforms, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
