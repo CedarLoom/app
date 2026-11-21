@@ -24,6 +24,7 @@ const Run = ({ client, id, back }: { client: Api; id: string; back: () => void }
               path,
               text('ui.operation.status', { status }),
             ])}
+            empty={text('ui.run.empty')}
           />
         </>
       )}

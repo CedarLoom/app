@@ -15,12 +15,14 @@ export const MESSAGE_IDS = [
   'ui.loading',
   'ui.operation.kind',
   'ui.operation.status',
+  'ui.run.empty',
   'ui.run.status',
   'ui.runs.back',
   'ui.runs.empty',
   'ui.title',
   'ui.unreachable',
   'ui.view',
+  'ui.workflow.source',
 ] as const;
 
 /** The ICU arguments of each message, by id: the parameter names of its code. */
@@ -35,10 +37,12 @@ export interface MessagePlaceholders {
   'ui.loading': never;
   'ui.operation.kind': 'kind';
   'ui.operation.status': 'status';
+  'ui.run.empty': never;
   'ui.run.status': 'status';
   'ui.runs.back': never;
   'ui.runs.empty': never;
   'ui.title': never;
   'ui.unreachable': never;
   'ui.view': 'view';
+  'ui.workflow.source': 'source';
 }

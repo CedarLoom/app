@@ -10,8 +10,8 @@ import { AxeBuilder } from '@axe-core/playwright';
 import { expect, type Page, test } from '@playwright/test';
 
 // The built UI, served by cedarloom-app from packages/app/dist/ui (`pnpm run build`), in an empty project.
-let root: string;
-let server: ChildProcessByStdio<null, Readable, null>;
+let root: string | undefined;
+let server: ChildProcessByStdio<null, Readable, null> | undefined;
 let url: string;
 
 test.beforeAll(async () => {
@@ -20,7 +20,8 @@ test.beforeAll(async () => {
   const bin = fileURLToPath(new URL('../../app/bin/cedarloom-app.js', import.meta.url));
   server = spawn(process.execPath, [bin, '--no-open', '--json', '--port', '0'], {
     cwd: root,
-    env: { ...process.env, CEDARLOOM_STATE_DIR: join(root, '.state') },
+    // HOME too, so no plugin installed on the machine shows in the views.
+    env: { ...process.env, CEDARLOOM_STATE_DIR: join(root, '.state'), HOME: root, USERPROFILE: root },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   // A server that exits before its first line fails the run instead of leaving it waiting.
@@ -31,10 +32,16 @@ test.beforeAll(async () => {
   url = JSON.parse(String(line)).result.url;
 });
 
+// beforeAll may have failed before the spawn, or the server may have exited already.
 test.afterAll(async () => {
-  server.kill();
-  await once(server, 'exit');
-  rmSync(root, { recursive: true, force: true });
+  try {
+    if (server?.exitCode === null && server.signalCode === null) {
+      server.kill();
+      await once(server, 'exit');
+    }
+  } finally {
+    if (root !== undefined) rmSync(root, { recursive: true, force: true });
+  }
 });
 
 const accessible = async (page: Page): Promise<void> => {

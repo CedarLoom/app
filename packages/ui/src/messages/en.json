@@ -69,6 +69,7 @@
         }
       ]
     ],
+    "ui.run.empty": ["This run has no operations."],
     "ui.run.status": [
       [
         "status",
@@ -88,6 +89,9 @@
     "ui.unreachable": ["The CedarLoom app does not answer. Start cedarloom-app again and open the link it prints."],
     "ui.view": [
       ["view", "select", { "doctor": ["Doctor"], "runs": ["Runs"], "definitions": ["Workflows"], "other": [["view"]] }]
+    ],
+    "ui.workflow.source": [
+      ["source", "select", { "shipped": ["Plugin"], "project": ["Project"], "other": [["source"]] }]
     ]
   }
 }

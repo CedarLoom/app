@@ -12,7 +12,12 @@ export const Definitions = ({ client }: { client: Api }): ReactNode => (
       <WithFindings findings={findings}>
         <Listing
           columns={['name', 'source', 'description']}
-          rows={workflows.map(({ name, source, description }) => [`${source}/${name}`, name, source, description])}
+          rows={workflows.map(({ name, source, description }) => [
+            `${source}/${name}`,
+            name,
+            text('ui.workflow.source', { source }),
+            description,
+          ])}
           empty={text('ui.definitions.empty')}
         />
       </WithFindings>

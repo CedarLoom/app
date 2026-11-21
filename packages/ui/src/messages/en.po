@@ -40,6 +40,10 @@ msgid "ui.run.status"
 msgstr "{status, select, running {Running} done {Done} failed {Failed} interrupted {Interrupted} other {{status}}}"
 
 #. js-lingui-explicit-id
+msgid "ui.run.empty"
+msgstr "This run has no operations."
+
+#. js-lingui-explicit-id
 msgid "ui.operation.kind"
 msgstr "{kind, select, create {Create} replace {Replace} delete {Delete} other {{kind}}}"
 
@@ -62,6 +66,10 @@ msgstr "All runs"
 #. js-lingui-explicit-id
 msgid "ui.definitions.empty"
 msgstr "No workflow definitions."
+
+#. js-lingui-explicit-id
+msgid "ui.workflow.source"
+msgstr "{source, select, shipped {Plugin} project {Project} other {{source}}}"
 
 #. js-lingui-explicit-id
 msgid "ui.findings"
