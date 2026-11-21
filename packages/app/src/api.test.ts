@@ -54,7 +54,7 @@ const served = async (begun: (notes: string) => void = () => undefined) => {
   const app = await buildServer({ session, log: () => undefined, project, ui: join(root, 'ui') });
   onTestFinished(() => app.close());
   await app.inject({ method: 'POST', url: '/api/session', headers: { host: HOST }, payload: { token: 'secret-0' } });
-  return { app, notes, plugins, storeDir };
+  return { app, notes, plugins, root, storeDir };
 };
 
 type App = Awaited<ReturnType<typeof served>>['app'];
@@ -217,5 +217,60 @@ describe('undo apply refusals', () => {
       409,
       { code: 'plan.file-changed', params: { path: '.claude/notes.md' }, run: 'u1' },
     ]);
+  });
+});
+
+describe('workflow definitions', () => {
+  const NOTES_FLOW = '{"name":"notes","description":"Notes"}\n';
+  const NOTES_HASH = 'e7ec7a83299afb4a24fe4d0d71d8e2aa2c3b883f6141292aa8b303e9a78b713a';
+  const withNotes = async () => {
+    const project = await served();
+    mkdirSync(join(project.root, '.cedarloom', 'workflows'), { recursive: true });
+    writeFileSync(join(project.root, '.cedarloom', 'workflows', 'notes.json'), NOTES_FLOW);
+    return project;
+  };
+
+  it('answers GET /api/workflows with the project definitions and the plugin finding', async () => {
+    const { app, plugins } = await withNotes();
+    expect(answer(await get(app, '/api/workflows'))).toEqual([
+      200,
+      {
+        workflows: [
+          { name: 'notes', source: 'project', path: '.cedarloom/workflows/notes.json', description: 'Notes' },
+        ],
+        findings: [{ code: 'plugin.not-found', severity: 'error', params: { pluginsRoot: plugins } }],
+      },
+    ]);
+  });
+
+  it('answers GET /api/workflows/project/{name} with the definition and the hash of its file', async () => {
+    const { app } = await withNotes();
+    expect(answer(await get(app, '/api/workflows/project/notes'))).toEqual([
+      200,
+      {
+        name: 'notes',
+        source: 'project',
+        path: '.cedarloom/workflows/notes.json',
+        hash: NOTES_HASH,
+        definition: { name: 'notes', description: 'Notes' },
+      },
+    ]);
+  });
+
+  it('answers an unknown definition with 404 definition.not-found', async () => {
+    const { app } = await withNotes();
+    expect(answer(await get(app, '/api/workflows/project/other'))).toEqual([
+      404,
+      { code: 'definition.not-found', params: { name: 'other', source: 'project' } },
+    ]);
+  });
+
+  it.each([
+    ['/api/workflows/project/..%2F..%2Fx', 'name'],
+    ['/api/workflows/project/con', 'name'],
+    ['/api/workflows/..%2F..%2Fx/notes', 'source'],
+  ])('refuses GET %s with 400 api.bad-fields naming %s', async (url, field) => {
+    const { app } = await withNotes();
+    expect(answer(await get(app, url))).toEqual([400, { code: 'api.bad-fields', params: { issues: [field] } }]);
   });
 });

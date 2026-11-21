@@ -3,18 +3,19 @@ import { JsonValue } from './canonical-json.ts';
 import { Refusal } from './finding.ts';
 import { Hash } from './plan.ts';
 
-// Device names Windows reserves in every folder, also with an extension.
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
 // 255 bytes less 89: the aside `.<name>-run.js.cedarloom-<64-character run id>-<position>.old` at a one-digit position
 // (use-cases name-taken.ts, project-files.ts asidePath, apply.ts nameProblem); precheck refuses longer positions.
 export const LONGEST_NAME = 166;
 
-/** A workflow name: it becomes a file and a folder name, so it is checked before it reaches a path. */
+/**
+ * A workflow name: it becomes a file and a folder name, so it is checked before it reaches a path. No device name
+ * Windows reserves in every folder; the form has no extension and no capitals, so the whole name is compared. One
+ * pattern, not a refinement, so the OpenAPI document states the whole rule.
+ */
 export const WorkflowName = z
   .string()
-  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
-  .max(LONGEST_NAME)
-  .refine((name) => !RESERVED.test(name));
+  .regex(/^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$)[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  .max(LONGEST_NAME);
 
 /** Where a definition comes from: the plugin's own, read only, or the project's in .cedarloom/workflows. */
 export const WorkflowSource = z.enum(['shipped', 'project']);
