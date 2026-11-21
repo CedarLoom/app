@@ -55,7 +55,7 @@ it('finds Build.json by no other spelling and refuses its name alike in every ve
     run: refused(['build']),
     // edit and switch read a definition by its name alone.
     edit: definitionOf(projectPlace(project), { name: 'build', path: '.cedarloom/workflows/build.json' }),
-    show: showWorkflow(request, 'build', false).refusals,
+    show: showWorkflow({ ...request, root: project }, 'build', false).refusals,
   };
   expect([named, refused([]), doctor()]).toEqual([
     { run: { generate: [notFound], validate: [notFound] }, edit: notFound, show: [notFound] },
@@ -87,9 +87,9 @@ it.each([
 });
 
 it('lists a definition named outside the name form with a workflow.name-invalid warning', () => {
-  const { define, request } = setup();
+  const { project, define, request } = setup();
   define('Release_Flow.json', '{ "name": "Release_Flow" }');
-  const listed = listWorkflows(request);
+  const listed = listWorkflows({ ...request, root: project });
   expect(listed.result).toMatchObject({ workflows: [{ name: 'Release_Flow', source: 'project' }] });
   expect(listed.findings.filter(({ code }) => code.startsWith('workflow.'))).toEqual([
     { code: 'workflow.name-invalid', severity: 'warning', params: { name: 'Release_Flow', longest: 166 } },

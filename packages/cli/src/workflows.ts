@@ -5,10 +5,10 @@ import {
   type WorkflowShown,
   type WorkflowValidation,
 } from '@cedarloom/core';
-import { listWorkflows, showWorkflow, validateWorkflows } from '@cedarloom/use-cases';
+import { listWorkflows, projectRoot, showWorkflow, validateWorkflows } from '@cedarloom/use-cases';
 import type { Io } from './io.ts';
 import { message } from './message.ts';
-import { columns, type Outcome } from './output.ts';
+import { columns, type Outcome, refused } from './output.ts';
 
 const fieldOf = (value: JsonValue | undefined, key: string): JsonValue | undefined =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value[key] : undefined;
@@ -59,7 +59,9 @@ const validationText = ({ definitions }: WorkflowValidation): string => {
 
 /** cedarloom workflows list: the shipped definitions and the project's own. */
 export const workflowsList = (io: Io, pluginRoot: string | null): Outcome => {
-  const { result, findings, refusals } = listWorkflows({ ...io, pluginRoot });
+  const root = projectRoot(io.cwd);
+  if (typeof root !== 'string') return refused(root);
+  const { result, findings, refusals } = listWorkflows({ ...io, pluginRoot, root });
   if (result === null) return { result, findings, refusals, text: '' };
   const rows = result.workflows.map(({ name, source, path, description }) => [name, source, path, description ?? '']);
   return {
@@ -72,7 +74,9 @@ export const workflowsList = (io: Io, pluginRoot: string | null): Outcome => {
 
 /** cedarloom workflows show <name>: a project definition, or with --shipped the plugin's. */
 export const workflowsShow = (io: Io, name: string, shipped: boolean, pluginRoot: string | null): Outcome => {
-  const { result, findings, refusals } = showWorkflow({ ...io, pluginRoot }, name, shipped);
+  const root = projectRoot(io.cwd);
+  if (typeof root !== 'string') return refused(root);
+  const { result, findings, refusals } = showWorkflow({ ...io, pluginRoot, root }, name, shipped);
   return { result, findings, refusals, text: result === null ? '' : shownText(result) };
 };
 

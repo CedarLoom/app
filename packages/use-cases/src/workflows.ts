@@ -124,9 +124,8 @@ const listed = (place: Place): { workflows: WorkflowList['workflows']; findings:
 };
 
 /** The shipped definitions of the located plugin and the project's own; without a usable plugin, the project's alone. */
-export const listWorkflows = (request: WorkflowsRequest): Answer<WorkflowList> => {
-  const project = projectRoot(request.cwd);
-  if (typeof project !== 'string') return stopped([project]);
+export const listWorkflows = (request: WorkflowsRequest & { root: string }): Answer<WorkflowList> => {
+  const project = request.root;
   const plugin = pluginPlace(request, project);
   const shipped = plugin.place === null ? { workflows: [], findings: [] } : listed(plugin.place);
   const own = listed(projectPlace(project));
@@ -138,11 +137,14 @@ export const listWorkflows = (request: WorkflowsRequest): Answer<WorkflowList> =
 };
 
 /** One definition with its hash, read only. */
-export const showWorkflow = (request: WorkflowsRequest, name: string, shipped: boolean): Answer<WorkflowShown> => {
+export const showWorkflow = (
+  request: WorkflowsRequest & { root: string },
+  name: string,
+  shipped: boolean,
+): Answer<WorkflowShown> => {
   const invalid = invalidName([name]);
   if (invalid !== undefined) return stopped([invalid]);
-  const project = projectRoot(request.cwd);
-  if (typeof project !== 'string') return stopped([project]);
+  const project = request.root;
   // A project definition needs no plugin, so the plugin is located only for a shipped one.
   const { place, findings } = shipped ? pluginPlace(request, project) : { place: projectPlace(project), findings: [] };
   if (place === null) return stoppedOn(findings);
