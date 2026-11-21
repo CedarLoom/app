@@ -36,7 +36,13 @@
       ]
     ],
     "ui.doctor.no-plugin": ["No cl-workflow plugin was found."],
-    "ui.doctor.plugin": [["id"], " ", ["version"], " from ", ["root"]],
+    "ui.doctor.plugin": [
+      [
+        "version",
+        "select",
+        { "null": [["id"], " from ", ["root"]], "other": [["id"], " ", ["version"], " from ", ["root"]] }
+      ]
+    ],
     "ui.doctor.status": [
       [
         "status",
@@ -46,6 +52,23 @@
     ],
     "ui.findings": ["Findings"],
     "ui.loading": ["Loading"],
+    "ui.operation.kind": [
+      ["kind", "select", { "create": ["Create"], "replace": ["Replace"], "delete": ["Delete"], "other": [["kind"]] }]
+    ],
+    "ui.operation.status": [
+      [
+        "status",
+        "select",
+        {
+          "pending": ["Pending"],
+          "done": ["Done"],
+          "failed": ["Failed"],
+          "settled": ["Settled"],
+          "untouched": ["Untouched"],
+          "other": [["status"]]
+        }
+      ]
+    ],
     "ui.run.status": [
       [
         "status",
@@ -62,6 +85,7 @@
     "ui.runs.back": ["All runs"],
     "ui.runs.empty": ["No runs yet."],
     "ui.title": ["CedarLoom"],
+    "ui.unreachable": ["The CedarLoom app does not answer. Start cedarloom-app again and open the link it prints."],
     "ui.view": [
       ["view", "select", { "doctor": ["Doctor"], "runs": ["Runs"], "definitions": ["Workflows"], "other": [["view"]] }]
     ]

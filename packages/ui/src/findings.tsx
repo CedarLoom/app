@@ -19,8 +19,9 @@ export const WithFindings = ({
           {text('ui.findings')}
         </Title>
         <List>
-          {findings.map((finding) => (
-            <List.Item key={JSON.stringify(finding)}>{text(finding.code, finding.params)}</List.Item>
+          {findings.map((finding, index) => (
+            // Findings carry no id, and an answer may hold the same finding twice.
+            <List.Item key={index}>{text(finding.code, finding.params)}</List.Item>
           ))}
         </List>
       </>

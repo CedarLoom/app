@@ -25,9 +25,8 @@ const theme = createTheme({
   primaryShade: 7,
 });
 
-const opened = await openSession(api(), location, history);
 createRoot(document.body.appendChild(document.createElement('div'))).render(
   <MantineProvider theme={theme}>
-    <App opened={opened} />
+    <App session={() => openSession(api(), location, history)} />
   </MantineProvider>,
 );

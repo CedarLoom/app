@@ -17,7 +17,13 @@ const Run = ({ client, id, back }: { client: Api; id: string; back: () => void }
           <Text>{text('ui.run.status', { status: run.status })}</Text>
           <Listing
             columns={['operation', 'path', 'status']}
-            rows={run.operations.map(({ kind, path, status }) => [path, kind, path, status])}
+            rows={run.operations.map(({ kind, path, status }, index) => [
+              // A run may hold more than one operation on a path.
+              String(index),
+              text('ui.operation.kind', { kind }),
+              path,
+              text('ui.operation.status', { status }),
+            ])}
           />
         </>
       )}

@@ -13,10 +13,13 @@ export const MESSAGE_IDS = [
   'ui.doctor.status',
   'ui.findings',
   'ui.loading',
+  'ui.operation.kind',
+  'ui.operation.status',
   'ui.run.status',
   'ui.runs.back',
   'ui.runs.empty',
   'ui.title',
+  'ui.unreachable',
   'ui.view',
 ] as const;
 
@@ -30,9 +33,12 @@ export interface MessagePlaceholders {
   'ui.doctor.status': 'status';
   'ui.findings': never;
   'ui.loading': never;
+  'ui.operation.kind': 'kind';
+  'ui.operation.status': 'status';
   'ui.run.status': 'status';
   'ui.runs.back': never;
   'ui.runs.empty': never;
   'ui.title': never;
+  'ui.unreachable': never;
   'ui.view': 'view';
 }

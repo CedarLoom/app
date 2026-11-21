@@ -25,7 +25,7 @@ msgstr "{status, select, pass {Passed} warn {Warning} fail {Failed} skipped {Ski
 
 #. js-lingui-explicit-id
 msgid "ui.doctor.plugin"
-msgstr "{id} {version} from {root}"
+msgstr "{version, select, null {{id} from {root}} other {{id} {version} from {root}}}"
 
 #. js-lingui-explicit-id
 msgid "ui.doctor.no-plugin"
@@ -38,6 +38,18 @@ msgstr "{column, select, check {Check} status {Status} run {Run} action {Action}
 #. js-lingui-explicit-id
 msgid "ui.run.status"
 msgstr "{status, select, running {Running} done {Done} failed {Failed} interrupted {Interrupted} other {{status}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.operation.kind"
+msgstr "{kind, select, create {Create} replace {Replace} delete {Delete} other {{kind}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.operation.status"
+msgstr "{status, select, pending {Pending} done {Done} failed {Failed} settled {Settled} untouched {Untouched} other {{status}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.unreachable"
+msgstr "The CedarLoom app does not answer. Start cedarloom-app again and open the link it prints."
 
 #. js-lingui-explicit-id
 msgid "ui.runs.empty"

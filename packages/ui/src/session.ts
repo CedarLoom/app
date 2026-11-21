@@ -1,23 +1,24 @@
-import type { Refusal } from '@cedarloom/core';
 import type { Api } from './api.ts';
-
-export type Opened = { csrf: string } | { refusal: Refusal };
+import type { Answer } from './load.tsx';
 
 /**
  * Opens the browser session: a `#t=` fragment holds the one-time token printed by cedarloom-app, which leaves the
- * address bar and history before it is exchanged for the session cookie; without one, the cookie set before is asked.
- * No other part of the address is read.
+ * address bar and history before it is exchanged for the session cookie; without one, or when the token is spent, the
+ * cookie set before is asked. No other part of the address is read.
  */
-export const openSession = async (client: Api, location: Location, history: History): Promise<Opened> => {
+export const openSession = async (
+  client: Api,
+  location: Location,
+  history: History,
+): Promise<Answer<{ csrf: string }>> => {
   const { hash } = location;
-  if (hash.startsWith('#t=')) {
-    const url = new URL(location.href);
-    url.hash = '';
-    history.replaceState(null, '', url);
-  }
-  const { data, error } = hash.startsWith('#t=')
-    ? await client.POST('/api/session', { body: { token: hash.slice('#t='.length) } })
-    : await client.GET('/api/session');
-  if (data !== undefined) return { csrf: data.csrf };
-  return { refusal: error };
+  if (!hash.startsWith('#t=')) return client.GET('/api/session');
+  const url = new URL(location.href);
+  url.hash = '';
+  history.replaceState(null, '', url);
+  const exchanged = await client.POST('/api/session', { body: { token: hash.slice('#t='.length) } });
+  if (exchanged.error === undefined) return exchanged;
+  // The printed link opened a second time carries a spent token, while the cookie of its first opening still holds.
+  const held = await client.GET('/api/session');
+  return held.error === undefined ? held : exchanged;
 };
