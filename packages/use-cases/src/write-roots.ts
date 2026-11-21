@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { isReservedName } from '@cedarloom/core';
 import { entryAt, errorCode } from './project-files.ts';
 
 // Windows ignores trailing dots and spaces in a name and compares names without case, so ".GIT." is ".git" there, and
@@ -17,9 +18,14 @@ export const inWriteRoots = (path: string): boolean => {
   );
 };
 
-/** Whether a path holds none of the characters Windows refuses in a name: `<>"|?*` and the control characters. */
+/**
+ * Whether each name of a path is one Windows keeps as written: none of `<>"|?*` and the control characters, no trailing
+ * dot or space, which Windows drops, and no reserved device name.
+ */
 export const isPortable = (path: string): boolean =>
-  !/[<>"|?*]/.test(path) && !path.split('').some((unit) => unit < ' ');
+  !/[<>"|?*]/.test(path) &&
+  !path.split('').some((unit) => unit < ' ') &&
+  path.split('/').every((part) => !/[. ]$/.test(part) && !isReservedName(part));
 
 /** Whether a file system call failed as one the app may not make: EACCES, or EPERM, as Windows reports a denied access. */
 export const isDenied = (error: unknown): boolean => {

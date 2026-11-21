@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  linkSync,
   mkdirSync,
   readdirSync,
   renameSync,
@@ -20,6 +21,7 @@ import {
   failAt,
   foldsCase,
   fresh,
+  hash,
   listing,
   project,
   recovered,
@@ -36,6 +38,7 @@ import {
   thrownBy,
   undone,
 } from './test-fixtures.ts';
+import type { RunStore } from './store.ts';
 import { undo } from './undo.ts';
 
 describe('undo stops a run', () => {
@@ -318,6 +321,19 @@ describe('undo of a replaced undo on two files', () => {
   });
 });
 
+// A create step as the store records it.
+const created = (path: string, after: string) =>
+  ({ kind: 'create', path, beforeHash: null, afterHash: hash(after), entries: null }) as const;
+
+// A done run of create steps, as the store records it, whatever the files hold.
+const recorded = (held: RunStore, root: string, steps: [string, string][]): void => {
+  const operations = steps.map(([path, after]) => created(path, after));
+  const begun = held.begin({ ...request(root, []).run, planHash: 'a'.repeat(64), operations });
+  if (!begun.ok) throw new Error(begun.refusal.code);
+  for (const position of operations.keys()) held.settle(begun.value, position, 'done');
+  held.finish(begun.value, 'done');
+};
+
 describe('undo matches files and runs as apply and the store do', () => {
   // A volume that tells the two names apart never has apply chain them as one file.
   it.skipIf(!foldsCase())('undoes two steps on one file named in two letter cases', () => {
@@ -347,6 +363,34 @@ describe('undo matches files and runs as apply and the store do', () => {
       params: { run: 'r1', by: 'u3' },
     });
   });
+});
+
+describe('undo of names that share one spelling key', () => {
+  it.for([
+    ['two files', 'dotless\n', false],
+    ['two hard-linked names of one file', 'i\n', true],
+  ] as const)(
+    'refuses to undo %s that share one spelling key with plan.spelling-clash',
+    ([, dotless, linked], context) => {
+      const { root, state } = project({ '.claude/i.md': 'i\n', '.claude/ı.md': dotless });
+      // A volume that reads i.md and the dotless ı.md as one file never holds both.
+      if (listing(root).length !== 2) context.skip();
+      if (linked) {
+        rmSync(join(root, '.claude/ı.md'));
+        linkSync(join(root, '.claude/i.md'), join(root, '.claude/ı.md'));
+      }
+      const held = store(state, 'r1', 'u1');
+      recorded(held, root, [
+        ['.claude/i.md', 'i\n'],
+        ['.claude/ı.md', dotless],
+      ]);
+      expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+        code: 'plan.spelling-clash',
+        params: { path: '.claude/i.md', other: '.claude/ı.md' },
+      });
+      expect([listing(root), undone(state, 'r1')]).toEqual([['i.md', 'ı.md'], null]);
+    },
+  );
 });
 
 describe('undo of a chain on one file', () => {
@@ -519,5 +563,20 @@ describe('undo of an edited journal', () => {
     db.close();
     undo(held, { root, run: 'r1' });
     expect(readdirSync(outside)).toEqual(['out']);
+  });
+
+  it('refuses two spellings of a journal path that climbs out of the project before it compares them', () => {
+    const { root, state } = project();
+    const outside = fresh();
+    const held = store(state, 'r1', 'u1');
+    const climbed = `.claude/../../${basename(outside)}`;
+    recorded(held, root, [
+      [`${climbed}/X.md`, 'x\n'],
+      [`${climbed}/x.md`, 'x\n'],
+    ]);
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+      code: 'plan.path-outside-roots',
+      params: { path: `${climbed}/X.md` },
+    });
   });
 });

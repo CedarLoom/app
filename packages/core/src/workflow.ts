@@ -3,6 +3,14 @@ import { JsonValue } from './canonical-json.ts';
 import { Refusal } from './finding.ts';
 import { Hash } from './plan.ts';
 
+// Device names Windows reserves in every folder; it reads ¹ ² ³ as digits.
+const DEVICE_NAMES = String.raw`con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³]`;
+// A device name also with spaces or an extension after it.
+const RESERVED = new RegExp(String.raw`^(?:${DEVICE_NAMES}) *(?:\.|$)`, 'i');
+
+/** Whether a file or folder name is a device name Windows reserves, such as `nul` or `com0.md`. */
+export const isReservedName = (name: string): boolean => RESERVED.test(name);
+
 // 255 bytes less 89: the aside `.<name>-run.js.cedarloom-<64-character run id>-<position>.old` at a one-digit position
 // (use-cases name-taken.ts, project-files.ts asidePath, apply.ts nameProblem); precheck refuses longer positions.
 export const LONGEST_NAME = 166;
@@ -14,7 +22,7 @@ export const LONGEST_NAME = 166;
  */
 export const WorkflowName = z
   .string()
-  .regex(/^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$)[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  .regex(new RegExp(String.raw`^(?!(?:${DEVICE_NAMES})$)[a-z0-9]+(?:-[a-z0-9]+)*$`))
   .max(LONGEST_NAME);
 
 /** Where a definition comes from: the plugin's own, read only, or the project's in .cedarloom/workflows. */

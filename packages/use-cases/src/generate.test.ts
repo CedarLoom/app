@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -285,6 +286,68 @@ it('counts a generation over no definition, so its deletes end what the older ge
   expect(generated().plan).toMatchObject({ operations: [], skipped: [] });
 });
 
+it('keeps and reports a file the last generation wrote beside an output spelled the same up to a fold', (context) => {
+  const { define, generated, project, text } = setup({ name: 'dev', skill: 'Run dev.\n', extra: ['skills/dev/i.md'] });
+  generated();
+  // A volume that reads i.md and the dotless ı.md as one file keeps one file, as before.
+  if (existsSync(join(project, '.claude/skills/dev/ı.md'))) context.skip();
+  define({ name: 'dev', skill: 'Run dev.\n', extra: ['skills/dev/ı.md'] });
+  expect(generated()).toMatchObject({
+    refusals: [],
+    plan: {
+      operations: [{ kind: 'create', path: '.claude/skills/dev/ı.md' }],
+      skipped: [
+        {
+          code: 'generate.spelling-kept',
+          severity: 'warning',
+          params: { path: '.claude/skills/dev/i.md', other: '.claude/skills/dev/ı.md' },
+        },
+      ],
+    },
+  });
+  expect([text('.claude/skills/dev/i.md'), text('.claude/skills/dev/ı.md')]).toEqual(['extra\n', 'extra\n']);
+});
+
+const DEV = '.claude/skills/dev';
+
+// Apart: whether the volume keeps both spellings as two files (null: either); dropped: the owner deletes both first.
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).for([
+  ['a case-only rename on a volume that folds case', 'Notes.md', 'notes.md', false, false, []],
+  [
+    'a case-only rename on a volume that tells case',
+    'Notes.md',
+    'notes.md',
+    true,
+    false,
+    [['delete', `${DEV}/Notes.md`]],
+  ],
+  ['a rename to a dotless ı', 'i.md', 'ı.md', true, false, [['delete', `${DEV}/i.md`]]],
+  [
+    'a case-only rename whose file the owner deleted',
+    'Notes.md',
+    'notes.md',
+    null,
+    true,
+    [['create', `${DEV}/notes.md`]],
+  ],
+] as const)(
+  'plans the generation after %s without a write into the output folder',
+  ([, from, to, apart, dropped, operations], context) => {
+    const { define, generated, project } = setup({ name: 'dev', skill: 'Run dev.\n', extra: [`skills/dev/${from}`] });
+    generated();
+    define({ name: 'dev', skill: 'Run dev.\n', extra: [`skills/dev/${to}`] });
+    generated();
+    const outputs = join(project, DEV);
+    const both = readdirSync(outputs).filter((name) => name === from || name === to).length === 2;
+    if (apart !== null && apart !== both) context.skip();
+    if (dropped) for (const name of [from, to]) rmSync(join(outputs, name), { force: true });
+    chmodSync(outputs, 0o500);
+    onTestFinished(() => chmodSync(outputs, 0o700));
+    const third = generated(false);
+    expect([third.refusals, kinds(third.plan)]).toEqual([[], operations]);
+  },
+);
+
 it('refuses a plan that apply would refuse before it shows it', () => {
   const long = `skills/dev/${'a'.repeat(200)}.md`;
   const { store, request } = setup({ name: 'dev', skill: 'Run dev.\n', extra: [long] });
@@ -506,27 +569,36 @@ it('keeps and reports the generated files of the old name that no recorded run w
   expect(text(notes)).toBe('<!-- mine: edit the definition, not this file. -->\n');
 });
 
-it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
-  'reports a folder of the old name the app may not read on a rename',
-  () => {
-    const { project, store, request, define } = setup({ name: 'dev', skill: 'Run dev.\n' });
-    define({ name: 'mine', skill: 'Run.\n' }, 'mine');
-    const hidden = join(project, '.claude/skills/mine/sub');
-    mkdirSync(hidden, { recursive: true });
-    chmodSync(hidden, 0);
-    onTestFinished(() => chmodSync(hidden, 0o700));
-    const renamed = editWorkflow(
-      store,
-      { ...request, name: 'mine', edit: { operation: 'set', pointer: '/name', value: 'other' } },
-      false,
-    );
-    expect(renamed.findings).toContainEqual({
-      code: 'generated.folder-unreadable',
-      severity: 'warning',
-      params: { path: '.claude/skills/mine/sub' },
-    });
-  },
-);
+const unreadable = (path: string) => ({ code: 'generated.folder-unreadable', severity: 'warning', params: { path } });
+
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).each([
+  [
+    'a folder of the old name the app may not read',
+    '.claude/skills/mine/sub',
+    0,
+    [unreadable('.claude/skills/mine/sub')],
+  ],
+  [
+    'a folder above the old outputs the app may write but not list',
+    '.claude/workflows',
+    0o300,
+    [unreadable('.claude/workflows')],
+  ],
+  ["no other workflow's folder", '.claude/skills/dev', 0, []],
+])('reports %s on a rename', (_, path, mode, findings) => {
+  const { project, store, request, define } = setup({ name: 'dev', skill: 'Run dev.\n' });
+  define({ name: 'mine', skill: 'Run.\n' }, 'mine');
+  const locked = join(project, path);
+  mkdirSync(locked, { recursive: true });
+  chmodSync(locked, mode);
+  onTestFinished(() => chmodSync(locked, 0o700));
+  const renamed = editWorkflow(
+    store,
+    { ...request, name: 'mine', edit: { operation: 'set', pointer: '/name', value: 'other' } },
+    false,
+  );
+  expect(renamed.findings.filter(({ code }) => code.startsWith('generated.'))).toEqual(findings);
+});
 
 it("counts an edit's files as generated, so a later edit deletes a file the earlier one added", () => {
   const { project, edited } = editSetup();

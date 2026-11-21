@@ -207,6 +207,13 @@ describe('apply checks the plan paths', () => {
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(decomposed, 'x\n')], decomposed],
     ['plan.name-too-long', [create('.claude/a.md', 'a\n'), create(deep, 'x\n')], deep],
     ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/a?b.md', 'x\n')], '.claude/a?b.md'],
+    ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/a.md.', 'x\n')], '.claude/a.md.'],
+    ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/b. /c.md', 'x\n')], '.claude/b. /c.md'],
+    ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/aux.md', 'x\n')], '.claude/aux.md'],
+    ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/NUL', 'x\n')], '.claude/NUL'],
+    ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/com0.md', 'x\n')], '.claude/com0.md'],
+    ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/nul .md', 'x\n')], '.claude/nul .md'],
+    ['plan.name-not-portable', [create('.claude/a.md', 'a\n'), create('.claude/CONOUT$', 'x\n')], '.claude/CONOUT$'],
   ] as const)('refuses with %s a plan path its steps could not write, before any write', (code, plan, path) => {
     const { root, state } = project();
     expect(apply(store(state), request(root, [...plan]))).toEqual(refusedAt(code, path));

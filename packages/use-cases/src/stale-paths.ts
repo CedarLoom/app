@@ -38,9 +38,13 @@ export const isOwnPath = (path: string, name: string): boolean =>
 
 /**
  * The project's files a generator run wrote before, by their head: those below a skill folder and the workflow scripts
- * that carry the mark; and a finding for each folder or file among them the app may not read.
+ * that carry the mark, of that workflow alone when given; and a finding for each folder or file among them the app
+ * may not read.
  */
-export const generatedFiles = (project: string): { files: Map<string, Buffer>; unreadable: Finding[] } => {
+export const generatedFiles = (
+  project: string,
+  workflow?: string,
+): { files: Map<string, Buffer>; unreadable: Finding[] } => {
   const folders = new Set<string>();
   const deniedFiles: string[] = [];
   // No entries for an error that says the app cannot reach folder, noting folder when the app may not read it.
@@ -64,14 +68,14 @@ export const generatedFiles = (project: string): { files: Map<string, Buffer>; u
     return block === undefined ? listed(join(project, folder)) : [];
   };
   const skills = entriesOf(SKILLS)
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && (workflow === undefined || entry.name === workflow))
     .flatMap(({ name }) =>
       // Folder by folder, so one the app cannot read hides only its own files.
       filesBelow(join(project, SKILLS, name), listed).map((path) => `${SKILLS}/${name}/${path}`),
     );
   const scripts = entriesOf(WORKFLOWS)
-    .filter(({ name }) => name.endsWith('.js'))
-    .map(({ name }) => `${WORKFLOWS}/${name}`);
+    .filter((entry) => (workflow === undefined ? entry.name.endsWith('.js') : entry.name === `${workflow}.js`))
+    .map((entry) => `${WORKFLOWS}/${entry.name}`);
   const files = new Map(
     [...skills, ...scripts].flatMap((path): [string, Buffer][] => {
       const head = bytesAt(project, path, HEAD);

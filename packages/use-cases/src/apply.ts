@@ -116,7 +116,7 @@ const diskProblem = (root: string, { path, beforeHash }: PlanOperation): Refusal
 };
 
 // Two spellings are one file where they reach one existing folder and a probe there reads the rest as one file.
-const sameFile = (root: string, first: string, path: string): boolean | Refusal => {
+const probedAsOne = (root: string, first: string, path: string): boolean | Refusal => {
   if (first === path) return true;
   const [a, b] = [first.split('/'), path.split('/')];
   let depth = a.length - 1;
@@ -148,7 +148,7 @@ const orDenied = <T>(path: string, at: string, act: () => T): T | Refusal => {
 
 // A later operation on a path starts from what the one before it leaves, at the file the chain began with.
 const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined => {
-  const same = sameFile(root, first, op.path);
+  const same = probedAsOne(root, first, op.path);
   if (same === false) return { code: 'plan.spelling-clash', params: { path: op.path, other: first } };
   if (same !== true) return same;
   return op.beforeHash === left ? undefined : refusal('plan.file-changed', op.path);
@@ -157,6 +157,26 @@ const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): 
 // Over-approximates the volume's folds (ẞ, ß and ss share a key); the spelling probe decides chain or clash.
 export const fileKey = (path: string): string =>
   path.normalize('NFC').toLowerCase().toUpperCase().toLowerCase().normalize('NFC');
+
+/**
+ * Whether two project-relative paths name one file, as the precheck tells them apart; a refusal for a path outside the
+ * write roots, where it may not look, or where a link is on the way, as the probe must not write out of the project.
+ * Where both paths exist, lstat decides without a write.
+ */
+export const sameFile = (root: string, first: string, path: string): boolean | Refusal => {
+  if (fileKey(first) !== fileKey(path)) return false;
+  const outside = [first, path].find((each) => !inWriteRoots(each));
+  if (outside !== undefined) return refusal('plan.path-outside-roots', outside);
+  return orDenied(path, path, () => {
+    const way = wayRefusal(root, first) ?? wayRefusal(root, path);
+    if (way !== undefined) return way;
+    const [one, two] = [entryAt(join(root, first)), entryAt(join(root, path))];
+    if (one === undefined || two === undefined) return one === two && probedAsOne(root, first, path);
+    if (one.dev !== two.dev || one.ino !== two.ino) return false;
+    // A file with one link has one name, which both spellings reach; hard-linked names leave it to the probe.
+    return one.nlink === 1n || probedAsOne(root, first, path);
+  });
+};
 
 // What the disk shows wrong with an operation, as the operations before it on the same file leave it.
 const fileProblem = (root: string, op: PlanOperation, chain: Chain | undefined): Refusal | undefined =>
