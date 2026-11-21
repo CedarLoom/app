@@ -20,6 +20,7 @@ import {
   failAt,
   foldsCase,
   fresh,
+  hash,
   listing,
   project,
   recovered,
@@ -318,6 +319,10 @@ describe('undo of a replaced undo on two files', () => {
   });
 });
 
+// A create step as the store records it.
+const created = (path: string, after: string) =>
+  ({ kind: 'create', path, beforeHash: null, afterHash: hash(after), entries: null }) as const;
+
 describe('undo matches files and runs as apply and the store do', () => {
   // A volume that tells the two names apart never has apply chain them as one file.
   it.skipIf(!foldsCase())('undoes two steps on one file named in two letter cases', () => {
@@ -326,6 +331,27 @@ describe('undo matches files and runs as apply and the store do', () => {
     apply(held, request(root, [create('.claude/a.md', 'a\n'), replace('.claude/A.md', 'a\n', 'b\n')]));
     expect(undo(held, { root, run: 'r1' }).run).toBe('u1');
     expect(listing(root)).toEqual([]);
+  });
+
+  it('refuses to undo two files whose names share one spelling key with plan.spelling-clash', (context) => {
+    const { root, state } = project({ '.claude/i.md': 'i\n', '.claude/ı.md': 'dotless\n' });
+    // A volume that reads i.md and the dotless ı.md as one file never holds both.
+    if (listing(root).length !== 2) context.skip();
+    const held = store(state, 'r1', 'u1');
+    const begun = held.begin({
+      ...request(root, []).run,
+      planHash: 'a'.repeat(64),
+      operations: [created('.claude/i.md', 'i\n'), created('.claude/ı.md', 'dotless\n')],
+    });
+    if (!begun.ok) throw new Error(begun.refusal.code);
+    held.settle(begun.value, 0, 'done');
+    held.settle(begun.value, 1, 'done');
+    held.finish(begun.value, 'done');
+    expect(undo(held, { root, run: 'r1' }).refusal).toEqual({
+      code: 'plan.spelling-clash',
+      params: { path: '.claude/i.md', other: '.claude/ı.md' },
+    });
+    expect([listing(root), undone(state, 'r1')]).toEqual([['i.md', 'ı.md'], null]);
   });
 
   it('names the newest undo by the order it was recorded in, also when the clock went back', () => {

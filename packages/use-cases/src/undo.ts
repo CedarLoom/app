@@ -9,7 +9,7 @@ import {
   type Refusal,
   type Run,
 } from '@cedarloom/core';
-import { type Applied, type ApplyRequest, type At, apply, fileKey, refusal, wayRefusal } from './apply.ts';
+import { type Applied, type ApplyRequest, type At, apply, fileKey, refusal, sameFile, wayRefusal } from './apply.ts';
 import { entryAt, errorCode, type FileFound, fileAt, hashAt, removeEmptyFolder, sha256 } from './project-files.ts';
 import { type Operation, recover, unsettledBy } from './recover.ts';
 import type { NewRun, RunStore } from './store.ts';
@@ -84,7 +84,7 @@ interface Walk {
   run: string;
   /** The run's started steps by position, oldest first. */
   started: [number, Operation][];
-  /** Each file's text once the undo operations planned so far ran, by fileKey. */
+  /** Each file's text once the undo operations planned so far ran, by the path its first planned operation names. */
   now: Map<string, string | null>;
   operations: PlanOperation[];
   modes: Map<number, number>;
@@ -106,23 +106,46 @@ const textBefore = ({ store, run }: Walk, position: number, step: Operation): st
   return found.bytes.toString('utf8');
 };
 
+interface FileState {
+  /** The path its text is planned at in Walk.now, or the step's own path. */
+  at: string;
+  current: string | null | undefined;
+  /** The hashes the run's started steps on the file found, oldest first. */
+  states: (string | null)[];
+}
+
+// The file at path as the undo operations planned so far leave it; the precheck tells which spellings name it.
+const fileState = (walk: Walk, path: string): FileState | Refusal => {
+  const spellings = new Set<string>();
+  const states: (string | null)[] = [];
+  for (const [, op] of walk.started) {
+    const same = sameFile(walk.root, op.path, path);
+    if (typeof same === 'object') return same;
+    if (!same) continue;
+    spellings.add(op.path);
+    states.push(op.beforeHash);
+  }
+  const at = [...walk.now.keys()].find((each) => spellings.has(each)) ?? path;
+  return { at, current: walk.now.has(at) ? walk.now.get(at) : textAt(walk.root, path), states };
+};
+
 // A path as before the run's first step on it needs nothing; one that hashes as the step left it is restored, and one
 // that hashes as before another step of the run on it needs nothing either.
 const visit = (walk: Walk, position: number, step: Operation): Refusal | undefined => {
   const link = wayRefusal(walk.root, step.path);
   if (link !== undefined) return link;
-  const key = fileKey(step.path);
-  const current = walk.now.has(key) ? walk.now.get(key) : textAt(walk.root, step.path);
+  const state = fileState(walk, step.path);
+  if ('code' in state) return state;
+  const { at, current, states } = state;
   if (current === undefined) return refusal('undo.file-changed', step.path);
   const hash = hashOf(current);
-  const states = walk.started.filter(([, op]) => fileKey(op.path) === key).map(([, op]) => op.beforeHash);
   if (hash === states[0]) return undefined;
   if (hash !== step.afterHash) return states.includes(hash) ? undefined : refusal('undo.file-changed', step.path);
   const before = textBefore(walk, position, step);
   if (typeof before === 'object' && before !== null) return before;
   if (step.mode !== null) walk.modes.set(walk.operations.length, step.mode);
   walk.operations.push(operation(step.path, current, before));
-  walk.now.set(key, before);
+  walk.now.set(at, before);
   return undefined;
 };
 

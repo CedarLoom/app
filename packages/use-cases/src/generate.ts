@@ -12,7 +12,7 @@ import {
   type Run,
   type SettingsEntry,
 } from '@cedarloom/core';
-import { apply, fileKey, precheck, refusal, wayRefusal } from './apply.ts';
+import { apply, fileKey, precheck, refusal, sameFile, wayRefusal } from './apply.ts';
 import { definitionBytes, isListed, jsonWithin } from './definition-files.ts';
 import { GENERATOR_TIMEOUT_MS, generate } from './generator-run.ts';
 import { reached } from './plugin-folder.ts';
@@ -172,19 +172,30 @@ const planned = (
   previous: Map<string, string>,
   read: ReadHashes,
 ): PlanPreview | Refusal => {
-  const kept = new Set([...outputs.keys()].map(fileKey));
+  const byKey = Map.groupBy(outputs.keys(), fileKey);
+  // A file as last generated stays where an output is that same file, as the precheck tells spellings apart; beside
+  // another spelling of an output it stays too, as precheck refuses a plan that writes both.
+  const removal = ([path, hash]: [string, string]): PlanOperation | Finding | Refusal | undefined => {
+    const spellings = byKey.get(fileKey(path)) ?? [];
+    const same = spellings.map((output) => sameFile(root, output, path));
+    const stop = same.find((each) => typeof each === 'object');
+    if (stop !== undefined) return stop;
+    if (same.includes(true)) return undefined;
+    const removed = remove(root, path, hash, read);
+    const [other] = spellings;
+    if (other === undefined || removed === undefined || !('kind' in removed)) return removed;
+    return { code: 'generate.spelling-kept', severity: 'warning', params: { path, other } };
+  };
   const changes = [
     ...inPathOrder(outputs).map(([path, bytes]) => write(root, path, bytes, read)),
-    ...inPathOrder(previous)
-      .filter(([path]) => !kept.has(fileKey(path)))
-      .map(([path, hash]) => remove(root, path, hash, read)),
+    ...inPathOrder(previous).map(removal),
   ].filter((change) => change !== undefined);
   const stop = changes.find((change): change is Refusal => !('kind' in change) && !('severity' in change));
   if (stop !== undefined) return stop;
   const operations = changes.filter((change) => 'kind' in change).toSorted((a, b) => (a.path < b.path ? -1 : 1));
   const skipped = changes.filter((change): change is Finding => 'severity' in change);
   // A plan apply would refuse for its paths or files is refused before it is shown. The hard-link probe stays with apply;
-  // the spelling probe writes here only where a volume reads two spellings as two files, and the plan is then refused.
+  // the spelling probe writes here only where two paths share a spelling key.
   const unappliable = precheck(root, operations, false);
   if (unappliable !== undefined) return unappliable;
   return { planHash: planHash(operations, sha256), operations, skipped };

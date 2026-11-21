@@ -116,7 +116,7 @@ const diskProblem = (root: string, { path, beforeHash }: PlanOperation): Refusal
 };
 
 // Two spellings are one file where they reach one existing folder and a probe there reads the rest as one file.
-const sameFile = (root: string, first: string, path: string): boolean | Refusal => {
+const probedAsOne = (root: string, first: string, path: string): boolean | Refusal => {
   if (first === path) return true;
   const [a, b] = [first.split('/'), path.split('/')];
   let depth = a.length - 1;
@@ -148,7 +148,7 @@ const orDenied = <T>(path: string, at: string, act: () => T): T | Refusal => {
 
 // A later operation on a path starts from what the one before it leaves, at the file the chain began with.
 const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): Refusal | undefined => {
-  const same = sameFile(root, first, op.path);
+  const same = probedAsOne(root, first, op.path);
   if (same === false) return { code: 'plan.spelling-clash', params: { path: op.path, other: first } };
   if (same !== true) return same;
   return op.beforeHash === left ? undefined : refusal('plan.file-changed', op.path);
@@ -157,6 +157,14 @@ const chainProblem = (root: string, op: PlanOperation, { first, left }: Chain): 
 // Over-approximates the volume's folds (ẞ, ß and ss share a key); the spelling probe decides chain or clash.
 export const fileKey = (path: string): string =>
   path.normalize('NFC').toLowerCase().toUpperCase().toLowerCase().normalize('NFC');
+
+/**
+ * Whether two project-relative paths name one file, as the precheck tells them apart; a refusal where it may not look,
+ * or where a link is on the way, as the probe must not follow one out of the project.
+ */
+export const sameFile = (root: string, first: string, path: string): boolean | Refusal =>
+  fileKey(first) === fileKey(path) &&
+  orDenied(path, path, () => wayRefusal(root, first) ?? wayRefusal(root, path) ?? probedAsOne(root, first, path));
 
 // What the disk shows wrong with an operation, as the operations before it on the same file leave it.
 const fileProblem = (root: string, op: PlanOperation, chain: Chain | undefined): Refusal | undefined =>

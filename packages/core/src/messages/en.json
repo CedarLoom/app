@@ -101,6 +101,14 @@
       ["path"],
       " is no longer generated, but it changed since it was written, so CedarLoom kept it. Delete it yourself if it is not needed."
     ],
+    "generate.spelling-kept": [
+      ["path"],
+      " is no longer generated, and ",
+      ["other"],
+      " now is. They differ only in letter case or Unicode form, which this volume keeps as two files, so one plan cannot delete one and write the other. CedarLoom kept ",
+      ["path"],
+      ". Delete it yourself if it is not needed."
+    ],
     "generated.file-unreadable": [
       ["path"],
       " cannot be read, so CedarLoom did not check whether it is a generated file."
@@ -138,7 +146,7 @@
     ],
     "plan.name-not-portable": [
       ["path"],
-      " holds a character Windows does not allow in a file name (< > \" | ? * or a control character), so the plan cannot be applied."
+      " holds a name Windows does not keep as written (one with < > \" | ? * or a control character, a trailing dot or space, or a device name such as NUL), so the plan cannot be applied."
     ],
     "plan.name-too-long": [
       "The path of ",

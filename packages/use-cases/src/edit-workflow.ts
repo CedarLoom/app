@@ -4,7 +4,7 @@ import { jsonWithin, Named, overLimits, PROJECT_FOLDER } from './definition-file
 import { appliedAs, definitionOf, type Generation, generationOf, locatedAfter, start, stoppedBy } from './generate.ts';
 import { nameTaken } from './name-taken.ts';
 import { sha256 } from './project-files.ts';
-import { generatedFiles, isOwnPath } from './stale-paths.ts';
+import { generatedFiles } from './stale-paths.ts';
 import type { RunStore } from './store.ts';
 import { invalidName, projectPlace, type WorkflowsRequest } from './workflows.ts';
 
@@ -31,12 +31,9 @@ const withOutputsLeft = (root: string, name: string, generation: Generation): Ge
   if (plan === null || generatedFrom.every((each) => each.name === name)) return generation;
   const handled = [...plan.operations.map(({ path }) => path), ...plan.skipped.map(({ params }) => params['path'])];
   const keys = new Set(handled.filter((path) => typeof path === 'string').map(fileKey));
-  const { files, unreadable } = generatedFiles(root);
-  const paths = [...files.keys()].filter((path) => isOwnPath(path, name) && !keys.has(fileKey(path))).toSorted();
-  // A folder or file of the old name the app may not read can hide more of them.
-  const hidden = unreadable.filter(
-    ({ params: { path } }) => typeof path === 'string' && [path, `${path}/`].some((each) => isOwnPath(each, name)),
-  );
+  // A folder or file on the way to the old name's outputs the app may not read can hide more of them.
+  const { files, unreadable: hidden } = generatedFiles(root, name);
+  const paths = [...files.keys()].filter((path) => !keys.has(fileKey(path))).toSorted();
   const left: Finding[] =
     paths.length === 0 ? [] : [{ code: 'edit.outputs-left', severity: 'warning', params: { name, paths } }];
   return { ...generation, findings: [...generation.findings, ...left, ...hidden] };

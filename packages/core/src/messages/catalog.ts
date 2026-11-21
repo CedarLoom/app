@@ -32,6 +32,7 @@ export const MESSAGE_IDS = [
   'edit.result-over-limits',
   'edit.target-invalid',
   'generate.delete-skipped',
+  'generate.spelling-kept',
   'generated.file-unreadable',
   'generated.folder-unreadable',
   'generator.failed',
@@ -113,6 +114,7 @@ export interface MessagePlaceholders {
   'edit.result-over-limits': 'levels' | 'mebibytes';
   'edit.target-invalid': 'operation' | 'pointer';
   'generate.delete-skipped': 'path';
+  'generate.spelling-kept': 'other' | 'path';
   'generated.file-unreadable': 'path';
   'generated.folder-unreadable': 'path';
   'generator.failed': 'exitCode' | 'reason' | 'signal' | 'stderr';
