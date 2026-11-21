@@ -7,7 +7,8 @@ import { Load } from './load.tsx';
 
 const Run = ({ client, id, back }: { client: Api; id: string; back: () => void }): ReactNode => (
   <Stack align="flex-start">
-    <Button variant="subtle" onClick={back}>
+    {/* The link that opened the run is gone: focus moves into the run. */}
+    <Button variant="subtle" onClick={back} autoFocus>
       {text('ui.runs.back')}
     </Button>
     <Load request={() => client.GET('/api/runs/{id}', { params: { path: { id } } })}>
@@ -34,8 +35,11 @@ const Run = ({ client, id, back }: { client: Api; id: string; back: () => void }
 
 /** The project's runs, newest first as the server lists them; a run's id opens its operations. */
 export const Runs = ({ client }: { client: Api }): ReactNode => {
-  const [open, setOpen] = useState<string | null>(null);
-  if (open !== null) return <Run key={open} client={client} id={open} back={() => setOpen(null)} />;
+  // The run last opened: its link takes the focus back when the list returns.
+  const [run, setRun] = useState<{ id: string; open: boolean } | null>(null);
+  if (run?.open === true) {
+    return <Run key={run.id} client={client} id={run.id} back={() => setRun({ id: run.id, open: false })} />;
+  }
   return (
     <Load request={() => client.GET('/api/runs')}>
       {({ runs }) => (
@@ -43,7 +47,7 @@ export const Runs = ({ client }: { client: Api }): ReactNode => {
           columns={['run', 'action', 'subject', 'status', 'started']}
           rows={runs.map(({ id, action, subject, status, startedAt }) => [
             id,
-            <Anchor component="button" key={id} onClick={() => setOpen(id)}>
+            <Anchor component="button" key={id} onClick={() => setRun({ id, open: true })} autoFocus={id === run?.id}>
               {id}
             </Anchor>,
             action,

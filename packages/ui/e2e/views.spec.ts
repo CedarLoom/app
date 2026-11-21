@@ -20,8 +20,15 @@ test.beforeAll(async () => {
   const bin = fileURLToPath(new URL('../../app/bin/cedarloom-app.js', import.meta.url));
   server = spawn(process.execPath, [bin, '--no-open', '--json', '--port', '0'], {
     cwd: root,
-    // HOME too, so no plugin installed on the machine shows in the views.
-    env: { ...process.env, CEDARLOOM_STATE_DIR: join(root, '.state'), HOME: root, USERPROFILE: root },
+    // HOME and the plugin locator's own variables too, so no plugin installed on the machine shows in the views.
+    env: {
+      ...process.env,
+      CEDARLOOM_STATE_DIR: join(root, '.state'),
+      HOME: root,
+      USERPROFILE: root,
+      CLAUDE_CONFIG_DIR: undefined,
+      CLAUDE_CODE_PLUGIN_CACHE_DIR: undefined,
+    },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   // A server that exits before its first line fails the run instead of leaving it waiting.
@@ -51,14 +58,18 @@ const accessible = async (page: Page): Promise<void> => {
   expect(violations).toEqual([]);
 };
 
-// The tab's panel once its request is answered.
+// The tab's panel once its request is answered without an error.
 const opened = async (page: Page, tab: string): Promise<void> => {
   await page.getByRole('tab', { name: tab }).click();
   await expect(page.getByRole('tabpanel', { name: tab })).toBeVisible();
   await expect(page.getByRole('status')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
 };
 
 test('the token in the fragment opens the session, leaves the address and each view renders', async ({ page }) => {
+  // The printed link pasted into a tab that already shows the page without a session.
+  await page.goto(new URL('/', url).href);
+  await expect(page.getByRole('alert')).toBeVisible();
   await page.goto(url);
   await expect(page.getByRole('tabpanel', { name: 'Doctor' }).getByRole('table')).toBeVisible();
   expect(page.url()).toBe(new URL('/', url).href);

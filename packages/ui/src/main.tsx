@@ -25,6 +25,11 @@ const theme = createTheme({
   primaryShade: 7,
 });
 
+// A printed link pasted into a tab that shows the page changes only the fragment, which loads no page.
+addEventListener('hashchange', () => {
+  if (location.hash.startsWith('#t=')) location.reload();
+});
+
 createRoot(document.body.appendChild(document.createElement('div'))).render(
   <MantineProvider theme={theme}>
     <App session={() => openSession(api(), location, history)} />

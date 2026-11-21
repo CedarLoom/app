@@ -17,8 +17,8 @@ export const openSession = async (
   url.hash = '';
   history.replaceState(null, '', url);
   const exchanged = await client.POST('/api/session', { body: { token: hash.slice('#t='.length) } });
-  if (exchanged.error === undefined) return exchanged;
+  if (exchanged.response.ok) return exchanged;
   // The printed link opened a second time carries a spent token, while the cookie of its first opening still holds.
   const held = await client.GET('/api/session');
-  return held.error === undefined ? held : exchanged;
+  return held.response.ok ? held : exchanged;
 };
