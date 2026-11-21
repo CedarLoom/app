@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -306,6 +307,46 @@ it('keeps and reports a file the last generation wrote beside an output spelled 
   });
   expect([text('.claude/skills/dev/i.md'), text('.claude/skills/dev/ı.md')]).toEqual(['extra\n', 'extra\n']);
 });
+
+const DEV = '.claude/skills/dev';
+
+// Apart: whether the volume keeps both spellings as two files (null: either); dropped: the owner deletes both first.
+it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).for([
+  ['a case-only rename on a volume that folds case', 'Notes.md', 'notes.md', false, false, []],
+  [
+    'a case-only rename on a volume that tells case',
+    'Notes.md',
+    'notes.md',
+    true,
+    false,
+    [['delete', `${DEV}/Notes.md`]],
+  ],
+  ['a rename to a dotless ı', 'i.md', 'ı.md', true, false, [['delete', `${DEV}/i.md`]]],
+  [
+    'a case-only rename whose file the owner deleted',
+    'Notes.md',
+    'notes.md',
+    null,
+    true,
+    [['create', `${DEV}/notes.md`]],
+  ],
+] as const)(
+  'plans the generation after %s without a write into the output folder',
+  ([, from, to, apart, dropped, operations], context) => {
+    const { define, generated, project } = setup({ name: 'dev', skill: 'Run dev.\n', extra: [`skills/dev/${from}`] });
+    generated();
+    define({ name: 'dev', skill: 'Run dev.\n', extra: [`skills/dev/${to}`] });
+    generated();
+    const outputs = join(project, DEV);
+    const both = readdirSync(outputs).filter((name) => name === from || name === to).length === 2;
+    if (apart !== null && apart !== both) context.skip();
+    if (dropped) for (const name of [from, to]) rmSync(join(outputs, name), { force: true });
+    chmodSync(outputs, 0o500);
+    onTestFinished(() => chmodSync(outputs, 0o700));
+    const third = generated(false);
+    expect([third.refusals, kinds(third.plan)]).toEqual([[], operations]);
+  },
+);
 
 it('refuses a plan that apply would refuse before it shows it', () => {
   const long = `skills/dev/${'a'.repeat(200)}.md`;

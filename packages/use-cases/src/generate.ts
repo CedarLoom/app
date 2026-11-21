@@ -163,6 +163,15 @@ const remove = (
   return { code: 'generate.delete-skipped', severity: 'warning', params: { path } };
 };
 
+// Whether a file as last generated is the file of another spelling of an output, as the precheck tells spellings apart.
+const isOutputsFile = (root: string, path: string, spellings: string[]): boolean | Refusal => {
+  const same = spellings.map((output) => sameFile(root, output, path));
+  return same.find((each) => typeof each === 'object') ?? same.includes(true);
+};
+
+const isStop = (change: PlanOperation | Finding | Refusal): change is Refusal =>
+  !('kind' in change) && !('severity' in change);
+
 const inPathOrder = <T>(files: Map<string, T>): [string, T][] => [...files].toSorted(([a], [b]) => (a < b ? -1 : 1));
 
 // The plan from the outputs and the files as last generated, in path order.
@@ -173,29 +182,33 @@ const planned = (
   read: ReadHashes,
 ): PlanPreview | Refusal => {
   const byKey = Map.groupBy(outputs.keys(), fileKey);
-  // A file as last generated stays where an output is that same file, as the precheck tells spellings apart; beside
-  // another spelling of an output it stays too, as precheck refuses a plan that writes both.
+  const writes = inPathOrder(outputs).map(([path, bytes]) => write(root, path, bytes, read));
+  const written = new Map(
+    writes
+      .flatMap((each) => (each !== undefined && 'kind' in each ? [each.path] : []))
+      .map((path) => [fileKey(path), path]),
+  );
+  // A file as last generated stays where it is an output's file, and beside another spelling the plan writes, as
+  // precheck refuses a plan that writes both.
   const removal = ([path, hash]: [string, string]): PlanOperation | Finding | Refusal | undefined => {
     const spellings = byKey.get(fileKey(path)) ?? [];
-    const same = spellings.map((output) => sameFile(root, output, path));
-    const stop = same.find((each) => typeof each === 'object');
-    if (stop !== undefined) return stop;
-    if (same.includes(true)) return undefined;
+    if (spellings.includes(path)) return undefined;
     const removed = remove(root, path, hash, read);
-    const [other] = spellings;
-    if (other === undefined || removed === undefined || !('kind' in removed)) return removed;
+    // Only a file that is there can be another spelling's file.
+    if (spellings.length === 0 || removed === undefined || isStop(removed)) return removed;
+    const same = isOutputsFile(root, path, spellings);
+    if (same !== false) return same === true ? undefined : same;
+    const other = written.get(fileKey(path));
+    if (other === undefined || !('kind' in removed)) return removed;
     return { code: 'generate.spelling-kept', severity: 'warning', params: { path, other } };
   };
-  const changes = [
-    ...inPathOrder(outputs).map(([path, bytes]) => write(root, path, bytes, read)),
-    ...inPathOrder(previous).map(removal),
-  ].filter((change) => change !== undefined);
-  const stop = changes.find((change): change is Refusal => !('kind' in change) && !('severity' in change));
+  const changes = [...writes, ...inPathOrder(previous).map(removal)].filter((change) => change !== undefined);
+  const stop = changes.find(isStop);
   if (stop !== undefined) return stop;
   const operations = changes.filter((change) => 'kind' in change).toSorted((a, b) => (a.path < b.path ? -1 : 1));
   const skipped = changes.filter((change): change is Finding => 'severity' in change);
   // A plan apply would refuse for its paths or files is refused before it is shown. The hard-link probe stays with apply;
-  // the spelling probe writes here only where two paths share a spelling key.
+  // the spelling probe writes here only for two operations on one spelling key, or for hard-linked spellings.
   const unappliable = precheck(root, operations, false);
   if (unappliable !== undefined) return unappliable;
   return { planHash: planHash(operations, sha256), operations, skipped };
