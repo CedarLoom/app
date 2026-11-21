@@ -6,11 +6,31 @@
   "engines": {
     "node": ">=26"
   },
-  "exports": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc"
+    "build": "vite build",
+    "typecheck": "tsc && tsc --project tsconfig.node.json",
+    "messages": "node ../core/scripts/compile-messages.ts && biome format --write src/messages",
+    "client": "openapi-typescript ../app/openapi.json --output src/openapi.d.ts && biome format --write src/openapi.d.ts",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@cedarloom/core": "workspace:*",
+    "@mantine/core": "catalog:",
+    "@mantine/hooks": "catalog:",
+    "lucide-react": "catalog:",
+    "openapi-fetch": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "@axe-core/playwright": "catalog:",
+    "@biomejs/biome": "catalog:",
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "openapi-typescript": "catalog:",
+    "typescript": "catalog:typescript6",
+    "vite": "catalog:"
   }
 }

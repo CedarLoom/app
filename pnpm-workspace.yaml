@@ -6,24 +6,46 @@ catalog:
   "@biomejs/biome": 2.6.8
   "@fastify/helmet": 13.2.0
   "@fastify/swagger": 9.9.5
+  "@axe-core/playwright": 4.14.0
   "@lingui/format-po": 6.12.0
   "@lingui/message-utils": 6.12.0
+  "@mantine/core": 9.8.1
+  "@mantine/hooks": 9.8.1
+  "@playwright/test": 1.65.1
   "@types/node": 26.6.6
+  "@types/react": 19.3.0
+  "@types/react-dom": 19.3.0
   fastify: 5.12.8
   fastify-type-provider-zod: 7.0.0
   jscpd: 5.4.3
   knip: 6.45.1
   lefthook: 2.2.2
+  lucide-react: 1.74.0
   oxlint: 1.94.0
+  openapi-fetch: 0.17.0
   openapi-types: 12.1.3
+  openapi-typescript: 7.13.0
   oxlint-tsgolint: 7.0.2007
   typescript: 7.0.2
+  react: 19.3.1
+  react-dom: 19.3.1
+  vite: 8.3.8
   vitest: 5.1.0
   zod: 4.6.7
 
 # lefthook's postinstall would install git hooks; `pnpm exec lefthook install` does that on request.
 allowBuilds:
   lefthook: false
+
+# openapi-typescript builds its output with the TypeScript compiler API, which TypeScript 7 does not have, so in ui it
+# runs on the TypeScript 6 compatibility package, whose 6.x its peer range of 5.x does not name. Its binary is tsc6,
+# so ui's typecheck still runs the root's TypeScript 7.
+catalogs:
+  typescript6:
+    typescript: npm:@typescript/typescript6@6.0.2
+peerDependencyRules:
+  allowedVersions:
+    openapi-typescript>typescript: "6"
 
 catalogMode: strict
 strictPeerDependencies: true

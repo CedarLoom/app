@@ -1,0 +1,76 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=utf-8\n"
+"Language: en\n"
+
+#. js-lingui-explicit-id
+msgid "ui.title"
+msgstr "CedarLoom"
+
+#. js-lingui-explicit-id
+msgid "ui.loading"
+msgstr "Loading"
+
+#. js-lingui-explicit-id
+msgid "ui.view"
+msgstr "{view, select, doctor {Doctor} runs {Runs} definitions {Workflows} other {{view}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.doctor.check"
+msgstr "{id, select, node {Node.js} project {Project} plugin {Plugin} definitions {Workflow definitions} generated {Generated files} other {{id}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.doctor.status"
+msgstr "{status, select, pass {Passed} warn {Warning} fail {Failed} skipped {Skipped} other {{status}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.doctor.plugin"
+msgstr "{version, select, null {{id} from {root}} other {{id} {version} from {root}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.doctor.no-plugin"
+msgstr "No cl-workflow plugin was found."
+
+#. js-lingui-explicit-id
+msgid "ui.column"
+msgstr "{column, select, check {Check} status {Status} run {Run} action {Action} subject {Subject} started {Started} name {Name} source {Source} description {Description} operation {Operation} path {Path} other {{column}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.run.status"
+msgstr "{status, select, running {Running} done {Done} failed {Failed} interrupted {Interrupted} other {{status}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.run.empty"
+msgstr "This run has no operations."
+
+#. js-lingui-explicit-id
+msgid "ui.operation.kind"
+msgstr "{kind, select, create {Create} replace {Replace} delete {Delete} other {{kind}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.operation.status"
+msgstr "{status, select, pending {Pending} done {Done} failed {Failed} settled {Settled} untouched {Untouched} other {{status}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.unreachable"
+msgstr "The CedarLoom app does not answer. Start cedarloom-app again and open the link it prints."
+
+#. js-lingui-explicit-id
+msgid "ui.runs.empty"
+msgstr "No runs yet."
+
+#. js-lingui-explicit-id
+msgid "ui.runs.back"
+msgstr "All runs"
+
+#. js-lingui-explicit-id
+msgid "ui.definitions.empty"
+msgstr "No workflow definitions."
+
+#. js-lingui-explicit-id
+msgid "ui.workflow.source"
+msgstr "{source, select, shipped {Plugin} project {Project} other {{source}}}"
+
+#. js-lingui-explicit-id
+msgid "ui.findings"
+msgstr "Findings"
