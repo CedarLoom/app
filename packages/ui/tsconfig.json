@@ -1,8 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["es2025", "dom"],
-    "types": []
+    "lib": ["es2025", "dom", "dom.iterable"],
+    "types": ["vite/client"],
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    // @mantine/core's declarations do not pass exactOptionalPropertyTypes; this skips src/openapi.d.ts too, which check.sh keeps fresh.
+    "skipLibCheck": true
   },
   "include": ["src"]
 }

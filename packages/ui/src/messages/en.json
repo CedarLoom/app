@@ -1,0 +1,97 @@
+{
+  "messages": {
+    "ui.column": [
+      [
+        "column",
+        "select",
+        {
+          "check": ["Check"],
+          "status": ["Status"],
+          "run": ["Run"],
+          "action": ["Action"],
+          "subject": ["Subject"],
+          "started": ["Started"],
+          "name": ["Name"],
+          "source": ["Source"],
+          "description": ["Description"],
+          "operation": ["Operation"],
+          "path": ["Path"],
+          "other": [["column"]]
+        }
+      ]
+    ],
+    "ui.definitions.empty": ["No workflow definitions."],
+    "ui.doctor.check": [
+      [
+        "id",
+        "select",
+        {
+          "node": ["Node.js"],
+          "project": ["Project"],
+          "plugin": ["Plugin"],
+          "definitions": ["Workflow definitions"],
+          "generated": ["Generated files"],
+          "other": [["id"]]
+        }
+      ]
+    ],
+    "ui.doctor.no-plugin": ["No cl-workflow plugin was found."],
+    "ui.doctor.plugin": [
+      [
+        "version",
+        "select",
+        { "null": [["id"], " from ", ["root"]], "other": [["id"], " ", ["version"], " from ", ["root"]] }
+      ]
+    ],
+    "ui.doctor.status": [
+      [
+        "status",
+        "select",
+        { "pass": ["Passed"], "warn": ["Warning"], "fail": ["Failed"], "skipped": ["Skipped"], "other": [["status"]] }
+      ]
+    ],
+    "ui.findings": ["Findings"],
+    "ui.loading": ["Loading"],
+    "ui.operation.kind": [
+      ["kind", "select", { "create": ["Create"], "replace": ["Replace"], "delete": ["Delete"], "other": [["kind"]] }]
+    ],
+    "ui.operation.status": [
+      [
+        "status",
+        "select",
+        {
+          "pending": ["Pending"],
+          "done": ["Done"],
+          "failed": ["Failed"],
+          "settled": ["Settled"],
+          "untouched": ["Untouched"],
+          "other": [["status"]]
+        }
+      ]
+    ],
+    "ui.run.empty": ["This run has no operations."],
+    "ui.run.status": [
+      [
+        "status",
+        "select",
+        {
+          "running": ["Running"],
+          "done": ["Done"],
+          "failed": ["Failed"],
+          "interrupted": ["Interrupted"],
+          "other": [["status"]]
+        }
+      ]
+    ],
+    "ui.runs.back": ["All runs"],
+    "ui.runs.empty": ["No runs yet."],
+    "ui.title": ["CedarLoom"],
+    "ui.unreachable": ["The CedarLoom app does not answer. Start cedarloom-app again and open the link it prints."],
+    "ui.view": [
+      ["view", "select", { "doctor": ["Doctor"], "runs": ["Runs"], "definitions": ["Workflows"], "other": [["view"]] }]
+    ],
+    "ui.workflow.source": [
+      ["source", "select", { "shipped": ["Plugin"], "project": ["Project"], "other": [["source"]] }]
+    ]
+  }
+}
