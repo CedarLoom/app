@@ -682,6 +682,146 @@
         "required": ["run"],
         "additionalProperties": false
       },
+      "WorkflowListResultInput": {
+        "type": "object",
+        "properties": {
+          "workflows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "source": { "type": "string", "enum": ["shipped", "project"] },
+                "path": { "type": "string" },
+                "description": { "type": ["string", "null"] }
+              },
+              "required": ["name", "source", "path", "description"],
+              "additionalProperties": false
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "api.bad-fields",
+                    "api.bad-request",
+                    "api.internal",
+                    "api.not-found",
+                    "apply.backup-failed",
+                    "apply.no-hard-links",
+                    "apply.recovered",
+                    "apply.unsettled",
+                    "apply.write-mismatch",
+                    "cli.bad-value",
+                    "cli.confirm-required",
+                    "cli.flag-conflict",
+                    "cli.internal",
+                    "cli.missing-argument",
+                    "cli.surplus-argument",
+                    "cli.unknown-command",
+                    "cli.unknown-flag",
+                    "cli.value-not-json",
+                    "definition.invalid",
+                    "definition.name-mismatch",
+                    "definition.not-found",
+                    "definition.not-json",
+                    "definition.stale",
+                    "edit.outputs-left",
+                    "edit.result-over-limits",
+                    "edit.target-invalid",
+                    "generate.delete-skipped",
+                    "generate.spelling-kept",
+                    "generated.file-unreadable",
+                    "generated.folder-unreadable",
+                    "generator.failed",
+                    "generator.output-unknown",
+                    "node.version-unsupported",
+                    "plan.file-changed",
+                    "plan.folder-denied",
+                    "plan.name-not-portable",
+                    "plan.name-too-long",
+                    "plan.not-text",
+                    "plan.path-nested",
+                    "plan.path-outside-roots",
+                    "plan.path-through-file",
+                    "plan.spelling-clash",
+                    "plan.stale",
+                    "plan.symlink",
+                    "plan.text-mismatch",
+                    "plugin.disabled",
+                    "plugin.found",
+                    "plugin.marketplace-untrusted",
+                    "plugin.not-found",
+                    "plugin.record-unknown",
+                    "plugin.too-old",
+                    "plugin.trust-bypassed",
+                    "plugin.untrusted",
+                    "project.git-unreadable",
+                    "project.not-found",
+                    "recovery.skipped",
+                    "run.already-undone",
+                    "run.not-found",
+                    "server.listen-failed",
+                    "server.port-in-use",
+                    "session.cookie",
+                    "session.csrf",
+                    "session.host",
+                    "session.origin",
+                    "session.token",
+                    "settings.owner-entry",
+                    "settings.unreadable",
+                    "store.locked",
+                    "store.unreadable",
+                    "store.version-unsupported",
+                    "undo.backup-changed",
+                    "undo.backup-missing",
+                    "undo.file-changed",
+                    "undo.replaced",
+                    "undo.result-kept",
+                    "workflow.name-invalid",
+                    "workflow.name-taken",
+                    "workflow.no-script"
+                  ]
+                },
+                "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+                "params": {
+                  "type": "object",
+                  "propertyNames": { "type": "string" },
+                  "additionalProperties": {
+                    "anyOf": [
+                      { "type": "string" },
+                      { "type": "number" },
+                      { "type": "boolean" },
+                      { "type": "null" },
+                      { "type": "array", "items": { "type": "string" } }
+                    ]
+                  }
+                }
+              },
+              "required": ["code", "severity", "params"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["workflows", "findings"],
+        "additionalProperties": false
+      },
+      "WorkflowShownInput": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "source": { "type": "string", "enum": ["shipped", "project"] },
+          "path": { "type": "string" },
+          "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "definition": {}
+        },
+        "required": ["name", "source", "path", "hash", "definition"],
+        "additionalProperties": false
+      },
       "RefusalInput": {
         "type": "object",
         "properties": {
@@ -1580,6 +1720,146 @@
         "required": ["run"],
         "additionalProperties": false
       },
+      "WorkflowListResult": {
+        "type": "object",
+        "properties": {
+          "workflows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "source": { "type": "string", "enum": ["shipped", "project"] },
+                "path": { "type": "string" },
+                "description": { "type": ["string", "null"] }
+              },
+              "required": ["name", "source", "path", "description"],
+              "additionalProperties": false
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "enum": [
+                    "api.bad-fields",
+                    "api.bad-request",
+                    "api.internal",
+                    "api.not-found",
+                    "apply.backup-failed",
+                    "apply.no-hard-links",
+                    "apply.recovered",
+                    "apply.unsettled",
+                    "apply.write-mismatch",
+                    "cli.bad-value",
+                    "cli.confirm-required",
+                    "cli.flag-conflict",
+                    "cli.internal",
+                    "cli.missing-argument",
+                    "cli.surplus-argument",
+                    "cli.unknown-command",
+                    "cli.unknown-flag",
+                    "cli.value-not-json",
+                    "definition.invalid",
+                    "definition.name-mismatch",
+                    "definition.not-found",
+                    "definition.not-json",
+                    "definition.stale",
+                    "edit.outputs-left",
+                    "edit.result-over-limits",
+                    "edit.target-invalid",
+                    "generate.delete-skipped",
+                    "generate.spelling-kept",
+                    "generated.file-unreadable",
+                    "generated.folder-unreadable",
+                    "generator.failed",
+                    "generator.output-unknown",
+                    "node.version-unsupported",
+                    "plan.file-changed",
+                    "plan.folder-denied",
+                    "plan.name-not-portable",
+                    "plan.name-too-long",
+                    "plan.not-text",
+                    "plan.path-nested",
+                    "plan.path-outside-roots",
+                    "plan.path-through-file",
+                    "plan.spelling-clash",
+                    "plan.stale",
+                    "plan.symlink",
+                    "plan.text-mismatch",
+                    "plugin.disabled",
+                    "plugin.found",
+                    "plugin.marketplace-untrusted",
+                    "plugin.not-found",
+                    "plugin.record-unknown",
+                    "plugin.too-old",
+                    "plugin.trust-bypassed",
+                    "plugin.untrusted",
+                    "project.git-unreadable",
+                    "project.not-found",
+                    "recovery.skipped",
+                    "run.already-undone",
+                    "run.not-found",
+                    "server.listen-failed",
+                    "server.port-in-use",
+                    "session.cookie",
+                    "session.csrf",
+                    "session.host",
+                    "session.origin",
+                    "session.token",
+                    "settings.owner-entry",
+                    "settings.unreadable",
+                    "store.locked",
+                    "store.unreadable",
+                    "store.version-unsupported",
+                    "undo.backup-changed",
+                    "undo.backup-missing",
+                    "undo.file-changed",
+                    "undo.replaced",
+                    "undo.result-kept",
+                    "workflow.name-invalid",
+                    "workflow.name-taken",
+                    "workflow.no-script"
+                  ]
+                },
+                "severity": { "type": "string", "enum": ["error", "warning", "info"] },
+                "params": {
+                  "type": "object",
+                  "propertyNames": { "type": "string" },
+                  "additionalProperties": {
+                    "anyOf": [
+                      { "type": "string" },
+                      { "type": "number" },
+                      { "type": "boolean" },
+                      { "type": "null" },
+                      { "type": "array", "items": { "type": "string" } }
+                    ]
+                  }
+                }
+              },
+              "required": ["code", "severity", "params"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["workflows", "findings"],
+        "additionalProperties": false
+      },
+      "WorkflowShown": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "source": { "type": "string", "enum": ["shipped", "project"] },
+          "path": { "type": "string" },
+          "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "definition": { "$ref": "#/components/schemas/__shared/$defs/schema0" }
+        },
+        "required": ["name", "source", "path", "hash", "definition"],
+        "additionalProperties": false
+      },
       "Refusal": {
         "type": "object",
         "properties": {
@@ -1966,6 +2246,60 @@
           "4XX": {
             "description": "Default Response",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
+          }
+        }
+      }
+    },
+    "/api/workflows": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkflowListResult" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
+          },
+          "5XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApplyRefusal" } } }
+          }
+        }
+      }
+    },
+    "/api/workflows/{source}/{name}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": { "type": "string", "enum": ["shipped", "project"] },
+            "in": "path",
+            "name": "source",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^(?!(?:con|prn|aux|nul|conin\\$|conout\\$|com[0-9¹²³]|lpt[0-9¹²³])$)[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "in": "path",
+            "name": "name",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkflowShown" } } }
+          },
+          "4XX": {
+            "description": "Default Response",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Refusal" } } }
           },
           "5XX": {
             "description": "Default Response",

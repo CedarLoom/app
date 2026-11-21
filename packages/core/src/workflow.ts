@@ -3,8 +3,10 @@ import { JsonValue } from './canonical-json.ts';
 import { Refusal } from './finding.ts';
 import { Hash } from './plan.ts';
 
-// Device names Windows reserves in every folder, also with spaces or an extension after them; it reads ¹ ² ³ as digits.
-const RESERVED = /^(con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³]) *(\.|$)/i;
+// Device names Windows reserves in every folder; it reads ¹ ² ³ as digits.
+const DEVICE_NAMES = String.raw`con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³]`;
+// A device name also with spaces or an extension after it.
+const RESERVED = new RegExp(String.raw`^(?:${DEVICE_NAMES}) *(?:\.|$)`, 'i');
 
 /** Whether a file or folder name is a device name Windows reserves, such as `nul` or `com0.md`. */
 export const isReservedName = (name: string): boolean => RESERVED.test(name);
@@ -13,12 +15,15 @@ export const isReservedName = (name: string): boolean => RESERVED.test(name);
 // (use-cases name-taken.ts, project-files.ts asidePath, apply.ts nameProblem); precheck refuses longer positions.
 export const LONGEST_NAME = 166;
 
-/** A workflow name: it becomes a file and a folder name, so it is checked before it reaches a path. */
+/**
+ * A workflow name: it becomes a file and a folder name, so it is checked before it reaches a path. No device name
+ * Windows reserves in every folder; the form has no extension and no capitals, so the whole name is compared. One
+ * pattern, not a refinement, so the OpenAPI document states the whole rule.
+ */
 export const WorkflowName = z
   .string()
-  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
-  .max(LONGEST_NAME)
-  .refine((name) => !isReservedName(name));
+  .regex(new RegExp(String.raw`^(?!(?:${DEVICE_NAMES})$)[a-z0-9]+(?:-[a-z0-9]+)*$`))
+  .max(LONGEST_NAME);
 
 /** Where a definition comes from: the plugin's own, read only, or the project's in .cedarloom/workflows. */
 export const WorkflowSource = z.enum(['shipped', 'project']);
