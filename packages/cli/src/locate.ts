@@ -7,7 +7,14 @@ import { type Outcome, refused } from './output.ts';
 export const locate = (io: Io): { root: string; dir: string } | { refusal: Refusal } => {
   const root = projectRoot(io.cwd);
   if (typeof root !== 'string') return { refusal: root };
-  return { root, dir: storeDir({ ...io, projectRoot: root }) };
+  try {
+    return { root, dir: storeDir({ ...io, projectRoot: root }) };
+  } catch (error) {
+    // A file system error on the real path (code set) is a refusal; anything else is a crash.
+    if (error instanceof Error && 'code' in error)
+      return { refusal: { code: 'project.path-unresolvable', params: { path: root } } };
+    throw error;
+  }
 };
 
 /**

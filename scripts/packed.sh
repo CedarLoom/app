@@ -10,7 +10,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/cedarloom-packed.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 for package in core use-cases cli; do
-  pnpm --filter "@cedarloom/$package" run build
+  # The package's prepack script builds it, so a tarball never holds a stale dist.
   pnpm --filter "@cedarloom/$package" pack --pack-destination "$work"
 done
 

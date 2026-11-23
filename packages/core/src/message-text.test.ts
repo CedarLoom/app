@@ -1,6 +1,6 @@
 import { compileMessageOrThrow } from '@lingui/message-utils/compileMessage';
 import { expect, it } from 'vitest';
-import { messageText, printableStack } from './message-text.ts';
+import { messageText, printable, printableJson, printableStack } from './message-text.ts';
 
 it('renders a select argument by the branch its value names, null included, else by other', () => {
   const catalog = { m: [['path', 'select', { null: ['none'], other: ['in ', ['path']] }], '.'] };
@@ -95,4 +95,16 @@ it('keeps the frames apart when the message text appears again later in the stac
     true,
     true,
   ]);
+});
+
+it('escapes a backslash that starts an escape-like text, so it reads apart from the escaped character', () => {
+  expect([printable('\u202e'), printable('\\u202e'), printable('C:\\users')]).toEqual([
+    '\\u202e',
+    '\\u005cu202e',
+    'C:\\users',
+  ]);
+});
+
+it('leaves the backslashes of JSON text alone, which already escape their own', () => {
+  expect(printableJson('{"a":"\\\\u202e\u202e"}')).toBe('{"a":"\\\\u202e\\u202e"}');
 });

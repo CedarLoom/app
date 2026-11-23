@@ -6,6 +6,7 @@ import {
   messageText,
   type Params,
   printable,
+  printableJson,
   printableStack,
   type Refusal,
 } from '@cedarloom/core';
@@ -59,7 +60,7 @@ const text = (id: Code | keyof MessagePlaceholders, params: Params): string => `
 const refused = (code: Code, params: Params): { refusal: Refusal } => ({ refusal: { code, params } });
 // stringify leaves DEL, C1, format and separator characters raw, only inside strings, where \u escapes parse equal.
 const documentLine = (result: unknown, refusals: Refusal[]): string =>
-  `${printable(JSON.stringify({ result, findings: [], refusals }))}\n`;
+  `${printableJson(JSON.stringify({ result, findings: [], refusals }))}\n`;
 
 interface Flag {
   name: string;

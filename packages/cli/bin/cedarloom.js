@@ -30,7 +30,7 @@ function stop(document, problem, exitCode) {
 
 // Every control, format and separator character escaped, line feeds too, as printable of core does, when core does not load.
 function escaped(value) {
-  return value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, function (character) {
+  return value.replace(/\\(?=u[0-9a-f]{4})/g, '\\u005c').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, function (character) {
     return character
       .split('')
       .map(function (unit) {

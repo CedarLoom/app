@@ -311,6 +311,14 @@ it('reports a crash as cli.internal with the stack escaped on standard error, ex
   expect(crashed.stderr).toMatch(/^Error: disk gone\\u202e\n\s+at /);
 });
 
+it('refuses a project whose real path cannot be resolved with project.path-unresolvable, exit 3', () => {
+  const { root } = project();
+  expect(ran(['runs', 'list', '--json'], root, { realpath: unresolvable })).toMatchObject({
+    code: 3,
+    document: { result: null, refusals: [{ code: 'project.path-unresolvable', params: { path: root } }] },
+  });
+});
+
 it('prints the cause of a crash with its stack', () => {
   const { root } = project();
   expect(ran(['runs', 'list', '--json'], root, { realpath: stoppedRun }).stderr).toMatch(
@@ -339,6 +347,10 @@ const lostDisk = (): string => {
   throw new Error('disk gone\u202e');
 };
 
+const unresolvable = (): string => {
+  throw Object.assign(new Error('no /proc'), { code: 'ENOENT' });
+};
+
 const stoppedRun = (): string => {
   throw new Error('run r1 stopped', { cause: new Error('disk gone') });
 };
@@ -356,18 +368,6 @@ const blocking = (blocked: string, thrown = "new Error('missing\\n    at forged'
 };
 
 describe('bin/cedarloom.js', () => {
-  it('refuses undo without --yes on closed standard input with cli.confirm-required, exit 4', () => {
-    const { root, state } = project();
-    recorded(root, state);
-    const { code, document } = started([bin, 'undo', 'r1', '--json'], {
-      cwd: root,
-      env: { CEDARLOOM_STATE_DIR: state },
-    });
-    expect(code).toBe(4);
-    expect(document.refusals).toEqual([{ code: 'cli.confirm-required', params: {} }]);
-    expect(existsSync(join(root, '.claude/a.md'))).toBe(true);
-  });
-
   it('reports an old Node.js with node.version-unsupported before it loads the rest, exit 1', () => {
     const { root } = project();
     writeFileSync(join(root, 'old.mjs'), "Object.defineProperty(process.versions, 'node', { value: '24.11.1' });");

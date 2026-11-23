@@ -4,9 +4,14 @@ import type { Params } from './finding.ts';
 export type CompiledMessage = string | readonly (string | readonly unknown[])[];
 
 const escaped = (unit: string): string => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`;
-/** A value as the terminal shows it: Cc, Cf, Zl and Zp escaped; blanks such as U+00A0, U+3000 and U+3164 pass. */
-export const printable = (value: string): string =>
-  value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (character) => character.split('').map(escaped).join(''));
+/** JSON text as the terminal shows it: Cc, Cf, Zl and Zp escaped, which JSON reads back as the same characters. */
+export const printableJson = (json: string): string =>
+  json.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (character) => character.split('').map(escaped).join(''));
+/**
+ * A value as the terminal shows it: Cc, Cf, Zl and Zp escaped; blanks such as U+00A0, U+3000 and U+3164 pass. A
+ * backslash that starts text like an escape is escaped too, so that text reads apart from the escapes written here.
+ */
+export const printable = (value: string): string => printableJson(value.replace(/\\(?=u[0-9a-f]{4})/g, '\\u005c'));
 /** A multi-line text, such as a stack, with each line printable and its line feeds kept. */
 export const printableLines = (text: string): string => text.split('\n').map(printable).join('\n');
 
