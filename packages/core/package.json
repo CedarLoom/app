@@ -24,7 +24,8 @@
   ],
   "scripts": {
     "typecheck": "tsc && tsc --project tsconfig.node.json",
-    "build": "tsc --noEmit false --rootDir src --outDir dist",
+    "build": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\" && tsc --noEmit false --rootDir src --outDir dist",
+    "prepack": "pnpm run build",
     "messages": "node scripts/compile-messages.ts && biome format --write src/messages"
   },
   "dependencies": {

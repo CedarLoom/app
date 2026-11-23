@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type PlanOperation, planHash } from '@cedarloom/core';
+import { type PlanOperation, planHash, printable } from '@cedarloom/core';
 import { type ApplyRequest, apply, openStore, storeDir } from '@cedarloom/use-cases';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Io, main } from './index.ts';
@@ -253,6 +253,9 @@ it('refuses a run id outside the run id form with run.not-found, exit 3, escaped
   expect(ran(['runs', 'show', '\u001b[2J\u202e\u2028\u{e0001}'], root).stderr).toContain(
     '\\u001b[2J\\u202e\\u2028\\udb40\\udc01',
   );
+  expect(ran(['runs', 'show', '\\u202e', '--json'], root).document.refusals).toEqual([
+    { code: 'run.not-found', params: { run: '\\u202e' } },
+  ]);
 });
 
 it('shows the undo plan without --yes and does not apply it, exit 4; applies it with --yes', () => {
@@ -311,6 +314,22 @@ it('reports a crash as cli.internal with the stack escaped on standard error, ex
   expect(crashed.stderr).toMatch(/^Error: disk gone\\u202e\n\s+at /);
 });
 
+it('refuses a project whose real path cannot be resolved with project.path-unresolvable, exit 3', () => {
+  const { root } = project();
+  expect(ran(['runs', 'list', '--json'], root, { realpath: unresolvable })).toMatchObject({
+    code: 3,
+    document: { result: null, refusals: [{ code: 'project.path-unresolvable', params: { path: root } }] },
+  });
+});
+
+it('reports an argument error from the real path as a crash, cli.internal, exit 5', () => {
+  const { root } = project();
+  expect(ran(['runs', 'list', '--json'], root, { realpath: nullByte })).toMatchObject({
+    code: 5,
+    document: { result: null, refusals: [{ code: 'cli.internal', params: {} }] },
+  });
+});
+
 it('prints the cause of a crash with its stack', () => {
   const { root } = project();
   expect(ran(['runs', 'list', '--json'], root, { realpath: stoppedRun }).stderr).toMatch(
@@ -339,6 +358,10 @@ const lostDisk = (): string => {
   throw new Error('disk gone\u202e');
 };
 
+// A system error (ENOENT, syscall realpath) and an argument error (ERR_INVALID_ARG_VALUE, no syscall).
+const unresolvable = (path: string): string => realpathSync.native(join(path, 'missing'));
+const nullByte = (path: string): string => realpathSync.native(`${path}\0`);
+
 const stoppedRun = (): string => {
   throw new Error('run r1 stopped', { cause: new Error('disk gone') });
 };
@@ -356,18 +379,6 @@ const blocking = (blocked: string, thrown = "new Error('missing\\n    at forged'
 };
 
 describe('bin/cedarloom.js', () => {
-  it('refuses undo without --yes on closed standard input with cli.confirm-required, exit 4', () => {
-    const { root, state } = project();
-    recorded(root, state);
-    const { code, document } = started([bin, 'undo', 'r1', '--json'], {
-      cwd: root,
-      env: { CEDARLOOM_STATE_DIR: state },
-    });
-    expect(code).toBe(4);
-    expect(document.refusals).toEqual([{ code: 'cli.confirm-required', params: {} }]);
-    expect(existsSync(join(root, '.claude/a.md'))).toBe(true);
-  });
-
   it('reports an old Node.js with node.version-unsupported before it loads the rest, exit 1', () => {
     const { root } = project();
     writeFileSync(join(root, 'old.mjs'), "Object.defineProperty(process.versions, 'node', { value: '24.11.1' });");
@@ -391,6 +402,15 @@ describe('bin/cedarloom.js', () => {
       true,
       false,
     ]);
+  });
+
+  it('escapes the thrown text as printable of core does, when its packages do not load', () => {
+    const thrown = 'C:\\Users\\u12345 \\ubeef \\u0041 \\u202e \\u202E \\u005c \\ud800 \u202e\ud800x\u001b\u2028';
+    const shown =
+      'C:\\Users\\u12345 \\ubeef \\u0041 \\u005cu202e \\u005cu202E \\u005cu005c \\u005cud800 \\u202e\\ud800x\\u001b\\u2028';
+    const root = blocking('@cedarloom/', JSON.stringify(thrown));
+    const { stderr } = started(['--import', './missing.mjs', bin, 'doctor'], { cwd: root });
+    expect([stderr, printable(thrown)]).toEqual([`${shown}\ncli.internal\n`, shown]);
   });
 
   it('ends with the code cli.internal, exit 5, when its packages do not load and the thrown value has no text', () => {

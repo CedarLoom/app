@@ -18,7 +18,8 @@
   ],
   "scripts": {
     "typecheck": "tsc",
-    "build": "tsc --noEmit false --rootDir src --outDir dist"
+    "build": "node --eval \"fs.rmSync('dist', { recursive: true, force: true })\" && tsc --noEmit false --rootDir src --outDir dist",
+    "prepack": "pnpm run build"
   },
   "dependencies": {
     "@cedarloom/core": "workspace:*",

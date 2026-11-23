@@ -60,6 +60,7 @@ export const MESSAGE_IDS = [
   'plugin.untrusted',
   'project.git-unreadable',
   'project.not-found',
+  'project.path-unresolvable',
   'recovery.skipped',
   'run.already-undone',
   'run.not-found',
@@ -142,6 +143,7 @@ export interface MessagePlaceholders {
   'plugin.untrusted': 'id';
   'project.git-unreadable': 'path';
   'project.not-found': 'cwd';
+  'project.path-unresolvable': 'path';
   'recovery.skipped': 'path' | 'run';
   'run.already-undone': 'by' | 'run';
   'run.not-found': 'run';

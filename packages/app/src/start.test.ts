@@ -132,6 +132,15 @@ describe('start', () => {
     });
     expect(['close' in result, document.refusals, errors]).toEqual([true, [], ['no browser\\u202e\n']]);
   });
+
+  it('refuses a project whose real path cannot be resolved with project.path-unresolvable, exit 3', async () => {
+    const { io, out } = appIo(['--no-open', '--json']);
+    const unresolvable = { ...io, storeDir: (root: string) => realpathSync.native(join(root, 'missing')) };
+    expect([await start(unresolvable), JSON.parse(out.join('')).refusals]).toEqual([
+      { exitCode: 3 },
+      [{ code: 'project.path-unresolvable', params: { path: io.cwd } }],
+    ]);
+  });
 });
 
 describe('start, the redirect page', () => {

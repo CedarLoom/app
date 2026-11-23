@@ -1,4 +1,4 @@
-import { type Finding, printable, type Refusal } from '@cedarloom/core';
+import { type Finding, printable, printableJson, type Refusal } from '@cedarloom/core';
 import type { Io } from './io.ts';
 import { message } from './message.ts';
 
@@ -41,7 +41,7 @@ export const write = (
 ): void => {
   if (json) {
     // stringify leaves DEL, C1, format and separator characters raw, only inside strings, where \u escapes parse equal.
-    io.stdout(`${printable(JSON.stringify({ result, findings, refusals }))}\n`);
+    io.stdout(`${printableJson(JSON.stringify({ result, findings, refusals }))}\n`);
     return;
   }
   io.stdout(text);
