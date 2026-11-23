@@ -208,6 +208,19 @@ const request = (io: AppIo, json: boolean, stop: Stop): Options | Started => {
   return { exitCode: 0 };
 };
 
+/** The project of cwd and the folder of its store, or the refusal. */
+const located = (io: AppIo, cwd: string): { root: string; storeDir: string } | Refusal => {
+  const root = projectRoot(cwd);
+  if (typeof root !== 'string') return root;
+  try {
+    return { root, storeDir: io.storeDir(root) };
+  } catch (error) {
+    // A system error on the real path (syscall set) is a refusal, as in the CLI; anything else is a crash.
+    if (!(error instanceof Error && 'syscall' in error)) throw error;
+    return { code: 'project.path-unresolvable', params: { path: root } };
+  }
+};
+
 /** Starts the server for the project in cwd on 127.0.0.1 and prints its URL with the one-time token in the fragment. */
 export const start = async (io: AppIo): Promise<Started> => {
   const json = io.argv.includes('--json');
@@ -224,8 +237,9 @@ export const start = async (io: AppIo): Promise<Started> => {
     // A removed working folder cannot be read, and the shell's PWD may name another folder, so the refusal names ".".
     return stop({ code: 'project.not-found', params: { cwd: '.' } }, 3);
   }
-  const root = projectRoot(cwd);
-  if (typeof root !== 'string') return stop(root, 3);
+  const place = located(io, cwd);
+  if ('code' in place) return stop(place, 3);
+  const { root, storeDir } = place;
   let redirect: Redirect | undefined;
   // A page left behind holds a token that is spent or ends with the server, so a failed removal is only reported.
   const removePage = (): void => {
@@ -239,7 +253,7 @@ export const start = async (io: AppIo): Promise<Started> => {
   const { node, required, env, home } = io;
   const pluginRoot = options.pluginRoot === null ? null : resolve(cwd, options.pluginRoot);
   const doctorInputs = { node, required, cwd, env, home, pluginRoot };
-  const project = { root, storeDir: io.storeDir(root), clock: io.clock, ...doctorInputs };
+  const project = { root, storeDir, clock: io.clock, ...doctorInputs };
   const app = await buildServer({ session, log: io.stderr, project, ui: io.uiDir });
   try {
     await app.listen({ host: '127.0.0.1', port: options.port });

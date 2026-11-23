@@ -105,6 +105,31 @@ it('escapes a backslash that starts an escape-like text, so it reads apart from 
   ]);
 });
 
+it('escapes a backslash only before the escape of a character it escapes or of a backslash, in either case', () => {
+  const values = ['C:\\Users\\u12345\\repo', 'C:\\work\\ubeef\\x', '\\u0041', '\\u202E', '\\u005c', '\\ud800'];
+  expect(values.map(printable)).toEqual([
+    'C:\\Users\\u12345\\repo',
+    'C:\\work\\ubeef\\x',
+    '\\u0041',
+    '\\u005cu202E',
+    '\\u005cu005c',
+    '\\u005cud800',
+  ]);
+});
+
+it('escapes a lone surrogate', () => {
+  expect(printable('a\ud800b')).toBe('a\\ud800b');
+});
+
+it('writes the fields of a thrown object and of an error as JSON that reads back as the same values', () => {
+  const thrown = { text: '\u001b[31m', literal: '\\u001b', path: 'C:\\Users\\u12345' };
+  const error = Object.assign(new Error('failed'), { path: 'a\u001bb' });
+  expect([JSON.parse(printableStack(thrown)), JSON.parse(printableStack(error).split('\n').at(-1) ?? '')]).toEqual([
+    { text: '\u001b[31m', literal: '\\u001b', path: 'C:\\Users\\u12345' },
+    { path: 'a\u001bb' },
+  ]);
+});
+
 it('leaves the backslashes of JSON text alone, which already escape their own', () => {
   expect(printableJson('{"a":"\\\\u202e\u202e"}')).toBe('{"a":"\\\\u202e\\u202e"}');
 });

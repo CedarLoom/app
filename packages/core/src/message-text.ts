@@ -4,14 +4,21 @@ import type { Params } from './finding.ts';
 export type CompiledMessage = string | readonly (string | readonly unknown[])[];
 
 const escaped = (unit: string): string => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`;
-/** JSON text as the terminal shows it: Cc, Cf, Zl and Zp escaped, which JSON reads back as the same characters. */
+const HIDDEN = /^[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]$/u;
+/** JSON text as the terminal shows it: Cc, Cf, Zl, Zp and lone surrogates escaped, which JSON reads back as the same. */
 export const printableJson = (json: string): string =>
-  json.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, (character) => character.split('').map(escaped).join(''));
+  json.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu, (character) => character.split('').map(escaped).join(''));
+// A backslash before u and four hex digits that name a character escaped here, or a backslash, would read as an escape.
+const escapeLike = (backslash: string, hex: string): string => {
+  const named = String.fromCharCode(Number.parseInt(hex, 16));
+  return named === '\\' || HIDDEN.test(named) ? '\\u005c' : backslash;
+};
 /**
- * A value as the terminal shows it: Cc, Cf, Zl and Zp escaped; blanks such as U+00A0, U+3000 and U+3164 pass. A
- * backslash that starts text like an escape is escaped too, so that text reads apart from the escapes written here.
+ * A value as the terminal shows it: Cc, Cf, Zl, Zp and lone surrogates escaped; blanks such as U+00A0, U+3000 and U+3164
+ * pass. A backslash that starts text like one of these escapes is escaped too, so that text reads apart from them.
  */
-export const printable = (value: string): string => printableJson(value.replace(/\\(?=u[0-9a-f]{4})/g, '\\u005c'));
+export const printable = (value: string): string =>
+  printableJson(value.replace(/\\(?=u([0-9a-fA-F]{4}))/g, escapeLike));
 /** A multi-line text, such as a stack, with each line printable and its line feeds kept. */
 export const printableLines = (text: string): string => text.split('\n').map(printable).join('\n');
 
@@ -30,8 +37,11 @@ const tried = <T>(read: () => T, fallback: T): T => {
 
 const tagOf = (value: unknown): string => tried(() => Object.prototype.toString.call(value), UNREADABLE);
 
-// JSON.stringify throws on a cycle, a BigInt or a getter, and gives undefined when toJSON does.
-const jsonOf = (value: object): string => tried(() => JSON.stringify(value), undefined) ?? tagOf(value);
+// JSON.stringify throws on a cycle, a BigInt or a getter, and gives undefined when toJSON does; the tag is no JSON.
+const jsonOf = (value: object): string => {
+  const json = tried(() => JSON.stringify(value), undefined);
+  return json === undefined ? printable(tagOf(value)) : printableJson(json);
+};
 
 // The stack starts with the header "name: message", so a line feed in either would add a line that reads as a frame.
 const stackOf = (error: Error): string => {
@@ -47,12 +57,12 @@ const stackOf = (error: Error): string => {
 // An error's own lines and the values it wraps, each with its label.
 const partsOf = (value: unknown): { own: string[]; inner: [string, unknown][] } => {
   if (!(value instanceof Error))
-    return { own: [printable(typeof value === 'object' && value !== null ? jsonOf(value) : String(value))], inner: [] };
+    return { own: [typeof value === 'object' && value !== null ? jsonOf(value) : printable(String(value))], inner: [] };
   const fields = jsonOf(value);
   const errors = value instanceof AggregateError ? tried(() => value.errors, undefined) : undefined;
   const inner: [string, unknown][] = Array.isArray(errors) ? errors.map((error) => ['[errors]: ', error]) : [];
   if (tried(() => 'cause' in value, false)) inner.unshift(['[cause]: ', tried(() => value.cause, UNREADABLE)]);
-  return { own: [stackOf(value), ...(fields === '{}' ? [] : [printable(fields)])], inner };
+  return { own: [stackOf(value), ...(fields === '{}' ? [] : [fields])], inner };
 };
 
 /**

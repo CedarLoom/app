@@ -28,16 +28,22 @@ function stop(document, problem, exitCode) {
   process.exitCode = exitCode;
 }
 
-// Every control, format and separator character escaped, line feeds too, as printable of core does, when core does not load.
+// Every control, format and separator character and lone surrogate escaped, line feeds too, as printable of core does,
+// when core does not load.
 function escaped(value) {
-  return value.replace(/\\(?=u[0-9a-f]{4})/g, '\\u005c').replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, function (character) {
-    return character
-      .split('')
-      .map(function (unit) {
-        return '\\u' + unit.charCodeAt(0).toString(16).padStart(4, '0');
-      })
-      .join('');
-  });
+  return value
+    .replace(/\\(?=u([0-9a-fA-F]{4}))/g, function (backslash, hex) {
+      const named = String.fromCharCode(Number.parseInt(hex, 16));
+      return named === '\\' || /^[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]$/u.test(named) ? '\\u005c' : backslash;
+    })
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu, function (character) {
+      return character
+        .split('')
+        .map(function (unit) {
+          return '\\u' + unit.charCodeAt(0).toString(16).padStart(4, '0');
+        })
+        .join('');
+    });
 }
 
 function crashed(report) {
