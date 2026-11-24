@@ -391,6 +391,18 @@ describe('bin/cedarloom-app.js, broken by a preload', () => {
     ]);
   });
 
+  it('escapes the thrown text as printable of core does, so text that reads as an escape stays apart, when core does not load', () => {
+    const thrown = 'C:\\Users \\u202e \u202e \\u0041 \ud800';
+    const child = binWith(
+      [
+        "import { registerHooks } from 'node:module';",
+        `registerHooks({ resolve: (name, context, next) => { if (name.startsWith('@cedarloom/')) throw ${JSON.stringify(thrown)}; return next(name, context); } });`,
+      ].join('\n'),
+      [],
+    );
+    expect([child.status, child.stderr]).toEqual([5, 'C:\\Users \\u005cu202e \\u202e \\u0041 \\ud800\ncli.internal\n']);
+  });
+
   describe('in a removed working folder', () => {
     const gone = "process.cwd = () => { throw new Error('ENOENT: uv_cwd'); };";
 
