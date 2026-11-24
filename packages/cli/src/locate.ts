@@ -7,7 +7,7 @@ import { type Outcome, refused } from './output.ts';
 export const locate = (io: Io): { root: string; dir: string } | { refusal: Refusal } => {
   const root = projectRoot(io.cwd);
   if (typeof root !== 'string') return { refusal: root };
-  const dir = resolvedStoreDir(root, (projectRoot) => storeDir({ ...io, projectRoot }));
+  const dir = resolvedStoreDir(root, (found) => storeDir({ ...io, projectRoot: found }));
   return typeof dir === 'string' ? { root, dir } : { refusal: dir };
 };
 
