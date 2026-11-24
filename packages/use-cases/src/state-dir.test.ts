@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stateDir, storeDir } from './state-dir.ts';
+import { resolvedStoreDir, stateDir, storeDir } from './state-dir.ts';
 
 const posixHome = { platform: 'linux', home: '/home/me', cwd: '/work' } as const;
 const realpath = (path: string): string => path.replace('/work/link', '/work/repo');
@@ -43,6 +43,23 @@ describe('stateDir', () => {
     expect(storeDir({ env, ...posixHome, cwd: '/work/link/docs', projectRoot: '/work/link', realpath })).toBe(
       '/work/repo/state/ddc5e473a09bd156',
     );
+  });
+
+  it('refuses a store folder stopped by a system error with project.path-unresolvable', () => {
+    const missing = (): string => {
+      throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT', syscall: 'realpath' });
+    };
+    expect(resolvedStoreDir('/work/repo', missing)).toEqual({
+      code: 'project.path-unresolvable',
+      params: { path: '/work/repo' },
+    });
+  });
+
+  it('lets an error without a syscall propagate from the store folder', () => {
+    const invalid = (): string => {
+      throw Object.assign(new TypeError('path must not hold null bytes'), { code: 'ERR_INVALID_ARG_VALUE' });
+    };
+    expect(() => resolvedStoreDir('/work/repo', invalid)).toThrow('path must not hold null bytes');
   });
 
   it('reads Windows paths on Windows', () => {

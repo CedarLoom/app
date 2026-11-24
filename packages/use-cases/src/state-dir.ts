@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { posix, win32 } from 'node:path';
+import type { Refusal } from '@cedarloom/core';
 
 export interface StateDirInputs {
   env: Readonly<Record<string, string | undefined>>;
@@ -42,4 +43,17 @@ export const storeDir = (inputs: StoreDirInputs): string => {
   const path = inputs.platform === 'win32' ? win32 : posix;
   const root = inputs.realpath(path.resolve(inputs.cwd, inputs.projectRoot));
   return path.join(stateDir({ ...inputs, cwd: root }), createHash('sha256').update(root).digest('hex').slice(0, 16));
+};
+
+/**
+ * The store folder storeOf finds for a project root, or project.path-unresolvable when a system error (syscall set)
+ * stops it, such as a real path that cannot be resolved; any other error, an argument error included, propagates.
+ */
+export const resolvedStoreDir = (root: string, storeOf: (root: string) => string): string | Refusal => {
+  try {
+    return storeOf(root);
+  } catch (error) {
+    if (!(error instanceof Error && 'syscall' in error)) throw error;
+    return { code: 'project.path-unresolvable', params: { path: root } };
+  }
 };

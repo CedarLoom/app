@@ -1,5 +1,5 @@
 import type { Refusal } from '@cedarloom/core';
-import { openStore, projectRoot, type RunStore, storeDir } from '@cedarloom/use-cases';
+import { openStore, projectRoot, type RunStore, resolvedStoreDir, storeDir } from '@cedarloom/use-cases';
 import type { Io } from './io.ts';
 import { type Outcome, refused } from './output.ts';
 
@@ -7,14 +7,8 @@ import { type Outcome, refused } from './output.ts';
 export const locate = (io: Io): { root: string; dir: string } | { refusal: Refusal } => {
   const root = projectRoot(io.cwd);
   if (typeof root !== 'string') return { refusal: root };
-  try {
-    return { root, dir: storeDir({ ...io, projectRoot: root }) };
-  } catch (error) {
-    // A system error on the real path (syscall set) is a refusal; anything else, an argument error included, is a crash.
-    if (error instanceof Error && 'syscall' in error)
-      return { refusal: { code: 'project.path-unresolvable', params: { path: root } } };
-    throw error;
-  }
+  const dir = resolvedStoreDir(root, (projectRoot) => storeDir({ ...io, projectRoot }));
+  return typeof dir === 'string' ? { root, dir } : { refusal: dir };
 };
 
 /**
