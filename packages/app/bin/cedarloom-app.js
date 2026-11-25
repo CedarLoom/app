@@ -21,6 +21,23 @@ function messageOf(code, params) {
     : parts.map((part) => (typeof part === 'string' ? part : params[part[0]])).join('');
 }
 
+// As printable of core: control, format and separator characters and lone surrogates as \uXXXX, and a backslash that
+// starts text like such an escape as \, so the text and the character it names print apart.
+const hidden = /^[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]$/u;
+function escaped(text) {
+  return text
+    .replace(/\\(?=u([0-9a-fA-F]{4}))/g, (backslash, hex) => {
+      const named = String.fromCharCode(Number.parseInt(hex, 16));
+      return named === '\\' || hidden.test(named) ? '\\u005c' : backslash;
+    })
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/gu, (c) =>
+      c
+        .split('')
+        .map((unit) => '\\u' + unit.charCodeAt(0).toString(16).padStart(4, '0'))
+        .join(''),
+    );
+}
+
 function report(document, problem) {
   if (json) process.stdout.write(JSON.stringify(document) + '\n');
   else process.stderr.write(messageOf(problem.code, problem.params) + '\n');
@@ -39,10 +56,7 @@ if (Number(found.split('.')[0]) >= Number(required.replace('>=', ''))) {
             process.stderr.write(core.printableStack(error) + '\n');
           },
           function () {
-            const stack = String(error instanceof Error ? error.stack : error);
-            process.stderr.write(
-              stack.replace(/[^\x20-\x7e]/gu, (c) => '\\u{' + c.codePointAt(0).toString(16) + '}') + '\n',
-            );
+            process.stderr.write(escaped(String(error instanceof Error ? error.stack : error)) + '\n');
           },
         )
         .then(function () {

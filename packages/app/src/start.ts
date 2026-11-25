@@ -11,7 +11,7 @@ import {
   type Refusal,
 } from '@cedarloom/core';
 import core from '@cedarloom/core/messages/en.json' with { type: 'json' };
-import { projectRoot, type StoreClock } from '@cedarloom/use-cases';
+import { projectRoot, resolvedStoreDir, type StoreClock } from '@cedarloom/use-cases';
 import type { MessagePlaceholders } from './messages/catalog.ts';
 import own from './messages/en.json' with { type: 'json' };
 import { type Redirect, sweepRedirects, writeRedirect } from './redirect.ts';
@@ -212,13 +212,8 @@ const request = (io: AppIo, json: boolean, stop: Stop): Options | Started => {
 const located = (io: AppIo, cwd: string): { root: string; storeDir: string } | Refusal => {
   const root = projectRoot(cwd);
   if (typeof root !== 'string') return root;
-  try {
-    return { root, storeDir: io.storeDir(root) };
-  } catch (error) {
-    // A system error on the real path (syscall set) is a refusal, as in the CLI; anything else is a crash.
-    if (!(error instanceof Error && 'syscall' in error)) throw error;
-    return { code: 'project.path-unresolvable', params: { path: root } };
-  }
+  const storeDir = resolvedStoreDir(root, io.storeDir);
+  return typeof storeDir === 'string' ? { root, storeDir } : storeDir;
 };
 
 /** Starts the server for the project in cwd on 127.0.0.1 and prints its URL with the one-time token in the fragment. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stateDir, storeDir } from './state-dir.ts';
+import { resolvedStoreDir, stateDir, storeDir } from './state-dir.ts';
 
 const posixHome = { platform: 'linux', home: '/home/me', cwd: '/work' } as const;
 const realpath = (path: string): string => path.replace('/work/link', '/work/repo');
@@ -53,5 +53,26 @@ describe('stateDir', () => {
   it("takes a CEDARLOOM_STATE_DIR relative to another drive from that drive's root folder, not the process's folder", () => {
     const env = { CEDARLOOM_STATE_DIR: 'C:state' };
     expect(stateDir({ env, platform: 'win32', home: 'C:\\Users\\me', cwd: 'D:\\project' })).toBe('C:\\state');
+  });
+});
+
+// A system error (ENOENT, syscall realpath) and an argument error (ERR_INVALID_ARG_VALUE, no syscall).
+const missing = (): string => {
+  throw Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT', syscall: 'realpath' });
+};
+const invalid = (): string => {
+  throw Object.assign(new TypeError('path must not hold null bytes'), { code: 'ERR_INVALID_ARG_VALUE' });
+};
+
+describe('resolvedStoreDir', () => {
+  it('refuses a store folder stopped by a system error with project.path-unresolvable', () => {
+    expect(resolvedStoreDir('/work/repo', missing)).toEqual({
+      code: 'project.path-unresolvable',
+      params: { path: '/work/repo' },
+    });
+  });
+
+  it('lets an error without a syscall propagate', () => {
+    expect(() => resolvedStoreDir('/work/repo', invalid)).toThrow('path must not hold null bytes');
   });
 });

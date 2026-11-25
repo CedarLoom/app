@@ -5,7 +5,7 @@ export { type EditRequest, editWorkflow } from './edit-workflow.ts';
 export { type GenerateRequest, type Generation, generateWorkflows, planGeneration } from './generate.ts';
 export { newWorkflow } from './new-workflow.ts';
 export { projectRoot } from './project-root.ts';
-export { type StateDirInputs, type StoreDirInputs, stateDir, storeDir } from './state-dir.ts';
+export { resolvedStoreDir, type StateDirInputs, type StoreDirInputs, stateDir, storeDir } from './state-dir.ts';
 export {
   type NewRun,
   type Opened,
