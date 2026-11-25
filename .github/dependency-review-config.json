@@ -1,7 +1,6 @@
 {
   "fail-on-severity": "high",
   "fail-on-scopes": ["runtime", "development", "unknown"],
-  "allow-ghsas": ["GHSA-fc5q-39xc-vjpf"],
   "allow-dependencies-licenses": ["pkg:pypi/typing-extensions", "pkg:npm/caniuse-lite", "pkg:npm/argparse"],
   "allow-licenses": [
     "0BSD",

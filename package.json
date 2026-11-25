@@ -22,7 +22,6 @@
   "knip": {
     "ignoreBinaries": [
       "icacls",
-      "mkfifo",
       "schemathesis"
     ]
   },
