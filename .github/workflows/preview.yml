@@ -10,6 +10,7 @@ on:
     paths:
       - "site/**"
       - "brand/**"
+      - ".github/actions/site/**"
       - ".github/workflows/preview.yml"
 
 permissions: {}

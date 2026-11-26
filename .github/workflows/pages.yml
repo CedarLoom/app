@@ -9,11 +9,13 @@ on:
     paths:
       - "site/**"
       - "brand/**"
+      - ".github/actions/site/**"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
       - "site/**"
       - "brand/**"
+      - ".github/actions/site/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
