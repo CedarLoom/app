@@ -38,7 +38,7 @@ const config = async (): Promise<Config> => ({
   onBrokenAnchors: 'throw',
   markdown: { hooks: { onBrokenMarkdownLinks: 'throw' } },
   // The logos stay in brand/ under their own terms; the site serves them from there.
-  staticDirectories: ['static', '../brand'],
+  staticDirectories: ['../brand'],
   i18n: { defaultLocale: 'en', locales: ['en'] },
   presets: [
     [
