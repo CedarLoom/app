@@ -52,9 +52,3 @@ strictPeerDependencies: true
 savePrefix: ""
 # Dependency cooldown of 3 days: pnpm resolves no version younger than this, transitive ones included.
 minimumReleaseAge: 4320
-
-# picomatch ReDoS advisory (withdrawn): reached only by dev tools (knip, vitest), never by the app. Ignored here and in
-# .github/dependency-review-config.json; remove both when `pnpm audit` no longer reports it.
-auditConfig:
-  ignoreGhsas:
-    - GHSA-fc5q-39xc-vjpf
