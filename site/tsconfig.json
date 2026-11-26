@@ -1,0 +1,19 @@
+{
+  // @docusaurus/tsconfig without its baseUrl, which TypeScript 7 no longer has, and inline, so the repository's
+  // type-aware lint reads it without the site's dependencies installed
+  "compilerOptions": {
+    "allowJs": true,
+    "esModuleInterop": true,
+    "jsx": "preserve",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    // Node runs the scripts with their .mts imports as written
+    "allowImportingTsExtensions": true
+  },
+  "exclude": [".docusaurus", "build"]
+}

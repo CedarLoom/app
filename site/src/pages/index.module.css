@@ -1,0 +1,30 @@
+.hero {
+  padding: 4rem 0 3rem;
+  text-align: center;
+  border-bottom: 1px solid var(--ifm-toc-border-color);
+}
+
+.lead {
+  max-width: 42rem;
+  margin: 0 auto 2rem;
+  font-size: 1.2rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.section {
+  padding: 3rem 0 0;
+}
+
+.section:last-child {
+  padding-bottom: 4rem;
+}
+
+.steps li {
+  margin-bottom: 0.5rem;
+}

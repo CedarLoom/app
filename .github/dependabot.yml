@@ -2,7 +2,7 @@
 version: 2
 updates:
   - package-ecosystem: github-actions
-    directories: [/, /.github/actions/setup]
+    directories: [/, /.github/actions/setup, /.github/actions/site]
     schedule: { interval: weekly }
     cooldown: { default-days: 3 }
     commit-message: { prefix: chore, include: scope }
@@ -15,6 +15,14 @@ updates:
     commit-message: { prefix: chore, include: scope }
     groups:
       npm: { update-types: [minor, patch] }
+  # The site in site/, its own npm project.
+  - package-ecosystem: npm
+    directory: /site
+    schedule: { interval: weekly }
+    cooldown: { default-days: 3 }
+    commit-message: { prefix: chore, include: scope }
+    groups:
+      site: { update-types: [minor, patch] }
   # The pnpm that CI installs.
   - package-ecosystem: npm
     directory: /.github/pnpm

@@ -1,7 +1,14 @@
 {
   "fail-on-severity": "high",
   "fail-on-scopes": ["runtime", "development", "unknown"],
-  "allow-dependencies-licenses": ["pkg:pypi/typing-extensions", "pkg:npm/caniuse-lite", "pkg:npm/argparse"],
+  "allow-dependencies-licenses": [
+    "pkg:pypi/typing-extensions",
+    "pkg:npm/caniuse-lite",
+    "pkg:npm/argparse",
+    "pkg:npm/path-is-inside",
+    "pkg:npm/unicode-match-property-value-ecmascript",
+    "pkg:npm/uri-js"
+  ],
   "allow-licenses": [
     "0BSD",
     "Apache-2.0",
