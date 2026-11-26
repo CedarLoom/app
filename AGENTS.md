@@ -68,4 +68,4 @@ The repository is public, so everything written into it is public text: commits,
 
 ## Licenses
 
-[REUSE.toml](REUSE.toml) maps every path: code ISC, own data files CC0-1.0, names and logos `LicenseRef-Brand`. A license text goes into `LICENSES/` with the first file that uses it.
+[REUSE.toml](REUSE.toml) maps every path: everything own MIT, names and logos `LicenseRef-Brand`. A license text goes into `LICENSES/` with the first file that uses it.

@@ -2,7 +2,7 @@
   "name": "cedarloom-app",
   "private": true,
   "type": "module",
-  "license": "ISC",
+  "license": "MIT",
   "engines": {
     "node": ">=26"
   },

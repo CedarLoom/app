@@ -2,7 +2,7 @@
   "name": "@cedarloom/ui",
   "private": true,
   "type": "module",
-  "license": "ISC",
+  "license": "MIT",
   "engines": {
     "node": ">=26"
   },
