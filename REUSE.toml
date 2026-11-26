@@ -9,3 +9,10 @@ path = "**"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Eike Landin"
 SPDX-License-Identifier = "MIT"
+
+# The CedarLoom name and logos, which the site serves from brand/: LICENSES/LicenseRef-Brand.txt.
+[[annotations]]
+path = "brand/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 CedarLoom contributors"
+SPDX-License-Identifier = "LicenseRef-Brand"
