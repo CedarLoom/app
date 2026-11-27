@@ -1,6 +1,14 @@
 import '@mantine/core/styles.css';
 import './brand.css';
-import { Anchor, type CSSVariablesResolver, createTheme, MantineProvider } from '@mantine/core';
+import {
+  Anchor,
+  type CSSVariablesResolver,
+  createTheme,
+  defaultVariantColorsResolver,
+  MantineProvider,
+  parseThemeColor,
+  type VariantColorsResolver,
+} from '@mantine/core';
 import { api } from './api.ts';
 import { createRoot } from 'react-dom/client';
 import { App } from './app.tsx';
@@ -16,6 +24,13 @@ const tokens = {
   '--mantine-color-dimmed': 'var(--cl-ink-2)',
   '--mantine-color-error': 'var(--cl-danger)',
   '--mantine-color-anchor': 'var(--cl-ink)',
+};
+// Accent fills take the primary contrast color, which the dark scheme sets to the surface: white on its light accent is 2.1:1.
+const variantColorResolver: VariantColorsResolver = (input) => {
+  const colors = defaultVariantColorsResolver(input);
+  const filledAccent =
+    input.variant === 'filled' && parseThemeColor({ color: input.color, theme: input.theme }).color === 'accent';
+  return filledAccent ? { ...colors, color: 'var(--mantine-primary-color-contrast)' } : colors;
 };
 const theme = createTheme({
   colors: {
@@ -37,6 +52,7 @@ const theme = createTheme({
   fontFamily: 'var(--cl-font-family)',
   headings: { fontFamily: 'var(--cl-font-family)', fontWeight: 'var(--cl-font-weight-strong)' },
   components: { Anchor: Anchor.extend({ defaultProps: { underline: 'always' } }) },
+  variantColorResolver,
 });
 const cssVariablesResolver: CSSVariablesResolver = () => ({
   variables: {},
@@ -46,6 +62,7 @@ const cssVariablesResolver: CSSVariablesResolver = () => ({
     // Mantine derives these from shade 9 with functions that read var(), hex, rgb or hsl colors, not color-mix().
     '--mantine-color-accent-light': 'color-mix(in srgb, var(--cl-accent) 15%, var(--cl-surface))',
     '--mantine-color-accent-light-hover': 'color-mix(in srgb, var(--cl-accent) 25%, var(--cl-surface))',
+    '--mantine-primary-color-contrast': 'var(--cl-surface)',
   },
 });
 
