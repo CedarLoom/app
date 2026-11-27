@@ -8,7 +8,8 @@
     "**/LICENSES/**",
     "**/package.json",
     "packages/app/openapi.json",
-    "packages/ui/src/openapi.d.ts"
+    "packages/ui/src/openapi.d.ts",
+    "brand/tokens.css"
   ],
   "reporters": ["console"],
   "exitCode": 1

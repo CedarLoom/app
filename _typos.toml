@@ -1,6 +1,8 @@
 # US spelling everywhere.
 [default]
 locale = "en-us"
+# Unicode ranges, as in the font faces of brand/tokens.css.
+extend-ignore-re = ["U\\+[0-9A-F]{4}(-[0-9A-F]{4})?"]
 
 [files]
 extend-exclude = ["pnpm-lock.yaml", "package-lock.json", "LICENSES/", "LICENSE"]

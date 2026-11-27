@@ -1,0 +1,7 @@
+@import "../../../brand/tokens.css";
+
+/* Mantine draws the focus ring in the primary color; the brand draws it in the focus token. */
+.mantine-focus-auto:focus-visible,
+.mantine-focus-always:focus {
+  outline-color: var(--cl-focus);
+}
