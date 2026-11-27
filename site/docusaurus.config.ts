@@ -30,8 +30,7 @@ const config = async (): Promise<Config> => ({
   favicon: 'cedarloom-icon.svg',
   future: { v4: true },
   url: 'https://cedarloom.github.io',
-  // BASE_URL serves a pull request preview from its own folder (.github/workflows/preview.yml).
-  baseUrl: process.env.BASE_URL ?? '/app/',
+  baseUrl: '/app/',
   organizationName: 'CedarLoom',
   projectName: 'app',
   trailingSlash: false,
@@ -39,7 +38,7 @@ const config = async (): Promise<Config> => ({
   onBrokenAnchors: 'throw',
   markdown: { hooks: { onBrokenMarkdownLinks: 'throw' } },
   // The logos stay in brand/ under their own terms; the site serves them from there.
-  staticDirectories: ['static', '../brand'],
+  staticDirectories: ['../brand'],
   i18n: { defaultLocale: 'en', locales: ['en'] },
   presets: [
     [
